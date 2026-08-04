@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from loguru import logger
-from sqlalchemy import and_, delete, func, or_, select, text
+from sqlalchemy import and_, delete, func, literal_column, or_, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -365,6 +365,32 @@ async def list_pages(
     return list(result.scalars().all())
 
 
+# Candidate pool size fetched from each retrieval arm (vector + FTS) before
+# fusion. Wider than top_k so RRF has enough overlap to reorder meaningfully.
+_HYBRID_CANDIDATE_POOL = 50
+
+# Full-text config — 'simple' (no stemming) matches the GIN index built in
+# migration 037 and is the deliberate choice for Vietnamese content (see 003).
+_FTS_CONFIG = "simple"
+
+
+def _fts_expr(table_name: str, column: str = "text"):
+    """tsvector expression matching the migration-037 GIN index exactly.
+
+    Emitted as a literal (not a bound param) so the Postgres planner recognises
+    it as the indexed expression. `table_name` comes from our own model classes,
+    never user input.
+    """
+    return literal_column(
+        f"to_tsvector('{_FTS_CONFIG}', f_unaccent({table_name}.{column}))"
+    )
+
+
+def _fts_query(query_text: str):
+    """websearch_to_tsquery over the accent-folded query."""
+    return func.websearch_to_tsquery(_FTS_CONFIG, func.f_unaccent(query_text))
+
+
 async def search_pages_semantic(
     session: AsyncSession,
     query_embedding: list[float],
@@ -379,27 +405,26 @@ async def search_pages_semantic(
     all_scopes: bool = False,
 ) -> list[tuple[WikiPage, float]]:
     """
-    Cosine-similarity search over wiki page embeddings within a scope.
+    Cosine-similarity search over wiki page CHUNK embeddings, grouped to pages.
 
-    Embeddings live in per-dimension tables (`wiki_page_embeddings_<dim>`).
-    The active embedding model spec determines which table to query and which
-    `model_spec_id` rows to filter to. Pass `spec_id` explicitly to override —
-    only used by tests and internal tooling.
+    Vectors live in per-dimension chunk tables (`wiki_page_chunk_embeddings_<dim>`);
+    each page has several chunks, so we take each page's best-matching chunk and
+    return one (page, best_similarity) pair. The active embedding model spec
+    determines which table + `model_spec_id` to query. Pass `spec_id` to override.
 
-    Scope behaviour:
-      - If `department_ids` or `project_ids` is given: returns pages from
-        global + user's departments + user's workspaces (MCP read path).
-      - If `inverse_scope=True`: returns pages OUTSIDE that scope (other
-        departments, workspaces the user isn't a member of). Used to surface
-        "you don't have access" hints.
-      - Otherwise uses exact scope_type/scope_id matching (pipeline write path).
+    Scope behaviour is unchanged from the page-level version:
+      - `department_ids`/`project_ids`: global + user's departments + workspaces.
+      - `inverse_scope=True`: pages OUTSIDE that scope (out-of-scope hints).
+      - otherwise exact scope_type/scope_id matching (pipeline write path).
 
-    Returns (page, similarity) pairs sorted by similarity descending. Returns
-    an empty list if no active embedding model is configured.
+    Returns (page, similarity) pairs sorted by similarity descending. Empty list
+    if no active embedding model is configured. This is the vector-only path kept
+    for internal callers (MRP, compiler, ai_review); the MCP read path uses
+    `search_pages_hybrid`.
     """
     from app.ai.embedding_catalog import get_spec
     from app.ai.registry import ProviderRegistry
-    from app.database.models import get_embedding_model_for_dim
+    from app.database.models import get_wiki_page_chunk_embedding_model_for_dim
 
     if spec_id is None:
         registry = ProviderRegistry(session)
@@ -408,7 +433,7 @@ async def search_pages_semantic(
         return []
 
     spec = get_spec(spec_id)
-    Emb = get_embedding_model_for_dim(spec.dimension)
+    Emb = get_wiki_page_chunk_embedding_model_for_dim(spec.dimension)
 
     if all_scopes and not inverse_scope:
         scope_clause = None
@@ -425,48 +450,207 @@ async def search_pages_semantic(
     ]
     if scope_clause is not None:
         where_clauses.append(scope_clause)
-
-    stmt = (
-        select(
-            WikiPage,
-            (1 - Emb.embedding.cosine_distance(query_embedding)).label("similarity"),
-        )
-        .join(Emb, Emb.page_id == WikiPage.id)
-        .where(and_(*where_clauses))
-        .order_by(Emb.embedding.cosine_distance(query_embedding))
-        .limit(top_k)
-    )
     if allowed_kt_slugs:
-        stmt = stmt.where(
+        where_clauses.append(
             or_(
                 WikiPage.knowledge_type_slugs.overlap(allowed_kt_slugs),
                 func.cardinality(WikiPage.knowledge_type_slugs) == 0,
             )
         )
+
+    # Best chunk similarity per page, computed in SQL so one page can't flood the
+    # result with all its chunks. Over-fetch chunks, then keep each page's max.
+    sim = (1 - Emb.embedding.cosine_distance(query_embedding)).label("similarity")
+    stmt = (
+        select(WikiPage, sim)
+        .join(Emb, Emb.page_id == WikiPage.id)
+        .where(and_(*where_clauses))
+        .order_by(Emb.embedding.cosine_distance(query_embedding))
+        .limit(top_k * 8)
+    )
     result = await session.execute(stmt)
-    return [(row[0], float(row[1])) for row in result.all()]
+
+    best: dict[uuid.UUID, tuple[WikiPage, float]] = {}
+    for page, similarity in result.all():
+        cur = best.get(page.id)
+        if cur is None or similarity > cur[1]:
+            best[page.id] = (page, float(similarity))
+    ranked = sorted(best.values(), key=lambda ps: ps[1], reverse=True)
+    return ranked[:top_k]
 
 
-async def search_source_chunks_semantic(
+async def search_pages_hybrid(
     session: AsyncSession,
     query_embedding: list[float],
+    query_text: str,
+    top_k: int = 10,
+    allowed_kt_slugs: Optional[list[str]] = None,
+    spec_id: Optional[str] = None,
+    department_ids: Optional[list[uuid.UUID]] = None,
+    project_ids: Optional[list[uuid.UUID]] = None,
+    all_scopes: bool = False,
+) -> list[dict]:
+    """
+    Hybrid (vector + full-text) search over wiki page chunks, grouped to pages.
+
+    Runs two retrieval arms over `wiki_page_chunk_embeddings_<dim>` — cosine kNN
+    and `ts_rank` full-text — then fuses them with Reciprocal Rank Fusion so the
+    two incomparable score scales combine by rank. Chunks are grouped to their
+    page (best RRF chunk wins). Scope/RBAC filtering matches
+    `search_pages_semantic` (MCP read path: global + user's dept/project scopes).
+
+    Returns a list of dicts sorted by fused score descending:
+        {"page", "rrf", "cosine", "heading_path", "fts_matched"}
+    `cosine` is the page's best chunk cosine (or None if only FTS matched);
+    `fts_matched` is True when the page surfaced via the lexical arm.
+    Empty list if no active embedding model is configured.
+    """
+    from app.ai.embedding_catalog import get_spec
+    from app.ai.registry import ProviderRegistry
+    from app.database.models import get_wiki_page_chunk_embedding_model_for_dim
+    from app.services.search_fusion import reciprocal_rank_fusion
+
+    if spec_id is None:
+        registry = ProviderRegistry(session)
+        spec_id = await registry.get_active_embedding_spec_id()
+    if not spec_id:
+        return []
+
+    spec = get_spec(spec_id)
+    Emb = get_wiki_page_chunk_embedding_model_for_dim(spec.dimension)
+
+    if all_scopes:
+        scope_clause = None
+    elif department_ids or project_ids:
+        scope_clause = _scope_filter_for_identity(department_ids, project_ids)
+    else:
+        scope_clause = _scope_filter("global")
+
+    base_where = [
+        Emb.model_spec_id == spec.id,
+        WikiPage.slug.notin_([INDEX_SLUG, LOG_SLUG, HOT_SLUG]),
+    ]
+    if scope_clause is not None:
+        base_where.append(scope_clause)
+    if allowed_kt_slugs:
+        base_where.append(
+            or_(
+                WikiPage.knowledge_type_slugs.overlap(allowed_kt_slugs),
+                func.cardinality(WikiPage.knowledge_type_slugs) == 0,
+            )
+        )
+
+    # --- Vector arm ---
+    sim = (1 - Emb.embedding.cosine_distance(query_embedding)).label("similarity")
+    vec_stmt = (
+        select(WikiPage, Emb.chunk_index, Emb.heading_path, sim)
+        .join(Emb, Emb.page_id == WikiPage.id)
+        .where(and_(*base_where))
+        .order_by(Emb.embedding.cosine_distance(query_embedding))
+        .limit(_HYBRID_CANDIDATE_POOL)
+    )
+    vec_rows = (await session.execute(vec_stmt)).all()
+
+    # --- Full-text arm ---
+    fts_rows = []
+    if query_text and query_text.strip():
+        tsq = _fts_query(query_text)
+        tsv = _fts_expr(Emb.__tablename__)
+        fts_stmt = (
+            select(WikiPage, Emb.chunk_index, Emb.heading_path)
+            .join(Emb, Emb.page_id == WikiPage.id)
+            .where(and_(*base_where, tsv.op("@@")(tsq)))
+            .order_by(func.ts_rank(tsv, tsq).desc())
+            .limit(_HYBRID_CANDIDATE_POOL)
+        )
+        fts_rows = (await session.execute(fts_stmt)).all()
+
+    results = _fuse_chunk_rows(
+        vec_rows, fts_rows,
+        key_of=lambda r: (r[0].id, r[1]),
+        group_of=lambda r: r[0].id,
+        obj_of=lambda r: r[0],
+        heading_of=lambda r: r[2],
+        obj_field="page",
+        top_k=top_k,
+        fuse=reciprocal_rank_fusion,
+    )
+    for res in results:
+        res.pop("_win_key", None)
+    return results
+
+
+def _fuse_chunk_rows(
+    vec_rows, fts_rows, *, key_of, group_of, obj_of, heading_of, obj_field,
+    top_k, fuse,
+) -> list[dict]:
+    """Shared RRF fusion + group-to-parent logic for the two hybrid searches.
+
+    `vec_rows` rows end with a cosine similarity; `fts_rows` rows carry no score.
+    Chunks are fused by `key_of`, then collapsed to their parent (`group_of`)
+    keeping the best-scoring chunk. Returns dicts with the parent under
+    `obj_field` plus rrf / cosine / heading_path / fts_matched.
+    """
+    vec_keys = [key_of(r) for r in vec_rows]
+    fts_keys = [key_of(r) for r in fts_rows]
+    fused = fuse([vec_keys, fts_keys])
+
+    cosine_by_key = {key_of(r): float(r[-1]) for r in vec_rows}
+    fts_key_set = set(fts_keys)
+    row_by_key: dict = {}
+    for r in vec_rows:
+        row_by_key.setdefault(key_of(r), r)
+    for r in fts_rows:
+        row_by_key.setdefault(key_of(r), r)
+
+    grouped: dict = {}
+    for key, score in fused.items():
+        row = row_by_key.get(key)
+        if row is None:
+            continue
+        gid = group_of(row)
+        entry = grouped.get(gid)
+        cosine = cosine_by_key.get(key)
+        cand = {
+            obj_field: obj_of(row),
+            "rrf": score,
+            "cosine": cosine,
+            "heading_path": heading_of(row) or "",
+            "fts_matched": key in fts_key_set,
+            "_win_key": key,  # winning chunk key — used to attach the chunk row
+        }
+        if entry is None or score > entry["rrf"]:
+            # Preserve an fts_matched=True flag seen on a lower-ranked chunk.
+            if entry is not None and entry["fts_matched"]:
+                cand["fts_matched"] = True
+            grouped[gid] = cand
+        elif key in fts_key_set:
+            entry["fts_matched"] = True
+
+    out = sorted(grouped.values(), key=lambda d: d["rrf"], reverse=True)
+    return out[:top_k]
+
+
+async def search_source_chunks_hybrid(
+    session: AsyncSession,
+    query_embedding: list[float],
+    query_text: str,
     top_k: int = 10,
     allowed_source_ids: Optional[set[str]] = None,
     spec_id: Optional[str] = None,
-):
+) -> list[dict]:
     """
-    Cosine-similarity search over verbatim source chunk embeddings.
+    Hybrid (vector + full-text) search over verbatim source chunk embeddings.
 
-    Mirrors `search_pages_semantic` but over `source_chunk_embeddings_<dim>`
-    (raw, never-rewritten slices of preserve_verbatim sources). Lets high-fidelity
-    docs (decrees, gazettes) be retrieved in the same semantic pool as wiki pages.
+    Mirrors `search_pages_hybrid` over `source_chunk_embeddings_<dim>` (raw,
+    never-rewritten slices of preserve_verbatim sources), grouped to their source.
 
-    RBAC: pass `allowed_source_ids` (the set returned by the MCP layer's
-    `_get_allowed_source_ids`). None means open access; an empty set means no
-    access (returns nothing).
+    RBAC: pass `allowed_source_ids` (from the MCP layer's
+    `_get_allowed_source_ids`). None = open access; empty set = no access.
 
-    Returns (Source, chunk_row, similarity) tuples sorted by similarity desc.
-    Returns [] if no active embedding model is configured.
+    Returns a list of dicts sorted by fused score descending:
+        {"source", "chunk", "rrf", "cosine", "heading_path", "fts_matched"}
+    where `chunk` is the best-matching chunk row (has `.text`, `.page_number`).
     """
     import uuid as _uuid
 
@@ -476,6 +660,7 @@ async def search_source_chunks_semantic(
         Source,
         get_source_chunk_embedding_model_for_dim,
     )
+    from app.services.search_fusion import reciprocal_rank_fusion
 
     if allowed_source_ids is not None and len(allowed_source_ids) == 0:
         return []
@@ -489,29 +674,59 @@ async def search_source_chunks_semantic(
     spec = get_spec(spec_id)
     Emb = get_source_chunk_embedding_model_for_dim(spec.dimension)
 
-    where_clauses = [
+    base_where = [
         Emb.model_spec_id == spec.id,
         Source.preserve_verbatim.is_(True),
         Source.status == "ready",
     ]
     if allowed_source_ids is not None:
-        where_clauses.append(
-            Source.id.in_([_uuid.UUID(s) for s in allowed_source_ids])
-        )
+        base_where.append(Source.id.in_([_uuid.UUID(s) for s in allowed_source_ids]))
 
-    stmt = (
-        select(
-            Source,
-            Emb,
-            (1 - Emb.embedding.cosine_distance(query_embedding)).label("similarity"),
-        )
+    # --- Vector arm --- (select Emb so callers get chunk.text / .page_number)
+    sim = (1 - Emb.embedding.cosine_distance(query_embedding)).label("similarity")
+    vec_stmt = (
+        select(Source, Emb, sim)
         .join(Source, Source.id == Emb.source_id)
-        .where(and_(*where_clauses))
+        .where(and_(*base_where))
         .order_by(Emb.embedding.cosine_distance(query_embedding))
-        .limit(top_k)
+        .limit(_HYBRID_CANDIDATE_POOL)
     )
-    result = await session.execute(stmt)
-    return [(row[0], row[1], float(row[2])) for row in result.all()]
+    vec_rows = (await session.execute(vec_stmt)).all()
+
+    # --- Full-text arm ---
+    fts_rows = []
+    if query_text and query_text.strip():
+        tsq = _fts_query(query_text)
+        tsv = _fts_expr(Emb.__tablename__)
+        fts_stmt = (
+            select(Source, Emb)
+            .join(Source, Source.id == Emb.source_id)
+            .where(and_(*base_where, tsv.op("@@")(tsq)))
+            .order_by(func.ts_rank(tsv, tsq).desc())
+            .limit(_HYBRID_CANDIDATE_POOL)
+        )
+        fts_rows = (await session.execute(fts_stmt)).all()
+
+    results = _fuse_chunk_rows(
+        vec_rows, fts_rows,
+        key_of=lambda r: (r[0].id, r[1].chunk_index),
+        group_of=lambda r: r[0].id,
+        obj_of=lambda r: r[0],
+        heading_of=lambda r: "",
+        obj_field="source",
+        top_k=top_k,
+        fuse=reciprocal_rank_fusion,
+    )
+    # Attach the winning chunk row (its text/page_number) to each grouped result
+    # using the winning chunk key recorded during fusion.
+    chunk_by_key: dict = {}
+    for r in vec_rows:
+        chunk_by_key.setdefault((r[0].id, r[1].chunk_index), r[1])
+    for r in fts_rows:
+        chunk_by_key.setdefault((r[0].id, r[1].chunk_index), r[1])
+    for res in results:
+        res["chunk"] = chunk_by_key.get(res.pop("_win_key", None))
+    return results
 
 
 # ---------------------------------------------------------------------------

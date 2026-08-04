@@ -30,7 +30,7 @@ from app.database.models import (
     EmbeddingJob,
     Employee,
     WikiPage,
-    get_embedding_model_for_dim,
+    get_wiki_page_chunk_embedding_model_for_dim,
 )
 from app.services.audit_service import log_audit
 from app.services.auth_service import require_permission
@@ -172,10 +172,12 @@ async def get_status(
     embedded = 0
     if active:
         spec = get_spec(active)
-        Emb = get_embedding_model_for_dim(spec.dimension)
+        # Pages are now chunk-embedded — count DISTINCT pages that have at least
+        # one chunk row for the active spec.
+        Emb = get_wiki_page_chunk_embedding_model_for_dim(spec.dimension)
         embedded = (
             await db.execute(
-                select(func.count(Emb.page_id)).where(
+                select(func.count(func.distinct(Emb.page_id))).where(
                     Emb.model_spec_id == active
                 )
             )

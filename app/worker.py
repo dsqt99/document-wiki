@@ -576,10 +576,9 @@ async def reembed_all_pages_task(ctx: dict, job_id: str) -> None:
     from app.services.embedding_storage import (
         cleanup_stale_embeddings,
         cleanup_stale_source_chunk_embeddings,
-        compute_content_hash,
-        embedding_input_text,
-        upsert_page_embedding,
+        cleanup_stale_wiki_chunk_embeddings,
     )
+    from app.services.wiki_chunk_service import index_wiki_page_chunks
 
     job_uuid = uuid.UUID(job_id)
     BATCH = 50
@@ -649,12 +648,9 @@ async def reembed_all_pages_task(ctx: dict, job_id: str) -> None:
                     select(WikiPage).where(WikiPage.id.in_(batch_ids))
                 )
             ).scalars().all()
-            inputs = [
-                embedding_input_text(p.title, p.summary or "", p.content_md or "")
-                for p in pages
-            ]
             try:
-                vectors = await provider.embed_batch(inputs)
+                for page in pages:
+                    await index_wiki_page_chunks(session, page, spec_id=spec.id)
             except Exception as e:
                 job.status = "failed"
                 job.error_message = f"Embedding API failed: {e}"
@@ -663,16 +659,6 @@ async def reembed_all_pages_task(ctx: dict, job_id: str) -> None:
                 logger.exception(f"reembed: job {job_id} failed at offset={offset}")
                 return
 
-            for page, vec in zip(pages, vectors):
-                await upsert_page_embedding(
-                    session,
-                    page_id=page.id,
-                    spec=spec,
-                    vector=list(vec),
-                    content_hash=compute_content_hash(
-                        page.title, page.summary or "", page.content_md or ""
-                    ),
-                )
             job.done_pages = min(offset + len(pages), job.total_pages)
             await session.commit()
 
@@ -707,6 +693,7 @@ async def reembed_all_pages_task(ctx: dict, job_id: str) -> None:
         await svc.set(ACTIVE_EMBEDDING_MODEL_KEY, spec.id)
         deleted = await cleanup_stale_embeddings(session, keep_spec_id=spec.id)
         deleted += await cleanup_stale_source_chunk_embeddings(session, keep_spec_id=spec.id)
+        deleted += await cleanup_stale_wiki_chunk_embeddings(session, keep_spec_id=spec.id)
         job.status = "completed"
         job.finished_at = datetime.now(timezone.utc)
         await session.commit()

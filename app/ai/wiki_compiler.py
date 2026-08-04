@@ -662,11 +662,7 @@ async def _reembed_pages(
     matching the active embedding model's spec (looked up via ProviderRegistry).
     """
     from app.ai.registry import ProviderRegistry
-    from app.services.embedding_storage import (
-        compute_content_hash,
-        embedding_input_text,
-        upsert_page_embedding,
-    )
+    from app.services.wiki_chunk_service import index_wiki_page_chunks
     from app.services.wiki_service import _scope_filter
 
     unique = list(dict.fromkeys(slugs))
@@ -686,27 +682,11 @@ async def _reembed_pages(
     if not spec_id:
         logger.info("No active embedding model — skipping re-embed for compile.")
         return
-    from app.ai.embedding_catalog import get_spec
-    spec = get_spec(spec_id)
 
-    inputs = [
-        embedding_input_text(p.title, p.summary or "", p.content_md or "")
-        for p in rows
-    ]
-    try:
-        vectors = await embedding_provider.embed_batch(inputs)
-    except Exception as e:
-        logger.warning(f"Wiki compile: re-embed failed for {len(rows)} pages: {e}")
-        return
-
-    for page, vec in zip(rows, vectors):
-        await upsert_page_embedding(
-            session,
-            page_id=page.id,
-            spec=spec,
-            vector=list(vec),
-            content_hash=compute_content_hash(
-                page.title, page.summary or "", page.content_md or ""
-            ),
-        )
+    # Chunk each page into wiki_page_chunk_embeddings_<dim> (section-level).
+    for page in rows:
+        try:
+            await index_wiki_page_chunks(session, page, spec_id=spec_id)
+        except Exception as e:
+            logger.warning(f"Wiki compile: re-embed failed for page {page.slug}: {e}")
     await session.flush()

@@ -19,6 +19,7 @@ from app.database.models import (
     EmbeddingJob,
     get_embedding_model_for_dim,
     get_source_chunk_embedding_model_for_dim,
+    get_wiki_page_chunk_embedding_model_for_dim,
 )
 
 
@@ -142,6 +143,12 @@ def chunk_content_hash(text: str) -> str:
     return hashlib.sha256((text or "").encode("utf-8")).hexdigest()
 
 
+def wiki_chunk_content_hash(heading_path: str, text: str) -> str:
+    """Stable hash of a wiki chunk (heading breadcrumb + text) fed into the model."""
+    blob = f"{heading_path or ''}\n\n{text or ''}".encode("utf-8")
+    return hashlib.sha256(blob).hexdigest()
+
+
 async def upsert_chunk_embedding(
     session: AsyncSession,
     source_id: uuid.UUID,
@@ -207,6 +214,101 @@ async def delete_source_chunk_embeddings(
     ):
         result = await session.execute(
             delete(Model).where(Model.source_id == source_id)
+        )
+        total += result.rowcount or 0  # type: ignore[union-attr]
+    return total
+
+
+# ---------------------------------------------------------------------------
+# Wiki page chunk embeddings (hybrid search)
+# ---------------------------------------------------------------------------
+
+async def upsert_wiki_chunk_embedding(
+    session: AsyncSession,
+    page_id: uuid.UUID,
+    chunk_index: int,
+    spec: EmbeddingModelSpec,
+    vector: list[float],
+    *,
+    text: str,
+    heading_path: str,
+    content_hash: str,
+) -> None:
+    """Upsert one (page, chunk_index, model_spec_id) row into
+    wiki_page_chunk_embeddings_<dim>."""
+    Model = get_wiki_page_chunk_embedding_model_for_dim(spec.dimension)
+    stmt = pg_insert(Model).values(
+        page_id=page_id,
+        chunk_index=chunk_index,
+        model_spec_id=spec.id,
+        heading_path=heading_path,
+        text=text,
+        content_hash=content_hash,
+        embedding=vector,
+    )
+    stmt = stmt.on_conflict_do_update(
+        index_elements=["page_id", "chunk_index", "model_spec_id"],
+        set_={
+            "embedding": stmt.excluded.embedding,
+            "content_hash": stmt.excluded.content_hash,
+            "text": stmt.excluded.text,
+            "heading_path": stmt.excluded.heading_path,
+            "embedded_at": stmt.excluded.embedded_at,
+        },
+    )
+    await session.execute(stmt)
+
+
+async def delete_wiki_page_chunk_embeddings(
+    session: AsyncSession, page_id: uuid.UUID, spec_id: Optional[str] = None
+) -> int:
+    """Delete chunk embedding rows for a page across all dimension tables.
+
+    Pass `spec_id` to only clear rows for that spec (used when re-indexing a page
+    against a specific model while another spec stays live); omit to clear all.
+    """
+    from app.database.models import (
+        WikiPageChunkEmbedding768,
+        WikiPageChunkEmbedding1024,
+        WikiPageChunkEmbedding1536,
+        WikiPageChunkEmbedding3072,
+    )
+    total = 0
+    for Model in (
+        WikiPageChunkEmbedding768,
+        WikiPageChunkEmbedding1024,
+        WikiPageChunkEmbedding1536,
+        WikiPageChunkEmbedding3072,
+    ):
+        stmt = delete(Model).where(Model.page_id == page_id)
+        if spec_id is not None:
+            stmt = stmt.where(Model.model_spec_id == spec_id)
+        result = await session.execute(stmt)
+        total += result.rowcount or 0  # type: ignore[union-attr]
+    return total
+
+
+async def cleanup_stale_wiki_chunk_embeddings(
+    session: AsyncSession, keep_spec_id: str
+) -> int:
+    """Delete wiki chunk embedding rows whose model_spec_id != keep_spec_id,
+    across every dimension table. Mirrors cleanup_stale_source_chunk_embeddings;
+    called after the atomic embedding-model flip."""
+    from app.database.models import (
+        WikiPageChunkEmbedding768,
+        WikiPageChunkEmbedding1024,
+        WikiPageChunkEmbedding1536,
+        WikiPageChunkEmbedding3072,
+    )
+    total = 0
+    for Model in (
+        WikiPageChunkEmbedding768,
+        WikiPageChunkEmbedding1024,
+        WikiPageChunkEmbedding1536,
+        WikiPageChunkEmbedding3072,
+    ):
+        result = await session.execute(
+            delete(Model).where(Model.model_spec_id != keep_spec_id)
         )
         total += result.rowcount or 0  # type: ignore[union-attr]
     return total

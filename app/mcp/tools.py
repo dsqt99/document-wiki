@@ -26,6 +26,11 @@ from app.mcp.permissions import (
     kb_tool,
 )
 
+# Cosine-similarity floor for search_wiki. Vector-only hits below this are
+# dropped as noise; hits the full-text arm matched bypass the floor (an exact
+# keyword match matters even at low cosine).
+MIN_SIM_FLOOR = 0.30
+
 # ---------------------------------------------------------------------------
 # Auth helpers
 # ---------------------------------------------------------------------------
@@ -100,17 +105,14 @@ async def _get_allowed_source_ids(identity, session: Optional[AsyncSession] = No
 # ---------------------------------------------------------------------------
 
 async def _can_review_page(session: AsyncSession, employee, page) -> bool:
-    """Editor+ in the page's workspace, or wiki:write:all globally, or admin."""
-    from app.services.permission_engine import (
-        _get_user_permissions,
-        get_workspace_role,
-        workspace_role_can,
-    )
+    """wiki:write:all globally, or admin.
+
+    Mirrors REST `_can_review` — workspace/project scopes were removed, so
+    there is no per-workspace editor path anymore.
+    """
+    from app.services.permission_engine import _get_user_permissions
     if employee.role == "admin":
         return True
-    if page.scope_type == "project" and page.scope_id:
-        role = await get_workspace_role(session, employee, page.scope_id)
-        return bool(role) and workspace_role_can(role, "editor")
     perms = _get_user_permissions(employee)
     return "wiki:write:all" in perms
 
@@ -119,25 +121,17 @@ async def _can_contribute_to_page(session: AsyncSession, employee, page) -> bool
     """Permission to propose an edit on `page` via MCP.
 
     Mirrors REST `_can_propose`:
-    - Project pages: workspace contributor+.
     - Department pages: wiki:write:all, or wiki:write:own_dept restricted to
       the employee's own department.
     - Global pages: any wiki:write permission.
     """
     from app.services.permission_engine import (
         _get_user_permissions,
-        get_workspace_role,
         has_any_permission,
-        workspace_role_can,
     )
     if employee.role == "admin":
         return True
     perms = _get_user_permissions(employee)
-    if page.scope_type == "project" and page.scope_id:
-        role = await get_workspace_role(session, employee, page.scope_id)
-        if not role:
-            return False
-        return workspace_role_can(role, "contributor")
     if page.scope_type == "department" and page.scope_id:
         if "wiki:write:all" in perms:
             return True
@@ -244,8 +238,6 @@ def register_tools(mcp: FastMCP):
         Returns:
             A ranked list of wiki pages and source matches with similarity scores.
         """
-        import uuid as uuid_mod
-
         identity, err = await _get_identity()
         if err:
             return err
@@ -258,39 +250,44 @@ def register_tools(mcp: FastMCP):
         from app.database import async_session_factory
         from app.services import wiki_service
 
-        proj_uuids = [uuid_mod.UUID(p) for p in identity.project_ids] or None
+        # Workspace/project memberships were removed; identity no longer carries
+        # project_ids, so project-scoped filtering is disabled here.
+        proj_uuids = None
+
+        import asyncio
 
         async with async_session_factory() as session:
             registry = ProviderRegistry(session)
             embedding_provider = await registry.get_embedding(task="search_query")
             query_embedding = await embedding_provider.embed(query)
 
-            hits = await wiki_service.search_pages_semantic(
+            allowed_source_ids = await _get_allowed_source_ids(identity, session)
+
+            # Hybrid (vector + full-text) over both pools, run concurrently. RRF
+            # inside each hybrid search fuses the two arms; we then merge the two
+            # pools by their fused score (comparable because both are RRF-scaled).
+            wiki_task = wiki_service.search_pages_hybrid(
                 session,
                 query_embedding=query_embedding,
+                query_text=query,
                 top_k=top_k,
                 allowed_kt_slugs=identity.allowed_knowledge_types,
                 department_ids=identity.department_ids,
                 project_ids=proj_uuids,
                 all_scopes=identity.is_admin,
             )
-
-            # Verbatim source chunks — same semantic pool, RBAC-scoped to the
-            # caller's allowed source set (mirrors the source drill-down tools).
-            allowed_source_ids = await _get_allowed_source_ids(identity, session)
-            chunk_hits = await wiki_service.search_source_chunks_semantic(
+            source_task = wiki_service.search_source_chunks_hybrid(
                 session,
                 query_embedding=query_embedding,
+                query_text=query,
                 top_k=top_k,
                 allowed_source_ids=allowed_source_ids,
             )
-
-            # Out-of-scope peek — admins already see everything, so the hint
-            # only fires for non-admins. Limit to a small fixed sample so an
-            # adversary can't enumerate the entire org's page list via search.
-            oos_hint = ""
+            # Out-of-scope peek — admins already see everything, so the hint only
+            # fires for non-admins. Vector-only + small fixed sample so an
+            # adversary can't enumerate the org's page list via search.
             if not identity.is_admin:
-                oos_hits = await wiki_service.search_pages_semantic(
+                oos_task = wiki_service.search_pages_semantic(
                     session,
                     query_embedding=query_embedding,
                     top_k=5,
@@ -298,25 +295,29 @@ def register_tools(mcp: FastMCP):
                     project_ids=proj_uuids,
                     inverse_scope=True,
                 )
+                wiki_hits, source_hits, oos_hits = await asyncio.gather(
+                    wiki_task, source_task, oos_task
+                )
                 oos_hint = await _format_oos_hint(session, oos_hits)
+            else:
+                wiki_hits, source_hits = await asyncio.gather(wiki_task, source_task)
+                oos_hint = ""
 
-        # Collapse multiple chunk hits from the same source into one entry
-        # (best similarity + the matching page numbers).
-        grouped: dict = {}
-        for source, chunk, sim in chunk_hits:
-            g = grouped.get(source.id)
-            if g is None or sim > g["sim"]:
-                preview = (chunk.text or "").strip().replace("\n", " ")
-                if len(preview) > 200:
-                    preview = preview[:200] + "…"
-                grouped[source.id] = {
-                    "source": source, "sim": sim, "preview": preview, "pages": set(),
-                }
-            grouped[source.id]["pages"].add(chunk.page_number)
+        # Threshold floor: drop weak vector-only hits (noise), but keep anything
+        # the lexical arm matched — an exact keyword hit is meaningful even at low
+        # cosine. Applied per pool before the cross-pool merge.
+        def _passes(hit: dict) -> bool:
+            if hit.get("fts_matched"):
+                return True
+            cos = hit.get("cosine")
+            return cos is not None and cos >= MIN_SIM_FLOOR
 
-        # Unify into one ranked list by similarity.
-        ranked: list = [("wiki", sim, page) for page, sim in hits]
-        ranked += [("source", g["sim"], g) for g in grouped.values()]
+        wiki_hits = [h for h in wiki_hits if _passes(h)]
+        source_hits = [h for h in source_hits if _passes(h)]
+
+        # Unify into one ranked list by fused RRF score.
+        ranked: list = [("wiki", h["rrf"], h) for h in wiki_hits]
+        ranked += [("source", h["rrf"], h) for h in source_hits]
         ranked.sort(key=lambda r: r[1], reverse=True)
         ranked = ranked[:top_k]
 
@@ -330,31 +331,42 @@ def register_tools(mcp: FastMCP):
             base = (settings.portal_base_url or "").rstrip("/")
             return f"{base}/wiki/source/{source_id}" if base else f"/wiki/source/{source_id}"
 
+        def _score_label(hit: dict) -> str:
+            cos = hit.get("cosine")
+            if cos is not None:
+                return f"{cos:.0%}"
+            return "🔑 từ khóa"  # FTS-only match, no cosine
+
         lines = [f"**KB search — {len(ranked)} result(s) for: \"{query}\"**\n"]
-        for kind, sim, obj in ranked:
-            similarity_pct = f"{sim:.0%}"
+        for kind, _score, hit in ranked:
+            score_label = _score_label(hit)
             if kind == "wiki":
-                page = obj
+                page = hit["page"]
                 kt_label = (
                     f" [{', '.join(page.knowledge_type_slugs)}]"
                     if page.knowledge_type_slugs else ""
                 )
                 entry = (
-                    f"- 📘 `{page.slug}` ({page.page_type}){kt_label} — {similarity_pct}\n"
+                    f"- 📘 `{page.slug}` ({page.page_type}){kt_label} — {score_label}\n"
                     f"  **{page.title}**"
                 )
+                if hit.get("heading_path"):
+                    entry += f" · _{hit['heading_path']}_"
                 if page.summary:
                     entry += f" — {page.summary}"
                 entry += "\n  _Read: `read_wiki_page(\"%s\")`_" % page.slug
             else:
-                source = obj["source"]
+                source = hit["source"]
+                chunk = hit.get("chunk")
                 title = source.title or source.file_name or source.url or "Untitled"
-                pages_sorted = sorted(obj["pages"])
-                pages_label = ",".join(str(p) for p in pages_sorted[:5])
+                page_num = getattr(chunk, "page_number", 1) if chunk else 1
+                preview = ((getattr(chunk, "text", "") or "").strip().replace("\n", " ")) if chunk else ""
+                if len(preview) > 200:
+                    preview = preview[:200] + "…"
                 entry = (
-                    f"- 📄 **{title}** (nguyên văn) — {similarity_pct} — trang {pages_label}\n"
-                    f"  “{obj['preview']}”\n"
-                    f"  _Đọc bản gốc: `get_source_pages(\"{source.id}\", \"{pages_sorted[0]}\")` · "
+                    f"- 📄 **{title}** (nguyên văn) — {score_label} — trang {page_num}\n"
+                    f"  “{preview}”\n"
+                    f"  _Đọc bản gốc: `get_source_pages(\"{source.id}\", \"{page_num}\")` · "
                     f"Link: {_portal_link(source.id)}_"
                 )
             lines.append(entry)
@@ -507,8 +519,6 @@ def register_tools(mcp: FastMCP):
         Returns:
             Slug, title, summary, type, and KnowledgeType slugs for each page.
         """
-        import uuid as uuid_mod
-
         identity, err = await _get_identity()
         if err:
             return err
@@ -517,7 +527,9 @@ def register_tools(mcp: FastMCP):
         from app.database import async_session_factory
         from app.services import wiki_service
 
-        proj_uuids = [uuid_mod.UUID(p) for p in identity.project_ids] or None
+        # Workspace/project memberships were removed; identity no longer carries
+        # project_ids, so project-scoped filtering is disabled here.
+        proj_uuids = None
 
         async with async_session_factory() as session:
             pages = await wiki_service.list_pages(
@@ -741,7 +753,7 @@ def register_tools(mcp: FastMCP):
             Matched source documents, their matching page numbers, and highlighted context snippets.
         """
         import re
-        from sqlalchemy import select
+        from sqlalchemy import func, literal_column, select
 
         from app.database import async_session_factory
         from app.database.models import Source
@@ -757,10 +769,15 @@ def register_tools(mcp: FastMCP):
             return "Error: query parameter must not be empty."
 
         async with async_session_factory() as session:
+            # Full-text search over full_text using the GIN index (migration 037):
+            # accent-insensitive 'simple' config, ranked by ts_rank. Replaces the
+            # old unindexed ILIKE substring scan.
+            tsv = literal_column("to_tsvector('simple', f_unaccent(sources.full_text))")
+            tsq = func.websearch_to_tsquery("simple", func.f_unaccent(query))
             stmt = select(Source).where(
                 Source.status == "ready",
-                Source.full_text.ilike(f"%{query}%")
-            )
+                tsv.op("@@")(tsq),
+            ).order_by(func.ts_rank(tsv, tsq).desc())
             stmt = apply_scope_filter(stmt, identity).offset(offset).limit(limit)
             sources = (await session.execute(stmt)).scalars().all()
 
@@ -1238,21 +1255,19 @@ def register_tools(mcp: FastMCP):
         is enforced at the SQL level so pagination is correct.
 
         Args:
-            workspace_id: Optional. Filter to a specific workspace UUID.
-                          Omit to see all accessible pending drafts.
+            workspace_id: Deprecated and ignored — workspace/project scopes
+                          have been removed.
             limit: Max drafts to return (default: 50).
             offset: Number of drafts to skip for pagination (default: 0).
         """
-        from sqlalchemy import and_, select
+        from sqlalchemy import select
         from sqlalchemy.orm import selectinload
 
         from app.database import async_session_factory
         from app.database.models import (
             Employee,
-            ProjectMember,
             WikiPage,
             WikiPageDraft,
-            WorkspaceRole,
         )
         from app.services.permission_engine import _get_user_permissions
 
@@ -1283,19 +1298,10 @@ def register_tools(mcp: FastMCP):
                 .limit(limit)
             )
 
+            # Workspace/project scopes were removed; only global reviewers
+            # (wiki:write:all / admin) can review. Everyone else sees nothing.
             if not can_global:
-                editor_levels = [WorkspaceRole.EDITOR.value, WorkspaceRole.ADMIN.value]
-                workspace_pages = select(ProjectMember.project_id).where(
-                    ProjectMember.employee_id == employee.id,
-                    ProjectMember.role.in_(editor_levels),
-                )
-                stmt = stmt.where(and_(
-                    WikiPage.scope_type == "project",
-                    WikiPage.scope_id.in_(workspace_pages),
-                ))
-
-            if workspace_id:
-                stmt = stmt.where(WikiPage.scope_id == workspace_id)
+                return "No pending drafts you have permission to review."
 
             drafts = (await session.execute(stmt)).scalars().all()
 
@@ -1822,16 +1828,10 @@ def register_tools(mcp: FastMCP):
             if employee.role != "admin":
                 from app.services.permission_engine import (
                     _get_user_permissions,
-                    get_workspace_role,
                     has_any_permission,
-                    workspace_role_can,
                 )
                 perms = _get_user_permissions(employee)
-                if scope_type == "project" and sid:
-                    role = await get_workspace_role(session, employee, sid)
-                    if not role or not workspace_role_can(role, "contributor"):
-                        return "Error: requires contributor role or above in this workspace."
-                elif scope_type == "department" and sid:
+                if scope_type == "department" and sid:
                     if "wiki:write:all" not in perms and not (
                         "wiki:write:own_dept" in perms and sid in employee.department_ids
                     ):
@@ -1937,21 +1937,13 @@ def register_tools(mcp: FastMCP):
             if not employee:
                 return "Error: employee not found."
 
-            # Permission: editor+ in workspace, wiki:write:all globally, or admin.
+            # Permission: wiki:write:all globally, or admin. (Workspace/project
+            # scopes were removed, so there is no per-workspace editor path.)
             if employee.role != "admin":
-                from app.services.permission_engine import (
-                    _get_user_permissions,
-                    get_workspace_role,
-                    workspace_role_can,
-                )
-                if scope_type == "project" and sid:
-                    role = await get_workspace_role(session, employee, sid)
-                    if not role or not workspace_role_can(role, "editor"):
-                        return f"Error: requires editor role or above in this workspace."
-                else:
-                    perms = _get_user_permissions(employee)
-                    if "wiki:write:all" not in perms:
-                        return "Error: requires wiki:write:all permission. Use propose_wiki_create() instead."
+                from app.services.permission_engine import _get_user_permissions
+                perms = _get_user_permissions(employee)
+                if "wiki:write:all" not in perms:
+                    return "Error: requires wiki:write:all permission. Use propose_wiki_create() instead."
 
             existing = await wiki_service.get_page_by_slug(
                 session, slug, scope_type=scope_type, scope_id=sid,

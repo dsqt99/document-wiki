@@ -82,11 +82,7 @@ async def run_commit_phase(
     from app.ai.mrp.merger import merge_page_content
     from app.database.models import Source
     from app.services import wiki_service
-    from app.services.embedding_storage import (
-        compute_content_hash,
-        embedding_input_text,
-        upsert_page_embedding,
-    )
+    from app.services.wiki_chunk_service import index_wiki_page_chunks
 
     wiki_scopes = await _resolve_wiki_scopes(session, source)
 
@@ -192,12 +188,10 @@ async def run_commit_phase(
 
                 await session.flush()
 
-                if embedding_provider is not None and embedding_spec is not None and page is not None:
+                if embedding_spec is not None and page is not None:
                     try:
-                        embed_text = embedding_input_text(pr.title, pr.summary, pr.content_md)
-                        vector = await embedding_provider.embed(embed_text)
-                        content_hash = compute_content_hash(pr.title, pr.summary, pr.content_md)
-                        await upsert_page_embedding(session, page.id, embedding_spec, vector, content_hash)
+                        # Section-chunk + embed into wiki_page_chunk_embeddings_<dim>.
+                        await index_wiki_page_chunks(session, page, spec_id=embedding_spec.id)
                     except Exception as embed_exc:
                         logger.warning(f"MRP COMMIT embed failed for '{pr.slug}' scope={scope_type}: {embed_exc}")
 

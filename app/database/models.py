@@ -1117,6 +1117,76 @@ def get_source_chunk_embedding_model_for_dim(dimension: int) -> type:
         ) from e
 
 
+# ---------------------------------------------------------------------------
+# Multi-dimension wiki page CHUNK embeddings (hybrid search)
+# ---------------------------------------------------------------------------
+# Section-aligned slices of a wiki page's content_md, embedded per-chunk instead
+# of one-vector-per-page. Gives finer retrieval granularity (long pages no longer
+# lose their tail to an 8000-char truncation) and, together with the GIN FTS
+# index on `text`, powers hybrid (vector + full-text) search. Mirrors the
+# source_chunk_embeddings_<dim> tables. Supersedes wiki_page_embeddings_<dim>,
+# which is no longer written to but kept for rollback safety.
+
+class _WikiPageChunkEmbeddingBase:
+    """Mixin: shared columns for all wiki_page_chunk_embeddings_<dim> tables."""
+
+    page_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("wiki_pages.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    chunk_index: Mapped[int] = mapped_column(Integer, primary_key=True)
+    model_spec_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    # Heading breadcrumb ("H1 > H2 > H3") of the section this chunk came from —
+    # used for citation context in search results.
+    heading_path: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    embedded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class WikiPageChunkEmbedding768(_WikiPageChunkEmbeddingBase, Base):
+    __tablename__ = "wiki_page_chunk_embeddings_768"
+    embedding = mapped_column(Vector(768), nullable=False)
+
+
+class WikiPageChunkEmbedding1024(_WikiPageChunkEmbeddingBase, Base):
+    __tablename__ = "wiki_page_chunk_embeddings_1024"
+    embedding = mapped_column(Vector(1024), nullable=False)
+
+
+class WikiPageChunkEmbedding1536(_WikiPageChunkEmbeddingBase, Base):
+    __tablename__ = "wiki_page_chunk_embeddings_1536"
+    embedding = mapped_column(Vector(1536), nullable=False)
+
+
+class WikiPageChunkEmbedding3072(_WikiPageChunkEmbeddingBase, Base):
+    # 3072d uses halfvec — pgvector's HNSW index caps `vector` at 2000 dims.
+    __tablename__ = "wiki_page_chunk_embeddings_3072"
+    embedding = mapped_column(HALFVEC(3072), nullable=False)
+
+
+_WIKI_PAGE_CHUNK_EMBEDDING_MODEL_BY_DIM: dict[int, type] = {
+    768: WikiPageChunkEmbedding768,
+    1024: WikiPageChunkEmbedding1024,
+    1536: WikiPageChunkEmbedding1536,
+    3072: WikiPageChunkEmbedding3072,
+}
+
+
+def get_wiki_page_chunk_embedding_model_for_dim(dimension: int) -> type:
+    """Return the WikiPageChunkEmbedding<dim> ORM class for a supported dimension."""
+    try:
+        return _WIKI_PAGE_CHUNK_EMBEDDING_MODEL_BY_DIM[dimension]
+    except KeyError as e:
+        raise ValueError(
+            f"Unsupported embedding dimension: {dimension}. "
+            f"Supported: {sorted(_WIKI_PAGE_CHUNK_EMBEDDING_MODEL_BY_DIM)}"
+        ) from e
+
+
 class EmbeddingJob(Base):
     """Tracks a background re-embed job triggered when admin switches model."""
 
