@@ -173,8 +173,9 @@ async def _rollup_content(session: AsyncSession, target_date: date) -> list[dict
     rows.append({"metric_key": "wiki.revisions.daily", "value_numeric": float(revisions)})
 
     # Pages by page_type (snapshot, dimensioned)
+    type_subq = select(WikiPage.page_type.label("page_type")).subquery()
     type_rows = (await session.execute(
-        select(WikiPage.page_type, func.count(WikiPage.id)).group_by(WikiPage.page_type)
+        select(type_subq.c.page_type, func.count()).group_by(type_subq.c.page_type)
     )).all()
     for page_type, n in type_rows:
         rows.append({
@@ -545,10 +546,11 @@ async def run_daily_rollup(target_date: date) -> dict[str, int]:
             try:
                 rows = await fn(session, target_date)
                 count = await _upsert_metrics(session, target_date=target_date, rows=rows)
+                await session.commit()
                 written[name] = count
             except Exception as exc:  # noqa: BLE001
+                await session.rollback()
                 logger.exception(f"stats: {name} rollup failed for {target_date}: {exc}")
                 written[name] = -1
-        await session.commit()
     logger.info(f"stats: rollup complete for {target_date}: {written}")
     return written

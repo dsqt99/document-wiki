@@ -157,11 +157,27 @@ async def get_overview(
     to_date = today
 
     rows = await _fetch_rows(db, OVERVIEW_KPIS, from_date, to_date)
+    if not rows:
+        await run_daily_rollup(to_date)
+        rows = await _fetch_rows(db, OVERVIEW_KPIS, from_date, to_date)
+
     kpis: dict[str, Optional[float]] = {k: None for k in OVERVIEW_KPIS}
     for row in rows:
         if row.value_numeric is not None:
             # ASC ordering by date — last assignment wins
             kpis[row.metric_key] = row.value_numeric
+
+    # Fallback to live count for total wiki pages if not present
+    if kpis.get("wiki.pages.total") is None or kpis.get("wiki.pages.total") == 0:
+        from app.database.models import WikiPage
+        from app.services import wiki_service
+        total_p = (await db.execute(
+            select(func.count(WikiPage.id)).where(
+                WikiPage.slug.notin_([wiki_service.INDEX_SLUG, wiki_service.LOG_SLUG, wiki_service.HOT_SLUG])
+            )
+        )).scalar()
+        if total_p:
+            kpis["wiki.pages.total"] = float(total_p)
 
     # Top gap topic — most recent gap rollup with items, take #1
     gap_rows = await _fetch_rows(db, ["mcp.gaps.zero_result"], from_date, to_date)
