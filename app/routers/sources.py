@@ -11,6 +11,8 @@ from typing import Optional
 
 from arq.connections import ArqRedis, create_pool
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import HTMLResponse, Response
+from fastapi.security import HTTPAuthorizationCredentials
 from loguru import logger
 from pydantic import BaseModel
 from sqlalchemy import delete as sql_delete
@@ -26,6 +28,7 @@ from app.services.audit_service import log_audit
 from app.services.auth_service import (
     get_current_user,
     require_permission,
+    security,
 )
 from app.services.permission_engine import (
     _get_user_permissions,
@@ -84,6 +87,8 @@ class SourceDetail(SourceResponse):
     full_text: Optional[str] = None
     outline: Optional[list] = None
     download_url: Optional[str] = None
+    preview_url: Optional[str] = None
+    file_url: Optional[str] = None
 
 
 class SourceCreateURL(BaseModel):
@@ -173,7 +178,7 @@ async def list_sources(
     status: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=500),
+    page_size: int = Query(20, ge=1, le=5000),
     db: AsyncSession = Depends(get_db),
     user: Employee = Depends(get_current_user),
 ):
@@ -279,12 +284,17 @@ async def get_source(
     wiki_count = await _wiki_page_count(db, source_id)
     img_count = await _image_count(db, source_id)
     download_url = None
+    preview_url = None
+    file_url = None
     if source.minio_key:
         try:
-            from app.services.storage_service import storage_service
-            download_url = storage_service.get_presigned_url(source.minio_key)
-        except Exception:
-            pass
+            from app.services.auth_service import create_access_token
+            auth_token = create_access_token(str(user.id), user.role, user.name)
+            download_url = f"/api/sources/{source.id}/file?download=1&token={auth_token}"
+            preview_url = f"/api/sources/{source.id}/preview?token={auth_token}"
+            file_url = f"/api/sources/{source.id}/file?token={auth_token}"
+        except Exception as e:
+            logger.warning(f"Failed to generate URLs for source {source.id}: {e}")
 
     base = _to_response(source, wiki_count, img_count)
     return SourceDetail(
@@ -292,7 +302,292 @@ async def get_source(
         full_text=source.full_text,
         outline=source.outline_json,
         download_url=download_url,
+        preview_url=preview_url,
+        file_url=file_url,
     )
+
+
+def _get_source_mime_type(filename: Optional[str]) -> str:
+    if not filename:
+        return "application/octet-stream"
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    mime_map = {
+        "pdf": "application/pdf",
+        "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "doc": "application/msword",
+        "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "xls": "application/vnd.ms-excel",
+        "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "ppt": "application/vnd.ms-powerpoint",
+        "png": "image/png",
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+        "gif": "image/gif",
+        "webp": "image/webp",
+        "svg": "image/svg+xml",
+        "txt": "text/plain; charset=utf-8",
+        "csv": "text/csv; charset=utf-8",
+        "md": "text/markdown; charset=utf-8",
+        "json": "application/json",
+    }
+    return mime_map.get(ext, "application/octet-stream")
+
+
+async def _authenticate_request_user(
+    token: Optional[str],
+    credentials: Optional[HTTPAuthorizationCredentials],
+    db: AsyncSession,
+) -> Employee:
+    jwt_token = None
+    if credentials and credentials.credentials:
+        jwt_token = credentials.credentials
+    elif token:
+        jwt_token = token
+
+    if not jwt_token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    from app.services.auth_service import decode_access_token
+    payload = decode_access_token(jwt_token)
+    if not payload or not payload.get("sub"):
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    try:
+        user_id = uuid.UUID(payload["sub"])
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid token subject")
+
+    user = await db.get(Employee, user_id)
+    if not user or not user.is_active:
+        raise HTTPException(status_code=401, detail="User not found or inactive")
+    return user
+
+
+@router.get("/sources/{source_id}/file")
+async def get_source_file(
+    source_id: uuid.UUID,
+    token: Optional[str] = Query(None),
+    download: bool = Query(False),
+    db: AsyncSession = Depends(get_db),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+):
+    """Serve the raw file of a source directly. Supports inline display or download."""
+    user = await _authenticate_request_user(token, credentials, db)
+    source = await db.get(Source, source_id)
+    if not source:
+        raise HTTPException(status_code=404, detail="Source not found")
+
+    from app.services.permission_engine import can_access_document
+    if not await can_access_document(db, user, source, "read"):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    if not source.minio_key:
+        raise HTTPException(status_code=404, detail="Source file not stored")
+
+    from app.services.storage_service import storage_service
+    try:
+        data = storage_service.download_file(source.minio_key)
+    except Exception as e:
+        logger.error(f"Failed to download file for source {source_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve file from storage")
+
+    mime_type = _get_source_mime_type(source.file_name)
+    fname = source.file_name or "document"
+    import urllib.parse
+    quoted_name = urllib.parse.quote(fname)
+    disposition = "attachment" if download else "inline"
+
+    headers = {
+        "Content-Disposition": f'{disposition}; filename="{quoted_name}"; filename*=UTF-8\'\'{quoted_name}',
+        "Content-Length": str(len(data)),
+        "Cache-Control": "private, max-age=3600",
+    }
+    return Response(content=data, media_type=mime_type, headers=headers)
+
+
+@router.get("/sources/{source_id}/preview")
+async def get_source_preview(
+    source_id: uuid.UUID,
+    token: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+):
+    """Return an interactive HTML preview or directly streamable content for any file format."""
+    import io
+    import urllib.parse
+    user = await _authenticate_request_user(token, credentials, db)
+    source = await db.get(Source, source_id)
+    if not source:
+        raise HTTPException(status_code=404, detail="Source not found")
+
+    from app.services.permission_engine import can_access_document
+    if not await can_access_document(db, user, source, "read"):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    if not source.minio_key:
+        raise HTTPException(status_code=404, detail="Source file not stored")
+
+    from app.services.storage_service import storage_service
+    try:
+        data = storage_service.download_file(source.minio_key)
+    except Exception as e:
+        logger.error(f"Failed to read file for preview {source_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve file from storage")
+
+    fname = (source.file_name or "").lower()
+
+    # 1. PDF or Images: stream directly as inline content
+    if fname.endswith(".pdf") or fname.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg")):
+        mime_type = _get_source_mime_type(source.file_name)
+        quoted_name = urllib.parse.quote(source.file_name or "document")
+        return Response(
+            content=data,
+            media_type=mime_type,
+            headers={
+                "Content-Disposition": f'inline; filename="{quoted_name}"',
+                "Content-Length": str(len(data)),
+                "Cache-Control": "private, max-age=3600",
+            },
+        )
+
+    # 2. Word documents (.docx, .doc): convert to HTML with mammoth
+    if fname.endswith((".docx", ".doc")):
+        html_body = ""
+        try:
+            import mammoth
+            result = mammoth.convert_to_html(io.BytesIO(data))
+            html_body = result.value
+        except Exception as e:
+            logger.warning(f"mammoth conversion failed for {source.file_name}: {e}")
+            html_body = f"<p><em>Không thể trích xuất định dạng HTML: {e}</em></p><pre>{source.full_text or ''}</pre>"
+
+        styled_html = f"""<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{source.title or source.file_name}</title>
+  <style>
+    body {{
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      line-height: 1.7;
+      color: #1e293b;
+      background: #f8fafc;
+      padding: 32px 16px;
+      margin: 0;
+    }}
+    .document-container {{
+      max-width: 880px;
+      margin: 0 auto;
+      background: #ffffff;
+      padding: 48px 56px;
+      border-radius: 12px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06);
+    }}
+    h1, h2, h3, h4, h5, h6 {{ color: #0f172a; margin-top: 1.6em; margin-bottom: 0.6em; font-weight: 700; }}
+    h1 {{ font-size: 1.75rem; border-bottom: 2px solid #e2e8f0; padding-bottom: 0.3em; }}
+    h2 {{ font-size: 1.4rem; }}
+    h3 {{ font-size: 1.2rem; }}
+    p {{ margin: 0.8em 0; }}
+    table {{
+      border-collapse: collapse;
+      width: 100%;
+      margin: 1.5em 0;
+      font-size: 0.95rem;
+    }}
+    th, td {{
+      border: 1px solid #cbd5e1;
+      padding: 10px 14px;
+      text-align: left;
+      vertical-align: top;
+    }}
+    th {{ background-color: #f1f5f9; font-weight: 600; color: #334155; }}
+    tr:nth-child(even) td {{ background-color: #fafafa; }}
+    ul, ol {{ padding-left: 28px; margin: 1em 0; }}
+    li {{ margin: 0.4em 0; }}
+    blockquote {{
+      border-left: 4px solid #3b82f6;
+      color: #475569;
+      margin: 1.2em 0;
+      background: #f0f9ff;
+      padding: 12px 16px;
+      border-radius: 0 8px 8px 0;
+    }}
+    a {{ color: #2563eb; text-decoration: underline; }}
+    @media print {{
+      body {{ background: #fff; padding: 0; }}
+      .document-container {{ box-shadow: none; padding: 0; }}
+    }}
+  </style>
+</head>
+<body>
+  <div class="document-container">
+    {html_body}
+  </div>
+</body>
+</html>"""
+        return HTMLResponse(content=styled_html)
+
+    # 3. Excel Spreadsheets (.xlsx, .xls, .csv)
+    if fname.endswith((".xlsx", ".xls", ".csv")):
+        tables_parts = []
+        try:
+            import pandas as pd
+            if fname.endswith(".csv"):
+                df = pd.read_csv(io.BytesIO(data))
+                tables_parts.append("<h3>Dữ liệu CSV</h3>" + df.to_html(classes="table", index=False))
+            else:
+                xl = pd.ExcelFile(io.BytesIO(data))
+                for sheet_name in xl.sheet_names[:10]:
+                    df = xl.parse(sheet_name)
+                    tables_parts.append(f"<h3>Sheet: {sheet_name} ({len(df)} dòng)</h3>" + df.to_html(classes="table", index=False))
+        except Exception as e:
+            tables_parts.append(f"<p>Lỗi đọc bảng tính: {e}</p>")
+
+        tables_html = "".join(tables_parts)
+        styled_html = f"""<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <title>{source.title or source.file_name}</title>
+  <style>
+    body {{ font-family: -apple-system, sans-serif; padding: 24px; background: #f8fafc; color: #1e293b; }}
+    .container {{ max-width: 98%; margin: 0 auto; background: #fff; padding: 24px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); overflow-x: auto; }}
+    h3 {{ margin-top: 24px; color: #0f172a; }}
+    table {{ border-collapse: collapse; width: 100%; margin: 12px 0 24px 0; font-size: 13px; }}
+    th, td {{ border: 1px solid #cbd5e1; padding: 6px 10px; text-align: left; }}
+    th {{ background: #f1f5f9; position: sticky; top: 0; }}
+    tr:nth-child(even) td {{ background: #f8fafc; }}
+  </style>
+</head>
+<body>
+  <div class="container">{tables_html}</div>
+</body>
+</html>"""
+        return HTMLResponse(content=styled_html)
+
+    # 4. Text / Markdown / Code:
+    if fname.endswith((".txt", ".md", ".json", ".xml", ".yaml", ".yml", ".py", ".sql")):
+        text_content = data.decode("utf-8", errors="replace")
+        import html
+        escaped_text = html.escape(text_content)
+        styled_html = f"""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body {{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; padding: 24px; background: #0f172a; color: #e2e8f0; font-size: 14px; line-height: 1.6; margin: 0; }}
+    pre {{ margin: 0; white-space: pre-wrap; word-break: break-all; }}
+  </style>
+</head>
+<body>
+  <pre>{escaped_text}</pre>
+</body>
+</html>"""
+        return HTMLResponse(content=styled_html)
+
+    # 5. Default fallback: serve raw file
+    return Response(content=data, media_type=_get_source_mime_type(source.file_name))
 
 
 @router.get("/sources/{source_id}/progress")

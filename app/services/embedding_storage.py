@@ -40,8 +40,14 @@ async def upsert_page_embedding(
     spec: EmbeddingModelSpec,
     vector: list[float],
     content_hash: str,
+    *,
+    title: Optional[str] = None,
+    summary: Optional[str] = None,
+    content_md: Optional[str] = None,
 ) -> None:
     """Upsert one (page, model_spec_id) row into wiki_page_embeddings_<dim>."""
+    from app.services.milvus_service import upsert_page_vector_to_milvus
+
     Model = get_embedding_model_for_dim(spec.dimension)
     stmt = pg_insert(Model).values(
         page_id=page_id,
@@ -58,6 +64,18 @@ async def upsert_page_embedding(
         },
     )
     await session.execute(stmt)
+
+    # Sync to Milvus with content and title
+    upsert_page_vector_to_milvus(
+        page_id,
+        spec.id,
+        spec.dimension,
+        vector,
+        content_hash,
+        title=title,
+        summary=summary,
+        content=content_md,
+    )
 
 
 async def get_existing_hash(
@@ -164,6 +182,8 @@ async def upsert_chunk_embedding(
 ) -> None:
     """Upsert one (source, chunk_index, model_spec_id) row into
     source_chunk_embeddings_<dim>."""
+    from app.services.milvus_service import upsert_source_chunk_vector_to_milvus
+
     Model = get_source_chunk_embedding_model_for_dim(spec.dimension)
     stmt = pg_insert(Model).values(
         source_id=source_id,
@@ -190,6 +210,20 @@ async def upsert_chunk_embedding(
     )
     await session.execute(stmt)
 
+    # Sync to Milvus
+    upsert_source_chunk_vector_to_milvus(
+        source_id,
+        chunk_index,
+        spec.id,
+        spec.dimension,
+        vector,
+        text=text,
+        start_char=start_char,
+        end_char=end_char,
+        page_number=page_number,
+        content_hash=content_hash,
+    )
+
 
 async def delete_source_chunk_embeddings(
     session: AsyncSession, source_id: uuid.UUID
@@ -205,6 +239,8 @@ async def delete_source_chunk_embeddings(
         SourceChunkEmbedding1536,
         SourceChunkEmbedding3072,
     )
+    from app.services.milvus_service import delete_source_chunk_vectors_from_milvus
+
     total = 0
     for Model in (
         SourceChunkEmbedding768,
@@ -216,6 +252,10 @@ async def delete_source_chunk_embeddings(
             delete(Model).where(Model.source_id == source_id)
         )
         total += result.rowcount or 0  # type: ignore[union-attr]
+
+    for dim in (768, 1024, 1536, 3072):
+        delete_source_chunk_vectors_from_milvus(source_id, dim)
+
     return total
 
 
@@ -236,6 +276,8 @@ async def upsert_wiki_chunk_embedding(
 ) -> None:
     """Upsert one (page, chunk_index, model_spec_id) row into
     wiki_page_chunk_embeddings_<dim>."""
+    from app.services.milvus_service import upsert_wiki_chunk_vector_to_milvus
+
     Model = get_wiki_page_chunk_embedding_model_for_dim(spec.dimension)
     stmt = pg_insert(Model).values(
         page_id=page_id,
@@ -258,6 +300,18 @@ async def upsert_wiki_chunk_embedding(
     )
     await session.execute(stmt)
 
+    # Sync to Milvus
+    upsert_wiki_chunk_vector_to_milvus(
+        page_id,
+        chunk_index,
+        spec.id,
+        spec.dimension,
+        vector,
+        text=text,
+        heading_path=heading_path,
+        content_hash=content_hash,
+    )
+
 
 async def delete_wiki_page_chunk_embeddings(
     session: AsyncSession, page_id: uuid.UUID, spec_id: Optional[str] = None
@@ -273,6 +327,8 @@ async def delete_wiki_page_chunk_embeddings(
         WikiPageChunkEmbedding1536,
         WikiPageChunkEmbedding3072,
     )
+    from app.services.milvus_service import delete_wiki_chunk_vectors_from_milvus
+
     total = 0
     for Model in (
         WikiPageChunkEmbedding768,
@@ -285,6 +341,10 @@ async def delete_wiki_page_chunk_embeddings(
             stmt = stmt.where(Model.model_spec_id == spec_id)
         result = await session.execute(stmt)
         total += result.rowcount or 0  # type: ignore[union-attr]
+
+    for dim in (768, 1024, 1536, 3072):
+        delete_wiki_chunk_vectors_from_milvus(page_id, dim, spec_id=spec_id)
+
     return total
 
 

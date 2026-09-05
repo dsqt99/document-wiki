@@ -56,24 +56,35 @@ VISION_CATALOG: dict[str, VisionModelSpec] = {
         cost_per_image=None,
     ),
     # --- OpenAI ---
-    "openai/gpt-4o": VisionModelSpec(
-        id="openai/gpt-4o",
+    "openai/gpt-5.6-sol": VisionModelSpec(
+        id="openai/gpt-5.6-sol",
         provider="openai",
-        model_id="gpt-4o",
+        model_id="gpt-5.6-sol",
         max_image_size_mb=20,
-        label="GPT-4o",
-        cost_per_1m_input_tokens=2.50,
+        label="GPT-5.6 Sol",
+        cost_per_1m_input_tokens=4.00,
         cost_per_image=None,
-        notes="Highest-quality vision. Use for tricky diagrams.",
+        notes="Frontier model with vision for complex visual reasoning and diagram analysis.",
     ),
-    "openai/gpt-4o-mini": VisionModelSpec(
-        id="openai/gpt-4o-mini",
+    "openai/gpt-5.6-terra": VisionModelSpec(
+        id="openai/gpt-5.6-terra",
         provider="openai",
-        model_id="gpt-4o-mini",
+        model_id="gpt-5.6-terra",
         max_image_size_mb=20,
-        label="GPT-4o Mini",
-        cost_per_1m_input_tokens=0.15,
+        label="GPT-5.6 Terra",
+        cost_per_1m_input_tokens=2.00,
         cost_per_image=None,
+        notes="Balances intelligence and cost for image analysis.",
+    ),
+    "openai/gpt-5.6-luna": VisionModelSpec(
+        id="openai/gpt-5.6-luna",
+        provider="openai",
+        model_id="gpt-5.6-luna",
+        max_image_size_mb=20,
+        label="GPT-5.6 Luna",
+        cost_per_1m_input_tokens=0.20,
+        cost_per_image=None,
+        notes="Fastest and most cost-efficient GPT-5.6 for image captioning.",
     ),
 }
 

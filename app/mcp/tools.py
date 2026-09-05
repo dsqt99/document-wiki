@@ -768,11 +768,22 @@ def register_tools(mcp: FastMCP):
         if not query:
             return "Error: query parameter must not be empty."
 
+        STOPWORDS = {
+            "của", "có", "chưa", "ở", "tại", "là", "gì", "nào", "bao", "nhiêu", "ai", "không",
+            "về", "cho", "với", "trong", "tìm", "kiểm", "tra", "xem", "hãy", "thì", "được", "ra",
+            "sao", "và", "các", "những", "một", "the", "a", "an", "is", "are", "what", "where",
+            "who", "when", "why", "how", "does", "do", "did", "exist", "already", "for", "in",
+            "on", "of", "to", "and", "or"
+        }
+
+        # Extract tokens
+        raw_words = re.findall(r"[\w\-]+", query)
+        clean_terms = [w for w in raw_words if w.lower() not in STOPWORDS and len(w) > 1]
+
         async with async_session_factory() as session:
-            # Full-text search over full_text using the GIN index (migration 037):
-            # accent-insensitive 'simple' config, ranked by ts_rank. Replaces the
-            # old unindexed ILIKE substring scan.
             tsv = literal_column("to_tsvector('simple', f_unaccent(sources.full_text))")
+
+            # 1. Try strict websearch_to_tsquery first
             tsq = func.websearch_to_tsquery("simple", func.f_unaccent(query))
             stmt = select(Source).where(
                 Source.status == "ready",
@@ -781,13 +792,41 @@ def register_tools(mcp: FastMCP):
             stmt = apply_scope_filter(stmt, identity).offset(offset).limit(limit)
             sources = (await session.execute(stmt)).scalars().all()
 
+            # 2. Fallback: try keyword OR/AND tsquery if natural language query failed
+            if not sources and clean_terms:
+                kw_query_str = " | ".join(clean_terms)
+                try:
+                    tsq_kw = func.to_tsquery("simple", func.f_unaccent(kw_query_str))
+                    stmt2 = select(Source).where(
+                        Source.status == "ready",
+                        tsv.op("@@")(tsq_kw),
+                    ).order_by(func.ts_rank(tsv, tsq_kw).desc())
+                    stmt2 = apply_scope_filter(stmt2, identity).offset(offset).limit(limit)
+                    sources = (await session.execute(stmt2)).scalars().all()
+                except Exception:
+                    pass
+
+            # 3. Fallback: ILIKE substring scan for primary keywords
+            if not sources and clean_terms:
+                primary_terms = [t for t in clean_terms if len(t) > 2]
+                if primary_terms:
+                    ilike_clauses = [
+                        func.f_unaccent(Source.full_text).ilike(f"%{t.lower()}%")
+                        for t in primary_terms[:3]
+                    ]
+                    from sqlalchemy import or_
+                    stmt3 = select(Source).where(
+                        Source.status == "ready",
+                        or_(*ilike_clauses),
+                    )
+                    stmt3 = apply_scope_filter(stmt3, identity).offset(offset).limit(limit)
+                    sources = (await session.execute(stmt3)).scalars().all()
+
         if not sources:
             return f"No document content matches found for: \"{query}\""
 
-        try:
-            pattern = re.compile(re.escape(query), re.IGNORECASE)
-        except Exception:
-            pattern = None
+        # Build search tokens for highlighting
+        search_tokens = [t for t in clean_terms if len(t) > 1] or [query]
 
         lines = [f"**Content search results for: \"{query}\"**\n"]
         for s in sources:
@@ -795,41 +834,39 @@ def register_tools(mcp: FastMCP):
             offsets = s.page_offsets or []
             title = s.title or s.file_name or s.url or "Untitled Source"
 
-            matches_in_doc = []
-            if pattern:
-                for match in pattern.finditer(text):
-                    start_char = match.start()
+            # Score and extract best snippets
+            scored_snippets = []
+            text_lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+            for ln in text_lines:
+                hits = [t for t in search_tokens if t.lower() in ln.lower()]
+                if hits:
+                    score = sum(len(h) for h in hits)
+                    # Find char offset to determine page
+                    start_char = text.find(ln)
                     page_num = 1
-                    if offsets:
+                    if offsets and start_char >= 0:
                         for idx, off in enumerate(offsets):
                             if start_char < off:
                                 page_num = idx
                                 break
                             page_num = len(offsets)
 
-                    start_window = max(0, start_char - 80)
-                    end_window = min(len(text), match.end() + 80)
-                    snippet = text[start_window:end_window].strip().replace("\n", " ")
-                    if start_window > 0:
-                        snippet = "..." + snippet
-                    if end_window < len(text):
-                        snippet = snippet + "..."
+                    # Highlight all matched tokens
+                    hl_line = ln
+                    for h in sorted(hits, key=len, reverse=True):
+                        hl_line = re.sub(
+                            re.escape(h),
+                            lambda m: f"**{m.group(0)}**",
+                            hl_line,
+                            flags=re.IGNORECASE,
+                        )
+                    scored_snippets.append((score, page_num, hl_line))
 
-                    # Highlight the query using bold Markdown
-                    highlighted_snippet = re.sub(
-                        re.escape(query),
-                        lambda m: f"**{m.group(0)}**",
-                        snippet,
-                        flags=re.IGNORECASE
-                    )
-
-                    matches_in_doc.append((page_num, highlighted_snippet))
-                    if len(matches_in_doc) >= 3:
-                        break
+            scored_snippets.sort(key=lambda x: x[0], reverse=True)
 
             lines.append(f"### {title} (ID: `{s.id}`)")
-            if matches_in_doc:
-                for p_num, snip in matches_in_doc:
+            if scored_snippets:
+                for score, p_num, snip in scored_snippets[:5]:
                     lines.append(f"- **Page {p_num}**: {snip}")
             else:
                 lines.append("- Keyword matches found in full text.")

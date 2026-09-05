@@ -84,13 +84,25 @@ async def lifespan(app: FastAPI):
         # Warn if sensitive defaults are unchanged
         if settings.secret_key == "change-me-to-a-random-secret-string":
             logger.warning("⚠️  SECRET_KEY is set to the default value — change it before deploying to production!")
-        if settings.default_admin_password == "admin123":
-            logger.warning("⚠️  DEFAULT_ADMIN_PASSWORD is 'admin123' — change the admin password after first login!")
-
         # MCP server ready
         logger.success("Arkon MCP Server ready at /mcp")
+
+        # Initialize Langfuse & sync model pricing definitions
+        try:
+            from app.ai.tracing import get_langfuse, sync_all_models_to_langfuse
+            get_langfuse()
+            sync_all_models_to_langfuse()
+        except Exception as e:
+            logger.warning(f"Could not sync models to Langfuse: {e}")
+
         logger.success("Arkon API started successfully")
         yield
+
+        try:
+            from app.ai.tracing import shutdown_langfuse
+            shutdown_langfuse()
+        except Exception as e:
+            logger.debug(f"Langfuse shutdown error: {e}")
 
         logger.info("Arkon API shutdown complete")
 

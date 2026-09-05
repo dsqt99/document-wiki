@@ -39,6 +39,9 @@ class AnthropicLLM(LLMProvider):
         max_tokens: Optional[int] = None,
         temperature: float = 0.7,
     ) -> str:
+        from datetime import datetime, timezone
+        from app.ai.tracing import record_generation
+
         kwargs = {
             "model": self.config.model_id,
             "max_tokens": max_tokens or 16384,
@@ -48,8 +51,41 @@ class AnthropicLLM(LLMProvider):
         if system:
             kwargs["system"] = system
 
-        response = await self.client.messages.create(**kwargs)
-        return response.content[0].text if response.content else ""
+        start_time = datetime.now(timezone.utc)
+        try:
+            response = await self.client.messages.create(**kwargs)
+            out_text = response.content[0].text if response.content else ""
+            usage_dict = None
+            if hasattr(response, "usage") and response.usage:
+                usage_dict = {
+                    "input": getattr(response.usage, "input_tokens", 0),
+                    "output": getattr(response.usage, "output_tokens", 0),
+                    "total": getattr(response.usage, "input_tokens", 0) + getattr(response.usage, "output_tokens", 0),
+                }
+            record_generation(
+                name="anthropic.generate",
+                model=self.config.model_id,
+                input_data={"prompt": prompt, "system": system},
+                output_data=out_text,
+                start_time=start_time,
+                end_time=datetime.now(timezone.utc),
+                usage=usage_dict,
+                model_parameters={"temperature": temperature, "max_tokens": max_tokens},
+            )
+            return out_text
+        except Exception as e:
+            record_generation(
+                name="anthropic.generate",
+                model=self.config.model_id,
+                input_data={"prompt": prompt, "system": system},
+                output_data=None,
+                start_time=start_time,
+                end_time=datetime.now(timezone.utc),
+                level="ERROR",
+                status_message=str(e),
+                model_parameters={"temperature": temperature, "max_tokens": max_tokens},
+            )
+            raise
 
     async def generate_with_tools(
         self,
@@ -59,6 +95,9 @@ class AnthropicLLM(LLMProvider):
         max_tokens: Optional[int] = None,
         temperature: float = 0.2,
     ) -> AssistantTurn:
+        from datetime import datetime, timezone
+        from app.ai.tracing import record_generation
+
         anthropic_messages = neutral_to_anthropic_messages(messages)
         anthropic_tools = openai_tools_to_anthropic(tools)
 
@@ -72,25 +111,60 @@ class AnthropicLLM(LLMProvider):
         if system:
             kwargs["system"] = system
 
-        response = await self.client.messages.create(**kwargs)
+        start_time = datetime.now(timezone.utc)
+        try:
+            response = await self.client.messages.create(**kwargs)
 
-        text_parts: list[str] = []
-        tool_calls: list[ToolCall] = []
-        for block in response.content:
-            if block.type == "text":
-                text_parts.append(block.text)
-            elif block.type == "tool_use":
-                args = block.input if isinstance(block.input, dict) else {}
-                tool_calls.append(ToolCall(id=block.id, name=block.name, arguments=args))
+            text_parts: list[str] = []
+            tool_calls: list[ToolCall] = []
+            for block in response.content:
+                if block.type == "text":
+                    text_parts.append(block.text)
+                elif block.type == "tool_use":
+                    args = block.input if isinstance(block.input, dict) else {}
+                    tool_calls.append(ToolCall(id=block.id, name=block.name, arguments=args))
 
-        reason_map = {"end_turn": "end_turn", "tool_use": "tool_use", "max_tokens": "max_tokens"}
-        finish_reason = reason_map.get(response.stop_reason or "end_turn", "end_turn")
+            reason_map = {"end_turn": "end_turn", "tool_use": "tool_use", "max_tokens": "max_tokens"}
+            finish_reason = reason_map.get(response.stop_reason or "end_turn", "end_turn")
+            out_text = "\n".join(text_parts) or None
 
-        return AssistantTurn(
-            text="\n".join(text_parts) or None,
-            tool_calls=tool_calls,
-            finish_reason=finish_reason,
-        )
+            usage_dict = None
+            if hasattr(response, "usage") and response.usage:
+                usage_dict = {
+                    "input": getattr(response.usage, "input_tokens", 0),
+                    "output": getattr(response.usage, "output_tokens", 0),
+                    "total": getattr(response.usage, "input_tokens", 0) + getattr(response.usage, "output_tokens", 0),
+                }
+
+            record_generation(
+                name="anthropic.generate_with_tools",
+                model=self.config.model_id,
+                input_data={"messages": messages, "tools": tools},
+                output_data={"text": out_text, "tool_calls": [tc.__dict__ for tc in tool_calls]},
+                start_time=start_time,
+                end_time=datetime.now(timezone.utc),
+                usage=usage_dict,
+                model_parameters={"temperature": temperature, "max_tokens": max_tokens},
+            )
+
+            return AssistantTurn(
+                text=out_text,
+                tool_calls=tool_calls,
+                finish_reason=finish_reason,
+            )
+        except Exception as e:
+            record_generation(
+                name="anthropic.generate_with_tools",
+                model=self.config.model_id,
+                input_data={"messages": messages, "tools": tools},
+                output_data=None,
+                start_time=start_time,
+                end_time=datetime.now(timezone.utc),
+                level="ERROR",
+                status_message=str(e),
+                model_parameters={"temperature": temperature, "max_tokens": max_tokens},
+            )
+            raise
 
     async def test_connection(self) -> tuple[bool, str]:
         try:

@@ -72,6 +72,66 @@ services:
       timeout: 5s
       retries: 10
 
+  etcd:
+    container_name: arkon_etcd
+    image: quay.io/coreos/etcd:v3.5.14
+    restart: always
+    environment:
+      - ETCD_AUTO_COMPACTION_MODE=revision
+      - ETCD_AUTO_COMPACTION_RETENTION=1000
+      - ETCD_QUOTA_BACKEND_BYTES=4294967296
+      - ETCD_SNAPSHOT_COUNT=50000
+    volumes:
+      - milvus_etcd_data:/etcd
+    command: etcd -advertise-client-urls=http://127.0.0.1:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir=/etcd
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  milvus:
+    container_name: arkon_milvus
+    image: milvusdb/milvus:v2.4.15
+    restart: always
+    command: ["milvus", "run", "standalone"]
+    security_opt:
+      - seccomp:unconfined
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+      MINIO_ACCESS_KEY_ID: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_ACCESS_KEY: ${MINIO_SECRET_KEY:-minioadmin123}
+      MINIO_USE_SSL: "false"
+    volumes:
+      - milvus_data:/var/lib/milvus
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+    depends_on:
+      etcd:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  milvus_ui:
+    container_name: arkon_milvus_ui
+    image: zilliz/attu:latest
+    restart: always
+    environment:
+      MILVUS_URL: milvus:19530
+    ports:
+      - "9004:3000"
+    depends_on:
+      milvus:
+        condition: service_healthy
+
   # ── Application ───────────────────────────────────────────────
 
   migrator:
@@ -142,3 +202,5 @@ volumes:
   postgres_data:
   redis_data:
   minio_data:
+  milvus_etcd_data:
+  milvus_data:

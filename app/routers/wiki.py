@@ -193,7 +193,7 @@ async def list_wiki_pages(
     knowledge_type_slug: Optional[str] = Query(None),
     scope_type: Optional[str] = Query(None, description="Filter to a specific scope: global, department, or project"),
     scope_id: Optional[str] = Query(None, description="UUID of the scope (required for department/project)"),
-    limit: int = Query(50, ge=1, le=500),
+    limit: Optional[int] = Query(None, ge=1, le=50000),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     user: Employee = require_permission("wiki:read"),
@@ -208,7 +208,13 @@ async def list_wiki_pages(
     """
     from sqlalchemy import case
 
-    sid = uuid.UUID(scope_id) if scope_id else None
+    scope_id_str = scope_id if isinstance(scope_id, str) else None
+    sid = uuid.UUID(scope_id_str) if scope_id_str else None
+    scope_type_str = scope_type if isinstance(scope_type, str) else None
+    page_type_str = page_type if isinstance(page_type, str) else None
+    kt_str = knowledge_type_slug if isinstance(knowledge_type_slug, str) else None
+    limit_val = limit if isinstance(limit, int) else None
+    offset_val = offset if isinstance(offset, int) else 0
 
     stmt = (
         select(
@@ -222,8 +228,6 @@ async def list_wiki_pages(
         .outerjoin(Department, and_(WikiPage.scope_id == Department.id, WikiPage.scope_type == "department"))
         .where(WikiPage.slug.notin_([wiki_service.INDEX_SLUG, wiki_service.LOG_SLUG, wiki_service.HOT_SLUG]))
         .order_by(WikiPage.updated_at.desc())
-        .limit(limit)
-        .offset(offset)
     )
 
     # Apply user's permission-based scope filter (RBAC)
@@ -232,17 +236,22 @@ async def list_wiki_pages(
         stmt = stmt.where(perm_filter)
 
     # Apply explicit scope filter from query params — narrows to one scope
-    if scope_type:
-        stmt = stmt.where(WikiPage.scope_type == scope_type)
-        if scope_type == "global":
+    if scope_type_str:
+        stmt = stmt.where(WikiPage.scope_type == scope_type_str)
+        if scope_type_str == "global":
             stmt = stmt.where(WikiPage.scope_id.is_(None))
         elif sid is not None:
             stmt = stmt.where(WikiPage.scope_id == sid)
 
-    if page_type:
-        stmt = stmt.where(WikiPage.page_type == page_type)
-    if knowledge_type_slug:
-        stmt = stmt.where(WikiPage.knowledge_type_slugs.any(knowledge_type_slug))  # type: ignore[arg-type]
+    if page_type_str:
+        stmt = stmt.where(WikiPage.page_type == page_type_str)
+    if kt_str:
+        stmt = stmt.where(WikiPage.knowledge_type_slugs.any(kt_str))  # type: ignore[arg-type]
+
+    if limit_val is not None:
+        stmt = stmt.limit(limit_val)
+    if offset_val:
+        stmt = stmt.offset(offset_val)
 
     rows = (await db.execute(stmt)).all()
     return [_summary(r.WikiPage, scope_name=r.scope_name) for r in rows]

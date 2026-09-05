@@ -42,7 +42,7 @@ def slugify(text: str) -> str:
         return ""
     
     # Convert to lowercase
-    text = text.lower()
+    text = text.lower().replace('đ', 'd').replace('Đ', 'd')
     
     # Remove Vietnamese diacritics
     text = unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode('ascii')

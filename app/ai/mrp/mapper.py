@@ -30,7 +30,7 @@ from app.utils.progress import ProgressTracker
 CHUNK_TARGET_CHARS = 20_000
 OVERLAP_CHARS = 1_000
 MAX_MAP_CONCURRENCY = 6
-EXTRACT_TIMEOUT = 120  # seconds per extraction call
+EXTRACT_TIMEOUT = 300  # seconds per extraction call
 OVERLAP_SEPARATOR = "[…context from previous section…]\n"
 
 
@@ -415,10 +415,11 @@ async def run_map_phase(
                     row.error_message = None
                     await session.commit()
             except Exception as e:
-                logger.warning(f"MRP MAP chunk {chunk.index} failed: {e}")
+                err_msg = str(e) or type(e).__name__
+                logger.warning(f"MRP MAP chunk {chunk.index} failed: {err_msg}")
                 async with commit_lock:
                     row.status = "error"
-                    row.error_message = str(e)[:500]
+                    row.error_message = err_msg[:500]
                     await session.commit()
             pct = 10 + int(40 * (done_count + chunk.index + 1) / max(len(chunks), 1))
             await tracker.update(pct, f"Extracting chunk {chunk.index + 1}/{len(chunks)}...")
@@ -438,7 +439,10 @@ async def run_map_phase(
                 row.error_message = None
                 await session.commit()
             except Exception as e:
-                logger.warning(f"MRP MAP chunk {chunk.index} retry failed: {e}")
+                err_msg = str(e) or type(e).__name__
+                logger.warning(f"MRP MAP chunk {chunk.index} retry failed: {err_msg}")
+                row.error_message = err_msg[:500]
+                await session.commit()
 
     # Return all done rows
     done_rows = [existing_by_idx[c.index] for c in chunks if existing_by_idx[c.index].status == "done"]

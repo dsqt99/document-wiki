@@ -86,7 +86,7 @@ export default function WikiIndexPage() {
       : `scope_type=${selectedScope.scope_type}`;
     Promise.all([
       api<{ content_md: string }>(`/api/wiki/index?${qs}`),
-      api<WikiPageSummary[]>(`/api/wiki/pages?${qs}&limit=200`),
+      api<WikiPageSummary[]>(`/api/wiki/pages?${qs}`),
     ])
       .then(([idx, pages]) => {
         setIndexMd(idx.content_md || null);

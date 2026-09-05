@@ -86,7 +86,26 @@ Or add it to `claude_desktop_config.json` manually:
 }
 ```
 
-> **Note:** Claude Desktop's UI does not support custom headers directly — this only works by editing the config file manually.
+### Connecting Cursor / Windsurf / LibreChat
+
+#### Cursor (`~/.cursor/mcp.json` or Project `.cursor/mcp.json`)
+```json
+{
+  "mcpServers": {
+    "arkon": {
+      "url": "http://localhost:5055/mcp",
+      "headers": {
+        "Authorization": "Bearer ark_xxxxxxxxxxxxxxxxxxxx"
+      }
+    }
+  }
+}
+```
+
+#### Generic SSE / HTTP Client (e.g. LibreChat, LangChain, Custom Agent)
+- **Endpoint**: `http://localhost:5055/mcp` (or `https://your-domain/mcp`)
+- **Protocol**: Model Context Protocol (Streamable HTTP / SSE)
+- **Header**: `Authorization: Bearer <mcp-token>`
 
 ---
 
@@ -209,11 +228,11 @@ Read raw text from specific pages of a source document. Useful for exact citatio
 get_source_pages(source_id: str, pages: str) → raw text (e.g. pages="5-7")
 ```
 
-#### `find_contacts`
-Search the internal people directory.
+#### `search_source_content`
+Search inside the full text of raw source documents (`.xlsx`, `.pdf`, `.docx`, `.txt`, URLs). Supports natural language questions, exact keywords, and multi-term queries with snippet extraction and highlighting.
 
 ```
-find_contacts(query: str) → matching contacts with name, role, contact info
+search_source_content(query: str, limit: int = 10, offset: int = 0) → matched sources, page numbers, highlighted snippets
 ```
 
 #### `list_knowledge_types`
@@ -447,18 +466,6 @@ For the exact wording from the original document, I can check:
 [calls get_source_outline(source_id="...")]
 [calls get_source_pages(source_id="...", pages="12-14")]
 ```
-
----
-
-## Token management
-
-| Action | Where |
-|---|---|
-| View token status | Admin Portal → Employees → [employee] → Tokens |
-| Revoke token | Admin Portal → Employees → [employee] → Revoke Token |
-| Generate token manually | Admin Portal → Employees → [employee] → Generate Token |
-
-Self-service: employees can also manage their own token at **Profile → MCP Token**.
 
 ---
 

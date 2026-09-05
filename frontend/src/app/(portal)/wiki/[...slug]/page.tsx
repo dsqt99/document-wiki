@@ -722,45 +722,71 @@ export default function WikiPageViewer() {
                       </div>
                     </div>
 
-                    {sourceData.download_url && (
-                      <Button
-                        onClick={() => window.open(sourceData.download_url, "_blank")}
-                        className="gap-2 shrink-0 shadow-sm hover:scale-[1.02] active:scale-[0.98] transition-all"
-                      >
-                        <span className="material-symbols-outlined text-sm">cloud_download</span>
-                        Tải tài liệu gốc
-                      </Button>
-                    )}
+                    <div className="flex items-center gap-2 shrink-0">
+                      {(sourceData.preview_url || sourceData.file_url || sourceData.download_url) && (
+                        <Button
+                          variant="outline"
+                          onClick={() => window.open(sourceData.preview_url || sourceData.file_url || sourceData.download_url, "_blank")}
+                          className="gap-2 shadow-sm hover:scale-[1.02] active:scale-[0.98] transition-all text-xs"
+                        >
+                          <span className="material-symbols-outlined text-sm">open_in_new</span>
+                          Mở tab mới
+                        </Button>
+                      )}
+                      {sourceData.download_url && (
+                        <Button
+                          onClick={() => window.open(sourceData.download_url, "_blank")}
+                          className="gap-2 shadow-sm hover:scale-[1.02] active:scale-[0.98] transition-all text-xs"
+                        >
+                          <span className="material-symbols-outlined text-sm">cloud_download</span>
+                          Tải tài liệu gốc
+                        </Button>
+                      )}
+                    </div>
                   </div>
 
                   {/* Document Viewer Frame */}
                   <div className="border border-border rounded-2xl overflow-hidden shadow-sahara bg-card/30">
-                    {sourceData.source_type === "file" && sourceData.download_url ? (
+                    {sourceData.source_type === "file" && (sourceData.preview_url || sourceData.file_url || sourceData.download_url) ? (
                       sourceData.file_name?.toLowerCase().endsWith(".pdf") ? (
-                        <iframe
-                          src={`${sourceData.download_url}#toolbar=1`}
-                          className="w-full h-[700px] bg-background border-none"
-                          title={sourceData.title || sourceData.file_name}
-                        />
-                      ) : sourceData.file_name?.toLowerCase().match(/\.(jpg|jpeg|png|gif|webp)$/) ? (
-                        <div className="flex items-center justify-center p-8 bg-black/[0.02] min-h-[400px]">
-                          <img
-                            src={sourceData.download_url}
-                            alt={sourceData.title || sourceData.file_name}
-                            className="max-w-full max-h-[600px] object-contain rounded-lg border shadow-md"
+                        <div className="w-full h-[780px] bg-background relative flex flex-col">
+                          <iframe
+                            src={`${sourceData.preview_url || sourceData.file_url || sourceData.download_url}#toolbar=1`}
+                            className="w-full h-full border-none"
+                            title={sourceData.title || sourceData.file_name}
                           />
                         </div>
-                      ) : sourceData.file_name?.toLowerCase().match(/\.(docx|doc|xlsx|xls|pptx|ppt)$/) ? (
-                        <iframe
-                          src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(sourceData.download_url)}`}
-                          className="w-full h-[700px] bg-background border-none"
-                          title={sourceData.title || sourceData.file_name}
-                        />
+                      ) : sourceData.file_name?.toLowerCase().match(/\.(jpg|jpeg|png|gif|webp|svg)$/) ? (
+                        <div className="flex items-center justify-center p-8 bg-black/[0.02] min-h-[400px]">
+                          <img
+                            src={sourceData.file_url || sourceData.preview_url || sourceData.download_url}
+                            alt={sourceData.title || sourceData.file_name}
+                            className="max-w-full max-h-[700px] object-contain rounded-lg border shadow-md"
+                          />
+                        </div>
+                      ) : sourceData.file_name?.toLowerCase().match(/\.(docx|doc|xlsx|xls|pptx|ppt|txt|md|csv|json)$/) ? (
+                        <div className="w-full h-[780px] bg-background relative flex flex-col">
+                          <iframe
+                            src={sourceData.preview_url || sourceData.download_url}
+                            className="w-full h-full border-none"
+                            title={sourceData.title || sourceData.file_name}
+                          />
+                        </div>
                       ) : (
                         <div className="flex flex-col items-center justify-center p-12 text-center text-sm text-muted-foreground gap-3 min-h-[300px]">
                           <span className="material-symbols-outlined text-4xl text-muted-foreground/60">draft</span>
                           <div className="font-semibold text-foreground">Không thể xem trước định dạng này trực tiếp</div>
-                          <p className="text-xs max-w-sm">Tài liệu "{sourceData.file_name}" không thuộc định dạng PDF hoặc hình ảnh để nhúng. Vui lòng bấm Tải tài liệu gốc để đọc.</p>
+                          <p className="text-xs max-w-sm">Tài liệu "{sourceData.file_name}" không hỗ trợ nhúng trực tiếp. Vui lòng bấm Tải tài liệu gốc để đọc.</p>
+                          {sourceData.download_url && (
+                            <Button
+                              variant="outline"
+                              onClick={() => window.open(sourceData.download_url, "_blank")}
+                              className="mt-2 gap-2"
+                            >
+                              <span className="material-symbols-outlined text-sm">cloud_download</span>
+                              Tải tài liệu gốc
+                            </Button>
+                          )}
                         </div>
                       )
                     ) : sourceData.source_type === "url" ? (

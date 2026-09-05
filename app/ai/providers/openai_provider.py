@@ -48,6 +48,8 @@ class OpenAIEmbedding(EmbeddingProvider):
         return self._client
 
     async def embed(self, text: str) -> list[float]:
+        from app.ai.tracing import record_embedding
+
         kwargs: dict = {
             "model": self.config.model_id,
             "input": text,
@@ -56,12 +58,36 @@ class OpenAIEmbedding(EmbeddingProvider):
         if self.config.dimensions:
             kwargs["dimensions"] = self.dimensions
 
-        response = await self.client.embeddings.create(**kwargs)
-        return response.data[0].embedding
+        try:
+            response = await self.client.embeddings.create(**kwargs)
+            vec = response.data[0].embedding
+            tokens = getattr(response.usage, "prompt_tokens", None) if hasattr(response, "usage") else None
+            record_embedding(
+                name=f"openai_embed:{self.config.model_id}",
+                model=self.config.model_id,
+                input_texts=text,
+                vector_dimension=len(vec),
+                tokens=tokens,
+                metadata={"provider": "openai", "dimensions": self.dimensions},
+            )
+            return vec
+        except Exception as e:
+            record_embedding(
+                name=f"openai_embed:{self.config.model_id}",
+                model=self.config.model_id,
+                input_texts=text,
+                vector_dimension=self.dimensions,
+                level="ERROR",
+                status_message=str(e),
+                metadata={"provider": "openai", "error": str(e)},
+            )
+            raise
 
     async def embed_batch(
         self, texts: list[str], concurrency: int = 5
     ) -> list[list[float]]:
+        from app.ai.tracing import record_embedding
+
         # OpenAI supports batch input natively (up to 2048 items)
         # Split into batches of 100 for safety
         batch_size = 100
@@ -76,10 +102,32 @@ class OpenAIEmbedding(EmbeddingProvider):
             if self.config.dimensions:
                 kwargs["dimensions"] = self.dimensions
 
-            response = await self.client.embeddings.create(**kwargs)
-            # Sort by index to maintain order
-            sorted_data = sorted(response.data, key=lambda x: x.index)
-            all_embeddings.extend([d.embedding for d in sorted_data])
+            try:
+                response = await self.client.embeddings.create(**kwargs)
+                sorted_data = sorted(response.data, key=lambda x: x.index)
+                batch_vecs = [d.embedding for d in sorted_data]
+                all_embeddings.extend(batch_vecs)
+
+                tokens = getattr(response.usage, "prompt_tokens", None) if hasattr(response, "usage") else None
+                record_embedding(
+                    name=f"openai_embed_batch:{self.config.model_id}",
+                    model=self.config.model_id,
+                    input_texts=batch,
+                    vector_dimension=len(batch_vecs[0]) if batch_vecs else self.dimensions,
+                    tokens=tokens,
+                    metadata={"provider": "openai", "batch_size": len(batch), "dimensions": self.dimensions},
+                )
+            except Exception as e:
+                record_embedding(
+                    name=f"openai_embed_batch:{self.config.model_id}",
+                    model=self.config.model_id,
+                    input_texts=batch,
+                    vector_dimension=self.dimensions,
+                    level="ERROR",
+                    status_message=str(e),
+                    metadata={"provider": "openai", "batch_size": len(batch), "error": str(e)},
+                )
+                raise
 
         logger.debug(f"OpenAI: embedded {len(texts)} texts in batches of {batch_size}")
         return all_embeddings
@@ -110,6 +158,10 @@ class OpenAILLM(LLMProvider):
             )
         return self._client
 
+    def _is_reasoning_or_gpt5(self) -> bool:
+        mid = (self.config.model_id or "").lower()
+        return any(p in mid for p in ("gpt-5", "o1", "o3", "o4"))
+
     async def generate(
         self,
         prompt: str,
@@ -117,6 +169,9 @@ class OpenAILLM(LLMProvider):
         max_tokens: Optional[int] = None,
         temperature: float = 0.7,
     ) -> str:
+        from datetime import datetime, timezone
+        from app.ai.tracing import record_generation
+
         messages = []
         if system:
             messages.append({"role": "system", "content": system})
@@ -125,13 +180,47 @@ class OpenAILLM(LLMProvider):
         kwargs: dict = {
             "model": self.config.model_id,
             "messages": messages,
-            "temperature": temperature,
         }
+        if not self._is_reasoning_or_gpt5():
+            kwargs["temperature"] = temperature
         if max_tokens is not None:
-            kwargs["max_tokens"] = max_tokens
+            kwargs["max_completion_tokens" if self._is_reasoning_or_gpt5() else "max_tokens"] = max_tokens
 
-        response = await self.client.chat.completions.create(**kwargs)
-        return response.choices[0].message.content or ""
+        start_time = datetime.now(timezone.utc)
+        try:
+            response = await self.client.chat.completions.create(**kwargs)
+            out_text = response.choices[0].message.content or ""
+            usage_dict = None
+            if hasattr(response, "usage") and response.usage:
+                usage_dict = {
+                    "input": getattr(response.usage, "prompt_tokens", 0),
+                    "output": getattr(response.usage, "completion_tokens", 0),
+                    "total": getattr(response.usage, "total_tokens", 0),
+                }
+            record_generation(
+                name="openai.generate",
+                model=self.config.model_id,
+                input_data={"messages": messages},
+                output_data=out_text,
+                start_time=start_time,
+                end_time=datetime.now(timezone.utc),
+                usage=usage_dict,
+                model_parameters={"temperature": kwargs.get("temperature"), "max_tokens": max_tokens},
+            )
+            return out_text
+        except Exception as e:
+            record_generation(
+                name="openai.generate",
+                model=self.config.model_id,
+                input_data={"messages": messages},
+                output_data=None,
+                start_time=start_time,
+                end_time=datetime.now(timezone.utc),
+                level="ERROR",
+                status_message=str(e),
+                model_parameters={"temperature": kwargs.get("temperature"), "max_tokens": max_tokens},
+            )
+            raise
 
     async def generate_with_tools(
         self,
@@ -141,6 +230,9 @@ class OpenAILLM(LLMProvider):
         max_tokens: Optional[int] = None,
         temperature: float = 0.2,
     ) -> AssistantTurn:
+        from datetime import datetime, timezone
+        from app.ai.tracing import record_generation
+
         openai_messages = []
         if system:
             openai_messages.append({"role": "system", "content": system})
@@ -150,35 +242,70 @@ class OpenAILLM(LLMProvider):
             "model": self.config.model_id,
             "messages": openai_messages,
             "tools": tools,
-            "temperature": temperature,
         }
+        if not self._is_reasoning_or_gpt5():
+            kwargs["temperature"] = temperature
         if max_tokens is not None:
-            kwargs["max_tokens"] = max_tokens
+            kwargs["max_completion_tokens" if self._is_reasoning_or_gpt5() else "max_tokens"] = max_tokens
 
-        response = await self.client.chat.completions.create(**kwargs)
+        start_time = datetime.now(timezone.utc)
+        try:
+            response = await self.client.chat.completions.create(**kwargs)
 
-        choice = response.choices[0]
-        message = choice.message
-        text = message.content
-        tool_calls: list[ToolCall] = []
-        if message.tool_calls:
-            for tc in message.tool_calls:
-                args: dict = {}
-                if tc.function.arguments:
-                    try:
-                        args = json.loads(tc.function.arguments)
-                    except Exception:
-                        pass
-                tool_calls.append(ToolCall(id=tc.id, name=tc.function.name, arguments=args))
+            choice = response.choices[0]
+            message = choice.message
+            text = message.content
+            tool_calls: list[ToolCall] = []
+            if message.tool_calls:
+                for tc in message.tool_calls:
+                    args: dict = {}
+                    if tc.function.arguments:
+                        try:
+                            args = json.loads(tc.function.arguments)
+                        except Exception:
+                            pass
+                    tool_calls.append(ToolCall(id=tc.id, name=tc.function.name, arguments=args))
 
-        reason_map = {"stop": "end_turn", "tool_calls": "tool_use", "length": "max_tokens"}
-        finish_reason = reason_map.get(choice.finish_reason or "stop", "end_turn")
+            reason_map = {"stop": "end_turn", "tool_calls": "tool_use", "length": "max_tokens"}
+            finish_reason = reason_map.get(choice.finish_reason or "stop", "end_turn")
 
-        return AssistantTurn(
-            text=text or None,
-            tool_calls=tool_calls,
-            finish_reason=finish_reason,
-        )
+            usage_dict = None
+            if hasattr(response, "usage") and response.usage:
+                usage_dict = {
+                    "input": getattr(response.usage, "prompt_tokens", 0),
+                    "output": getattr(response.usage, "completion_tokens", 0),
+                    "total": getattr(response.usage, "total_tokens", 0),
+                }
+
+            record_generation(
+                name="openai.generate_with_tools",
+                model=self.config.model_id,
+                input_data={"messages": openai_messages, "tools": tools},
+                output_data={"text": text, "tool_calls": [tc.__dict__ for tc in tool_calls]},
+                start_time=start_time,
+                end_time=datetime.now(timezone.utc),
+                usage=usage_dict,
+                model_parameters={"temperature": kwargs.get("temperature"), "max_tokens": max_tokens},
+            )
+
+            return AssistantTurn(
+                text=text or None,
+                tool_calls=tool_calls,
+                finish_reason=finish_reason,
+            )
+        except Exception as e:
+            record_generation(
+                name="openai.generate_with_tools",
+                model=self.config.model_id,
+                input_data={"messages": openai_messages, "tools": tools},
+                output_data=None,
+                start_time=start_time,
+                end_time=datetime.now(timezone.utc),
+                level="ERROR",
+                status_message=str(e),
+                model_parameters={"temperature": kwargs.get("temperature"), "max_tokens": max_tokens},
+            )
+            raise
 
     async def test_connection(self) -> tuple[bool, str]:
         try:
@@ -189,7 +316,7 @@ class OpenAILLM(LLMProvider):
 
 
 class OpenAIVision(VisionProvider):
-    """OpenAI Vision provider (GPT-4o multimodal)."""
+    """OpenAI Vision provider (GPT-4o / GPT-5.6 multimodal)."""
 
     def __init__(self, config: ProviderConfig):
         super().__init__(config)
@@ -205,12 +332,19 @@ class OpenAIVision(VisionProvider):
             )
         return self._client
 
+    def _is_reasoning_or_gpt5(self) -> bool:
+        mid = (self.config.model_id or "").lower()
+        return any(p in mid for p in ("gpt-5", "o1", "o3", "o4"))
+
     async def analyze_image(
         self,
         image_data: bytes,
         mime_type: str = "image/jpeg",
         prompt: Optional[str] = None,
     ) -> str:
+        from datetime import datetime, timezone
+        from app.ai.tracing import record_generation
+
         if not prompt:
             prompt = (
                 "Describe this image in detail. "
@@ -221,41 +355,72 @@ class OpenAIVision(VisionProvider):
         b64_image = base64.b64encode(image_data).decode("utf-8")
         data_url = f"data:{mime_type};base64,{b64_image}"
 
+        kwargs: dict = {
+            "model": self.config.model_id,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": data_url, "detail": "low"},
+                        },
+                    ],
+                }
+            ],
+        }
+        if not self._is_reasoning_or_gpt5():
+            kwargs["temperature"] = 0.2
+
+        start_time = datetime.now(timezone.utc)
         for attempt in range(3):
             try:
-                response = await self.client.chat.completions.create(
+                response = await self.client.chat.completions.create(**kwargs)
+                out_text = response.choices[0].message.content or ""
+                usage_dict = None
+                if hasattr(response, "usage") and response.usage:
+                    usage_dict = {
+                        "input": getattr(response.usage, "prompt_tokens", 0),
+                        "output": getattr(response.usage, "completion_tokens", 0),
+                        "total": getattr(response.usage, "total_tokens", 0),
+                    }
+                record_generation(
+                    name="openai.analyze_image",
                     model=self.config.model_id,
-                    messages=[
-                        {
-                            "role": "user",
-                            "content": [
-                                {"type": "text", "text": prompt},
-                                {
-                                    "type": "image_url",
-                                    "image_url": {"url": data_url, "detail": "low"},
-                                },
-                            ],
-                        }
-                    ],
-                    temperature=0.2,
+                    input_data={"prompt": prompt, "mime_type": mime_type, "image_size_bytes": len(image_data)},
+                    output_data=out_text,
+                    start_time=start_time,
+                    end_time=datetime.now(timezone.utc),
+                    usage=usage_dict,
                 )
-                return response.choices[0].message.content or ""
+                return out_text
             except Exception as e:
                 logger.warning(f"OpenAI Vision attempt {attempt + 1} failed: {e}")
+                if attempt == 2:
+                    record_generation(
+                        name="openai.analyze_image",
+                        model=self.config.model_id,
+                        input_data={"prompt": prompt, "mime_type": mime_type, "image_size_bytes": len(image_data)},
+                        output_data=None,
+                        start_time=start_time,
+                        end_time=datetime.now(timezone.utc),
+                        level="ERROR",
+                        status_message=str(e),
+                    )
                 if attempt < 2:
                     await asyncio.sleep(2)
         return ""
 
     async def test_connection(self) -> tuple[bool, str]:
         try:
-            # Quick test with a tiny 1x1 PNG
-            tiny_png = (
-                b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
-                b"\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00"
-                b"\x00\x00\x0cIDATx\x9cc\xf8\x0f\x00\x00\x01\x01\x00"
-                b"\x05\x18\xd8N\x00\x00\x00\x00IEND\xaeB`\x82"
+            # 10x10 white PNG
+            test_png = (
+                b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\n\x00\x00\x00\n\x08\x02\x00\x00\x00"
+                b"\x02PX\xea\x00\x00\x00\x15IDATx\x9cc\xfc\xff\xff?\x03n\xc0\x84Gn\x04K\x03\x00\xa5"
+                b"\xe3\x03\x11}\x92\xa6j\x00\x00\x00\x00IEND\xaeB`\x82"
             )
-            await self.analyze_image(tiny_png, "image/png", "What is this?")
-            return True, f"OK — model={self.config.model_id}"
+            res = await self.analyze_image(test_png, "image/png", "What is this image?")
+            return True, f"OK — model={self.config.model_id}, response='{res[:50]}'"
         except Exception as e:
             return False, f"OpenAI Vision error: {e}"

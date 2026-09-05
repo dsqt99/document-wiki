@@ -96,7 +96,7 @@ export function WikiPageTree({
   const debouncedSearch = useDebounce(search, 150);
 
   const loadPages = React.useCallback(() => {
-    const url = pagesUrl || "/api/wiki/pages?limit=200";
+    const url = pagesUrl || "/api/wiki/pages";
     api<WikiPageSummary[]>(url)
       .then((data) => setPages(Array.isArray(data) ? data : []))
       .catch(() => setPages([]))
@@ -108,7 +108,7 @@ export function WikiPageTree({
   }, [loadPages]);
 
   React.useEffect(() => {
-    api<{ items: { id: string; title: string; file_name?: string; status: string; source_type?: string }[] }>("/api/sources?status=ready&page_size=200")
+    api<{ items: { id: string; title: string; file_name?: string; status: string; source_type?: string }[] }>("/api/sources?status=ready&page_size=1000")
       .then((data) => setSources(data.items || []))
       .catch(() => setSources([]))
       .finally(() => setSourcesLoading(false));

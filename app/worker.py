@@ -95,6 +95,7 @@ async def ingest_file_task(ctx: dict, source_id: str):
     Image captioning is offloaded to caption_images_task so this job is not blocked by image count.
     File must already be uploaded to MinIO before this task is enqueued.
     """
+    from app.ai.tracing import flush_langfuse, trace_context
     from app.database import async_session_factory
     from app.database.models import Source, SourceImage
     from app.services.image_service import extract_images
@@ -109,148 +110,156 @@ async def ingest_file_task(ctx: dict, source_id: str):
     sid = uuid.UUID(source_id)
     tracker = ProgressTracker(sid)
 
-    async with async_session_factory() as session:
-        source = await session.get(Source, sid)
-        if not source:
-            logger.warning(f"Source {source_id} not found, it may have been deleted.")
-            return
-        if not source.minio_key:
-            raise ValueError(f"Source {source_id} has no file in storage")
-
-        file_name = source.file_name or source.minio_key.split("/")[-1]
-
+    async with trace_context("ingest_file_task", trace_id=f"src_{source_id}", tags=["ingestion", "file"], metadata={"source_id": source_id}):
         try:
-            source.status = "processing"
-            source.progress = 0
-            source.progress_message = "Starting processing..."
-            await session.commit()
+            async with async_session_factory() as session:
+                source = await session.get(Source, sid)
+                if not source:
+                    logger.warning(f"Source {source_id} not found, it may have been deleted.")
+                    return
+                if not source.minio_key:
+                    raise ValueError(f"Source {source_id} has no file in storage")
 
-            # --- Step 1: Download from MinIO (10%) ---
-            await tracker.update(5, "Loading file...")
-            file_data = storage_service.download_file(source.minio_key)
-            await tracker.update(10, "File loaded")
+                file_name = source.file_name or source.minio_key.split("/")[-1]
 
-            # --- Step 2: Extract text per page (25%) ---
-            await tracker.update(15, "Extracting text (per page)...")
-            # Resolve vision provider for OCR fallback on image-only PDFs
-            vision_provider = None
-            try:
-                from app.ai.registry import ProviderRegistry
-                registry = ProviderRegistry(session)
-                vision_provider = await registry.get_vision()
-            except Exception:
-                pass  # OCR fallback unavailable — continue without it
-            pages_data = await _extract_text_from_file(file_data, file_name, vision_provider=vision_provider)
+                try:
+                    source.status = "processing"
+                    source.progress = 0
+                    source.progress_message = "Starting processing..."
+                    await session.commit()
 
-            if not pages_data or not any((p.get("content") or "").strip() for p in pages_data):
-                source.status = "error"
-                source.error_message = "Unable to extract text content"
-                source.progress = 0
-                await session.commit()
-                return {"status": "error", "message": "No text content"}
+                    # --- Step 1: Download from MinIO (10%) ---
+                    await tracker.update(5, "Loading file...")
+                    file_data = storage_service.download_file(source.minio_key)
+                    await tracker.update(10, "File loaded")
 
-            await tracker.update(25, "Text extraction complete")
+                    # --- Step 2: Extract text per page (25%) ---
+                    await tracker.update(15, "Extracting text (per page)...")
+                    # Resolve vision provider for OCR fallback on image-only PDFs
+                    vision_provider = None
+                    try:
+                        from app.ai.registry import ProviderRegistry
+                        registry = ProviderRegistry(session)
+                        vision_provider = await registry.get_vision()
+                    except Exception:
+                        pass  # OCR fallback unavailable — continue without it
+                    pages_data = await _extract_text_from_file(file_data, file_name, vision_provider=vision_provider)
 
+                    if not pages_data or not any((p.get("content") or "").strip() for p in pages_data):
+                        source.status = "error"
+                        source.error_message = "Unable to extract text content"
+                        source.progress = 0
+                        await session.commit()
+                        return {"status": "error", "message": "No text content"}
 
+                    await tracker.update(25, "Text extraction complete")
 
-            # --- Step 3: Extract images (40%) ---
-            # Captioning is offloaded to caption_images_task (enqueued below) so
-            # this job is not blocked by the number of images in the document.
-            await tracker.update(30, "Extracting images...")
-            images = extract_images(file_data, file_name, source_id)
+                    # --- Step 3: Extract images (40%) ---
+                    # Captioning is offloaded to caption_images_task (enqueued below) so
+                    # this job is not blocked by the number of images in the document.
+                    await tracker.update(30, "Extracting images...")
+                    images = extract_images(file_data, file_name, source_id)
 
-            # Persist images so wiki content_md can reference them by uuid.
-            for img in images:
-                row = SourceImage(
-                    source_id=uuid.UUID(source_id),
-                    minio_key=img.minio_key,
-                    page_number=img.page_number,
-                    image_index=img.image_index,
-                    caption=img.caption,
-                    content_type=img.content_type,
-                    size_bytes=img.size_bytes,
-                )
-                session.add(row)
-                await session.flush()
-                img.image_id = str(row.id)
+                    # Persist images so wiki content_md can reference them by uuid.
+                    for img in images:
+                        row = SourceImage(
+                            source_id=uuid.UUID(source_id),
+                            minio_key=img.minio_key,
+                            page_number=img.page_number,
+                            image_index=img.image_index,
+                            caption=img.caption,
+                            content_type=img.content_type,
+                            size_bytes=img.size_bytes,
+                        )
+                        session.add(row)
+                        await session.flush()
+                        img.image_id = str(row.id)
 
-            # Inline image markers into per-page text so the compiler sees them.
-            _inline_image_markers(pages_data, images)
-            await tracker.update(40, f"Analyzed {len(images)} images")
+                    # Inline image markers into per-page text so the compiler sees them.
+                    _inline_image_markers(pages_data, images)
+                    await tracker.update(40, f"Analyzed {len(images)} images")
 
-            # --- Step 4: Build outline + assemble full_text (50%) ---
-            await tracker.update(45, "Building document outline...")
-            source.outline_json = build_outline(pages_data)
-            full_text, page_offsets = assemble_full_text(pages_data)
-            source.full_text = full_text
-            source.page_offsets = page_offsets
+                    # --- Step 4: Build outline + assemble full_text (50%) ---
+                    await tracker.update(45, "Building document outline...")
+                    source.outline_json = build_outline(pages_data)
+                    full_text, page_offsets = assemble_full_text(pages_data)
+                    source.full_text = full_text
+                    source.page_offsets = page_offsets
 
-            # --- Step 5: Token count (drives auto-approve vs gate) ---
-            token_count = count_tokens(full_text)
-            source.extracted_token_count = token_count
-            await session.commit()
-            await tracker.update(50, f"Outline: {len(source.outline_json or [])} top-level sections, ~{token_count} tokens")
+                    # --- Step 5: Token count (drives auto-approve vs gate) ---
+                    token_count = count_tokens(full_text)
+                    source.extracted_token_count = token_count
+                    await session.commit()
+                    await tracker.update(50, f"Outline: {len(source.outline_json or [])} top-level sections, ~{token_count} tokens")
 
-            # --- Verbatim: skip MRP + approval gate, index raw chunks, done ---
-            if source.preserve_verbatim:
-                return await finalize_verbatim_source(session, source, tracker)
+                    # --- Legal Document: parse into Điều-level WikiPages + vector embeddings ---
+                    from app.services.legal_service import is_legal_source, finalize_legal_source
+                    if await is_legal_source(session, source):
+                        return await finalize_legal_source(session, source, tracker)
 
-            # --- Step 6: Gate or auto-proceed ---
-            threshold = settings.auto_approve_extraction_threshold_tokens
-            if token_count > threshold:
-                source.status = "awaiting_approval"
-                source.progress = 55
-                source.progress_message = (
-                    f"Awaiting human approval: {token_count:,} tokens > {threshold:,} threshold"
-                )
-                await session.commit()
-                logger.info(
-                    f"Source {source_id} gated at awaiting_approval: {token_count} tokens "
-                    f"({len(images)} images extracted, captioning deferred)"
-                )
-                return {"status": "awaiting_approval", "token_count": token_count, "images": len(images)}
+                    # --- Verbatim: skip MRP + approval gate, index raw chunks, done ---
+                    if source.preserve_verbatim:
+                        return await finalize_verbatim_source(session, source, tracker)
 
-            await tracker.update(55, "Queuing compilation pipeline...")
-            job_id = await enqueue_post_extraction_pipeline(source_id, has_images=bool(images))
-            source.status = "processing"
-            source.progress = 55
-            source.progress_message = (
-                f"Captioning {len(images)} images before extraction..." if images
-                else "Extraction queued..."
-            )
-            if job_id:
-                source.job_id = job_id
-            await session.commit()
+                    # --- Step 6: Gate or auto-proceed ---
+                    threshold = settings.auto_approve_extraction_threshold_tokens
+                    if token_count > threshold:
+                        source.status = "awaiting_approval"
+                        source.progress = 55
+                        source.progress_message = (
+                            f"Awaiting human approval: {token_count:,} tokens > {threshold:,} threshold"
+                        )
+                        await session.commit()
+                        logger.info(
+                            f"Source {source_id} gated at awaiting_approval: {token_count} tokens "
+                            f"({len(images)} images extracted, captioning deferred)"
+                        )
+                        return {"status": "awaiting_approval", "token_count": token_count, "images": len(images)}
 
-            logger.info(f"Source {source_id} pre-processing done; next: {'caption→MRP' if images else 'MRP'}")
-            return {"status": "processing", "token_count": token_count, "images": len(images)}
+                    await tracker.update(55, "Queuing compilation pipeline...")
+                    job_id = await enqueue_post_extraction_pipeline(source_id, has_images=bool(images))
+                    source.status = "processing"
+                    source.progress = 55
+                    source.progress_message = (
+                        f"Captioning {len(images)} images before extraction..." if images
+                        else "Extraction queued..."
+                    )
+                    if job_id:
+                        source.job_id = job_id
+                    await session.commit()
 
-        except BaseException as e:
-            logger.error(f"Pre-processing failed for {source_id}: {e}")
-            error_msg = str(e)[:500]
-            progress_msg = f"Error: {str(e)[:200]}"
+                    logger.info(f"Source {source_id} pre-processing done; next: {'caption→MRP' if images else 'MRP'}")
+                    return {"status": "processing", "token_count": token_count, "images": len(images)}
 
-            async def _mark_error_file() -> None:
-                from app.database import async_session_factory as _sf
-                from app.database.models import Source as _Source
-                async with _sf() as err_session:
-                    src = await err_session.get(_Source, sid)
-                    if src:
-                        src.status = "error"
-                        src.error_message = error_msg
-                        src.progress = 0
-                        src.progress_message = progress_msg
-                        await err_session.commit()
+                except BaseException as e:
+                    logger.error(f"Pre-processing failed for {source_id}: {e}")
+                    error_msg = str(e)[:500]
+                    progress_msg = f"Error: {str(e)[:200]}"
 
-            try:
-                await asyncio.shield(_mark_error_file())
-            except Exception:
-                pass
-            raise
+                    async def _mark_error_file() -> None:
+                        from app.database import async_session_factory as _sf
+                        from app.database.models import Source as _Source
+                        async with _sf() as err_session:
+                            src = await err_session.get(_Source, sid)
+                            if src:
+                                src.status = "error"
+                                src.error_message = error_msg
+                                src.progress = 0
+                                src.progress_message = progress_msg
+                                await err_session.commit()
+
+                    try:
+                        await asyncio.shield(_mark_error_file())
+                    except Exception:
+                        pass
+                    raise
+        finally:
+            flush_langfuse()
 
 
 async def ingest_url_task(ctx: dict, source_id: str):
     """arq task: URL ingestion → wiki compilation."""
+    from app.ai.tracing import flush_langfuse, trace_context
     from app.database import async_session_factory
     from app.database.models import Source
     from app.services.kb_service import _extract_text_from_url
@@ -260,87 +269,96 @@ async def ingest_url_task(ctx: dict, source_id: str):
     sid = uuid.UUID(source_id)
     tracker = ProgressTracker(sid)
 
-    async with async_session_factory() as session:
-        source = await session.get(Source, sid)
-        if not source:
-            logger.warning(f"Source {source_id} not found, it may have been deleted.")
-            return
-
+    async with trace_context("ingest_url_task", trace_id=f"src_{source_id}", tags=["ingestion", "url"], metadata={"source_id": source_id}):
         try:
-            source.status = "processing"
-            source.progress = 0
-            await session.commit()
+            async with async_session_factory() as session:
+                source = await session.get(Source, sid)
+                if not source:
+                    logger.warning(f"Source {source_id} not found, it may have been deleted.")
+                    return
 
-            await tracker.update(15, "Fetching content from URL...")
-            if not source.url:
-                source.status = "error"
-                source.error_message = "Source has no URL"
-                await session.commit()
-                return {"status": "error"}
-            pages_data = await _extract_text_from_url(source.url)
+                try:
+                    source.status = "processing"
+                    source.progress = 0
+                    await session.commit()
 
-            if not pages_data or not any((p.get("content") or "").strip() for p in pages_data):
-                source.status = "error"
-                source.error_message = "Unable to fetch content from URL"
-                await session.commit()
-                return {"status": "error"}
+                    await tracker.update(15, "Fetching content from URL...")
+                    if not source.url:
+                        source.status = "error"
+                        source.error_message = "Source has no URL"
+                        await session.commit()
+                        return {"status": "error"}
+                    pages_data = await _extract_text_from_url(source.url)
 
-            await tracker.update(40, "Building outline...")
-            source.outline_json = build_outline(pages_data)
-            full_text, page_offsets = assemble_full_text(pages_data)
-            source.full_text = full_text
-            source.page_offsets = page_offsets
-            token_count = count_tokens(full_text)
-            source.extracted_token_count = token_count
-            await session.commit()
+                    if not pages_data or not any((p.get("content") or "").strip() for p in pages_data):
+                        source.status = "error"
+                        source.error_message = "Unable to fetch content from URL"
+                        await session.commit()
+                        return {"status": "error"}
 
-            # --- Verbatim: skip MRP + approval gate, index raw chunks, done ---
-            if source.preserve_verbatim:
-                return await finalize_verbatim_source(session, source, tracker)
+                    await tracker.update(40, "Building outline...")
+                    source.outline_json = build_outline(pages_data)
+                    full_text, page_offsets = assemble_full_text(pages_data)
+                    source.full_text = full_text
+                    source.page_offsets = page_offsets
+                    token_count = count_tokens(full_text)
+                    source.extracted_token_count = token_count
+                    await session.commit()
 
-            threshold = settings.auto_approve_extraction_threshold_tokens
-            if token_count > threshold:
-                source.status = "awaiting_approval"
-                source.progress = 55
-                source.progress_message = (
-                    f"Awaiting human approval: {token_count:,} tokens > {threshold:,} threshold"
-                )
-                await session.commit()
-                logger.info(f"URL source {source_id} gated at awaiting_approval: {token_count} tokens")
-                return {"status": "awaiting_approval", "token_count": token_count}
+                    # --- Legal Document: parse into Điều-level WikiPages + vector embeddings ---
+                    from app.services.legal_service import is_legal_source, finalize_legal_source
+                    if await is_legal_source(session, source):
+                        return await finalize_legal_source(session, source, tracker)
 
-            await tracker.update(55, "Queuing compilation pipeline...")
-            job_id = await enqueue_post_extraction_pipeline(source_id, has_images=False)
-            source.status = "processing"
-            source.progress = 55
-            source.progress_message = "Extraction queued..."
-            if job_id:
-                source.job_id = job_id
-            await session.commit()
+                    # --- Verbatim: skip MRP + approval gate, index raw chunks, done ---
+                    if source.preserve_verbatim:
+                        return await finalize_verbatim_source(session, source, tracker)
 
-            logger.info(f"URL source {source_id} pre-processing done, MRP task enqueued: {job_id or 'n/a'}")
-            return {"status": "processing", "token_count": token_count}
+                    threshold = settings.auto_approve_extraction_threshold_tokens
+                    if token_count > threshold:
+                        source.status = "awaiting_approval"
+                        source.progress = 55
+                        source.progress_message = (
+                            f"Awaiting human approval: {token_count:,} tokens > {threshold:,} threshold"
+                        )
+                        await session.commit()
+                        logger.info(f"URL source {source_id} gated at awaiting_approval: {token_count} tokens")
+                        return {"status": "awaiting_approval", "token_count": token_count}
 
-        except BaseException as e:
-            logger.error(f"URL ingestion failed for {source_id}: {e}")
-            error_msg = str(e)[:500]
+                    await tracker.update(55, "Queuing compilation pipeline...")
+                    job_id = await enqueue_post_extraction_pipeline(source_id, has_images=False)
+                    source.status = "processing"
+                    source.progress = 55
+                    source.progress_message = "Extraction queued..."
+                    if job_id:
+                        source.job_id = job_id
+                    await session.commit()
 
-            async def _mark_error_url() -> None:
-                from app.database import async_session_factory as _sf
-                from app.database.models import Source as _Source
-                async with _sf() as err_session:
-                    src = await err_session.get(_Source, sid)
-                    if src:
-                        src.status = "error"
-                        src.error_message = error_msg
-                        src.progress = 0
-                        await err_session.commit()
+                    logger.info(f"URL source {source_id} pre-processing done, MRP task enqueued: {job_id or 'n/a'}")
+                    return {"status": "processing", "token_count": token_count}
 
-            try:
-                await asyncio.shield(_mark_error_url())
-            except Exception:
-                pass
-            raise
+                except BaseException as e:
+                    logger.error(f"URL ingestion failed for {source_id}: {e}")
+                    error_msg = str(e)[:500]
+
+                    async def _mark_error_url() -> None:
+                        from app.database import async_session_factory as _sf
+                        from app.database.models import Source as _Source
+                        async with _sf() as err_session:
+                            src = await err_session.get(_Source, sid)
+                            if src:
+                                src.status = "error"
+                                src.error_message = error_msg
+                                src.progress = 0
+                                await err_session.commit()
+
+                    try:
+                        await asyncio.shield(_mark_error_url())
+                    except Exception:
+                        pass
+                    raise
+        finally:
+            flush_langfuse()
 
 
 # ---------------------------------------------------------------------------
@@ -720,95 +738,112 @@ async def ingest_map_reduce_task(ctx: dict, source_id: str):
     """
     from app.ai.mrp.pipeline import run_mrp_pipeline
     from app.ai.registry import ProviderRegistry
+    from app.ai.tracing import flush_langfuse, trace_context
     from app.database import async_session_factory
     from app.database.models import KnowledgeType, Source
 
     sid = uuid.UUID(source_id)
     tracker = ProgressTracker(sid)
 
-    async with async_session_factory() as session:
-        source = await session.get(Source, sid)
-        if not source:
-            logger.warning(f"Source {source_id} not found, it may have been deleted.")
-            return
-        if not source.full_text:
-            raise ValueError(f"Source {source_id} has no full_text — run pre-processing first")
-
-        # Verbatim sources never run MRP, regardless of which task enqueued them
-        # (e.g. a dept-change re-ingest). Index raw chunks and finish.
-        if source.preserve_verbatim:
-            try:
-                return await finalize_verbatim_source(session, source, tracker)
-            except BaseException as e:
-                logger.error(f"Verbatim indexing failed for {source_id}: {e}")
-                source.status = "error"
-                source.error_message = str(e)[:500]
-                await session.commit()
-                raise
-
+    async with trace_context("ingest_map_reduce_task", trace_id=f"src_{source_id}", tags=["mrp", "map_reduce"], metadata={"source_id": source_id}):
         try:
-            source.status = "processing"
-            source.progress = 56
-            source.progress_message = "Extracting knowledge from document..."
-            await session.commit()
+            async with async_session_factory() as session:
+                source = await session.get(Source, sid)
+                if not source:
+                    logger.warning(f"Source {source_id} not found, it may have been deleted.")
+                    return
+                if not source.full_text:
+                    raise ValueError(f"Source {source_id} has no full_text — run pre-processing first")
 
-            registry = ProviderRegistry(session)
+                # Legal documents parse directly into Điều-level WikiPages without MRP
+                from app.services.legal_service import is_legal_source, finalize_legal_source
+                if await is_legal_source(session, source):
+                    try:
+                        return await finalize_legal_source(session, source, tracker)
+                    except BaseException as e:
+                        logger.error(f"Legal indexing failed for {source_id}: {e}")
+                        source.status = "error"
+                        source.error_message = str(e)[:500]
+                        await session.commit()
+                        raise
 
-            kt_slug = kt_name = kt_desc = None
-            if source.knowledge_type_id:
-                kt = await session.get(KnowledgeType, source.knowledge_type_id)
-                if kt:
-                    kt_slug, kt_name, kt_desc = kt.slug, kt.name, kt.description
+                # Verbatim sources never run MRP, regardless of which task enqueued them
+                # (e.g. a dept-change re-ingest). Index raw chunks and finish.
+                if source.preserve_verbatim:
+                    try:
+                        return await finalize_verbatim_source(session, source, tracker)
+                    except BaseException as e:
+                        logger.error(f"Verbatim indexing failed for {source_id}: {e}")
+                        source.status = "error"
+                        source.error_message = str(e)[:500]
+                        await session.commit()
+                        raise
 
-            result = await run_mrp_pipeline(
-                session=session,
-                source=source,
-                full_text=source.full_text,
-                tracker=tracker,
-                registry=registry,
-                kt_slug=kt_slug,
-                kt_name=kt_name,
-                kt_desc=kt_desc,
-            )
-
-            if result.get("status") == "plan_ready":
-                src = await session.get(Source, sid)
-                if src:
-                    src.status = "plan_ready"
-                    src.progress = 80
-                    src.progress_message = "Compilation plan ready — awaiting review"
-                    src.auto_recover_count = 0
+                try:
+                    source.status = "processing"
+                    source.progress = 56
+                    source.progress_message = "Extracting knowledge from document..."
                     await session.commit()
-                logger.info(f"Source {source_id} plan ready: {result.get('plan_id')}")
-            elif result.get("status") == "plan_auto_approved":
-                logger.info(f"Source {source_id} plan auto-approved, refine task enqueued")
-            else:
-                logger.info(f"Source {source_id} map-reduce result: {result}")
 
-            return result
+                    registry = ProviderRegistry(session)
 
-        except BaseException as e:
-            logger.error(f"MAP-REDUCE failed for {source_id}: {e}")
-            error_msg = str(e)[:500]
-            progress_msg = f"Error: {str(e)[:200]}"
+                    kt_slug = kt_name = kt_desc = None
+                    if source.knowledge_type_id:
+                        kt = await session.get(KnowledgeType, source.knowledge_type_id)
+                        if kt:
+                            kt_slug, kt_name, kt_desc = kt.slug, kt.name, kt.description
 
-            async def _mark_error_mr() -> None:
-                from app.database import async_session_factory as _sf
-                from app.database.models import Source as _Source
-                async with _sf() as err_session:
-                    src = await err_session.get(_Source, sid)
-                    if src:
-                        src.status = "error"
-                        src.error_message = error_msg
-                        src.progress = 0
-                        src.progress_message = progress_msg
-                        await err_session.commit()
+                    result = await run_mrp_pipeline(
+                        session=session,
+                        source=source,
+                        full_text=source.full_text,
+                        tracker=tracker,
+                        registry=registry,
+                        kt_slug=kt_slug,
+                        kt_name=kt_name,
+                        kt_desc=kt_desc,
+                    )
 
-            try:
-                await asyncio.shield(_mark_error_mr())
-            except Exception:
-                pass
-            raise
+                    if result.get("status") == "plan_ready":
+                        src = await session.get(Source, sid)
+                        if src:
+                            src.status = "plan_ready"
+                            src.progress = 80
+                            src.progress_message = "Compilation plan ready — awaiting review"
+                            src.auto_recover_count = 0
+                            await session.commit()
+                        logger.info(f"Source {source_id} plan ready: {result.get('plan_id')}")
+                    elif result.get("status") == "plan_auto_approved":
+                        logger.info(f"Source {source_id} plan auto-approved, refine task enqueued")
+                    else:
+                        logger.info(f"Source {source_id} map-reduce result: {result}")
+
+                    return result
+
+                except BaseException as e:
+                    logger.error(f"MAP-REDUCE failed for {source_id}: {e}")
+                    error_msg = str(e)[:500]
+                    progress_msg = f"Error: {str(e)[:200]}"
+
+                    async def _mark_error_mr() -> None:
+                        from app.database import async_session_factory as _sf
+                        from app.database.models import Source as _Source
+                        async with _sf() as err_session:
+                            src = await err_session.get(_Source, sid)
+                            if src:
+                                src.status = "error"
+                                src.error_message = error_msg
+                                src.progress = 0
+                                src.progress_message = progress_msg
+                                await err_session.commit()
+
+                    try:
+                        await asyncio.shield(_mark_error_mr())
+                    except Exception:
+                        pass
+                    raise
+        finally:
+            flush_langfuse()
 
 
 async def ingest_refine_task(ctx: dict, source_id: str):
@@ -821,74 +856,79 @@ async def ingest_refine_task(ctx: dict, source_id: str):
     """
     from app.ai.mrp.pipeline import run_refine_pipeline
     from app.ai.registry import ProviderRegistry
+    from app.ai.tracing import flush_langfuse, trace_context
     from app.database import async_session_factory
     from app.database.models import KnowledgeType, Source
 
     sid = uuid.UUID(source_id)
     tracker = ProgressTracker(sid)
 
-    async with async_session_factory() as session:
-        source = await session.get(Source, sid)
-        if not source:
-            logger.warning(f"Source {source_id} not found, it may have been deleted.")
-            return
-        if not source.full_text:
-            raise ValueError(f"Source {source_id} has no full_text")
-
+    async with trace_context("ingest_refine_task", trace_id=f"src_{source_id}", tags=["mrp", "refine"], metadata={"source_id": source_id}):
         try:
-            source.status = "processing"
-            source.progress = 78
-            source.progress_message = "Writing wiki pages..."
-            await session.commit()
+            async with async_session_factory() as session:
+                source = await session.get(Source, sid)
+                if not source:
+                    logger.warning(f"Source {source_id} not found, it may have been deleted.")
+                    return
+                if not source.full_text:
+                    raise ValueError(f"Source {source_id} has no full_text")
 
-            registry = ProviderRegistry(session)
+                try:
+                    source.status = "processing"
+                    source.progress = 78
+                    source.progress_message = "Writing wiki pages..."
+                    await session.commit()
 
-            kt_slug = kt_name = kt_desc = None
-            if source.knowledge_type_id:
-                kt = await session.get(KnowledgeType, source.knowledge_type_id)
-                if kt:
-                    kt_slug, kt_name, kt_desc = kt.slug, kt.name, kt.description
+                    registry = ProviderRegistry(session)
 
-            result = await run_refine_pipeline(
-                session=session,
-                source=source,
-                full_text=source.full_text,
-                tracker=tracker,
-                registry=registry,
-                kt_slug=kt_slug,
-                kt_name=kt_name,
-                kt_desc=kt_desc,
-            )
+                    kt_slug = kt_name = kt_desc = None
+                    if source.knowledge_type_id:
+                        kt = await session.get(KnowledgeType, source.knowledge_type_id)
+                        if kt:
+                            kt_slug, kt_name, kt_desc = kt.slug, kt.name, kt.description
 
-            logger.success(
-                f"Source {source_id} MRP complete: "
-                f"+{result.get('pages_created', 0)} created, "
-                f"~{result.get('pages_updated', 0)} updated"
-            )
-            return result
+                    result = await run_refine_pipeline(
+                        session=session,
+                        source=source,
+                        full_text=source.full_text,
+                        tracker=tracker,
+                        registry=registry,
+                        kt_slug=kt_slug,
+                        kt_name=kt_name,
+                        kt_desc=kt_desc,
+                    )
 
-        except BaseException as e:
-            logger.error(f"REFINE failed for {source_id}: {e}")
-            error_msg = str(e)[:500]
-            progress_msg = f"Error: {str(e)[:200]}"
+                    logger.success(
+                        f"Source {source_id} MRP complete: "
+                        f"+{result.get('pages_created', 0)} created, "
+                        f"~{result.get('pages_updated', 0)} updated"
+                    )
+                    return result
 
-            async def _mark_error_refine() -> None:
-                from app.database import async_session_factory as _sf
-                from app.database.models import Source as _Source
-                async with _sf() as err_session:
-                    src = await err_session.get(_Source, sid)
-                    if src:
-                        src.status = "error"
-                        src.error_message = error_msg
-                        src.progress = 0
-                        src.progress_message = progress_msg
-                        await err_session.commit()
+                except BaseException as e:
+                    logger.error(f"REFINE failed for {source_id}: {e}")
+                    error_msg = str(e)[:500]
+                    progress_msg = f"Error: {str(e)[:200]}"
 
-            try:
-                await asyncio.shield(_mark_error_refine())
-            except Exception:
-                pass
-            raise
+                    async def _mark_error_refine() -> None:
+                        from app.database import async_session_factory as _sf
+                        from app.database.models import Source as _Source
+                        async with _sf() as err_session:
+                            src = await err_session.get(_Source, sid)
+                            if src:
+                                src.status = "error"
+                                src.error_message = error_msg
+                                src.progress = 0
+                                src.progress_message = progress_msg
+                                await err_session.commit()
+
+                    try:
+                        await asyncio.shield(_mark_error_refine())
+                    except Exception:
+                        pass
+                    raise
+        finally:
+            flush_langfuse()
 
 
 async def regenerate_plan_task(ctx: dict, source_id: str, user_note: str):
@@ -1172,109 +1212,114 @@ async def caption_images_task(ctx: dict, source_id: str):
     from sqlalchemy import update as sa_update
 
     from app.ai.registry import ProviderRegistry
+    from app.ai.tracing import flush_langfuse, trace_context
     from app.database import async_session_factory
     from app.database.models import Source, SourceImage
     from app.services.storage_service import storage_service
 
     sid = uuid.UUID(source_id)
 
-    # Load vision provider and image rows in a short-lived session, then close it.
-    async with async_session_factory() as session:
-        source = await session.get(Source, sid)
-        if not source:
-            logger.warning(f"caption_images_task: source {source_id} not found")
-            return
+    async with trace_context("caption_images_task", trace_id=f"src_{source_id}", tags=["vision", "caption"], metadata={"source_id": source_id}):
+        try:
+            # Load vision provider and image rows in a short-lived session, then close it.
+            async with async_session_factory() as session:
+                source = await session.get(Source, sid)
+                if not source:
+                    logger.warning(f"caption_images_task: source {source_id} not found")
+                    return
 
-        registry = ProviderRegistry(session)
-        vision_provider = await registry.get_vision()
-        if not vision_provider:
-            logger.info("caption_images_task: no vision provider configured, skipping")
-            return
+                registry = ProviderRegistry(session)
+                vision_provider = await registry.get_vision()
+                if not vision_provider:
+                    logger.info("caption_images_task: no vision provider configured, skipping")
+                    return
 
-        rows = (await session.execute(
-            select(SourceImage).where(SourceImage.source_id == sid)
-        )).scalars().all()
+                rows = (await session.execute(
+                    select(SourceImage).where(SourceImage.source_id == sid)
+                )).scalars().all()
 
-        # Snapshot only the fields we need — session closes after this block.
-        image_records = [(row.id, row.minio_key, row.content_type) for row in rows]
+                # Snapshot only the fields we need — session closes after this block.
+                image_records = [(row.id, row.minio_key, row.content_type) for row in rows]
 
-    if not image_records:
-        return
+            if not image_records:
+                return
 
-    logger.info(f"caption_images_task: captioning {len(image_records)} images for {source_id}")
+            logger.info(f"caption_images_task: captioning {len(image_records)} images for {source_id}")
 
-    MAX_CONCURRENCY = 4
-    PER_IMAGE_TIMEOUT = 120
-    sem = asyncio.Semaphore(MAX_CONCURRENCY)
-    total = len(image_records)
+            MAX_CONCURRENCY = 4
+            PER_IMAGE_TIMEOUT = 120
+            sem = asyncio.Semaphore(MAX_CONCURRENCY)
+            total = len(image_records)
 
-    async def _caption_one(image_id, minio_key: str, content_type: str, idx: int) -> None:
-        async with sem:
-            try:
-                img_bytes = storage_service.download_file(minio_key)
-                vision_prompt = (
-                    "Describe this image concisely in 1-3 sentences. "
-                    "Focus on what is shown (diagrams, charts, photos, illustrations) "
-                    "and what information it conveys. Be specific — mention key elements, "
-                    "labels, numbers, or steps visible in the image. Do not start with "
-                    "'Based on the image' or similar filler phrases."
-                )
-                caption = await asyncio.wait_for(
-                    vision_provider.analyze_image(img_bytes, content_type, prompt=vision_prompt),
-                    timeout=PER_IMAGE_TIMEOUT,
-                )
-                # Each image gets its own session — no concurrent session access.
-                async with async_session_factory() as upd_session:
-                    await upd_session.execute(
-                        sa_update(SourceImage).where(SourceImage.id == image_id).values(caption=caption)
-                    )
-                    await upd_session.commit()
-                logger.info(f"caption_images_task: image {idx}/{total} done for {source_id}")
-            except Exception as e:
-                logger.warning(f"caption_images_task: failed {minio_key}: {type(e).__name__}: {e}")
+            async def _caption_one(image_id, minio_key: str, content_type: str, idx: int) -> None:
+                async with sem:
+                    try:
+                        img_bytes = storage_service.download_file(minio_key)
+                        vision_prompt = (
+                            "Describe this image concisely in 1-3 sentences. "
+                            "Focus on what is shown (diagrams, charts, photos, illustrations) "
+                            "and what information it conveys. Be specific — mention key elements, "
+                            "labels, numbers, or steps visible in the image. Do not start with "
+                            "'Based on the image' or similar filler phrases."
+                        )
+                        caption = await asyncio.wait_for(
+                            vision_provider.analyze_image(img_bytes, content_type, prompt=vision_prompt),
+                            timeout=PER_IMAGE_TIMEOUT,
+                        )
+                        # Each image gets its own session — no concurrent session access.
+                        async with async_session_factory() as upd_session:
+                            await upd_session.execute(
+                                sa_update(SourceImage).where(SourceImage.id == image_id).values(caption=caption)
+                            )
+                            await upd_session.commit()
+                        logger.info(f"caption_images_task: image {idx}/{total} done for {source_id}")
+                    except Exception as e:
+                        logger.warning(f"caption_images_task: failed {minio_key}: {type(e).__name__}: {e}")
 
-    await asyncio.gather(*[
-        _caption_one(img_id, mkey, ctype, idx)
-        for idx, (img_id, mkey, ctype) in enumerate(image_records, 1)
-    ])
-    logger.success(f"caption_images_task: {total} images processed for {source_id}")
+            await asyncio.gather(*[
+                _caption_one(img_id, mkey, ctype, idx)
+                for idx, (img_id, mkey, ctype) in enumerate(image_records, 1)
+            ])
+            logger.success(f"caption_images_task: {total} images processed for {source_id}")
 
-    # Bake captions into source.full_text so MAP-phase LLM sees ![<caption>](image://uuid)
-    # instead of the empty ![](image://uuid) marker, then chain into MRP.
-    import re
+            # Bake captions into source.full_text so MAP-phase LLM sees ![<caption>](image://uuid)
+            # instead of the empty ![](image://uuid) marker, then chain into MRP.
+            import re
 
-    async with async_session_factory() as session:
-        source = await session.get(Source, sid)
-        if not source:
-            return
-        rows = (await session.execute(
-            select(SourceImage).where(SourceImage.source_id == sid)
-        )).scalars().all()
-        caption_by_id = {str(r.id): (r.caption or "").replace("\n", " ").strip() for r in rows}
+            async with async_session_factory() as session:
+                source = await session.get(Source, sid)
+                if not source:
+                    return
+                rows = (await session.execute(
+                    select(SourceImage).where(SourceImage.source_id == sid)
+                )).scalars().all()
+                caption_by_id = {str(r.id): (r.caption or "").replace("\n", " ").strip() for r in rows}
 
-        if source.full_text and caption_by_id:
-            def _sub(match: re.Match) -> str:
-                uid = match.group(1)
-                cap = caption_by_id.get(uid, "")
-                return f"![{cap}](image://{uid})"
-            # Replace any marker (empty or already-captioned) so re-runs are idempotent.
-            new_text = re.sub(r"!\[[^\]]*\]\(image://([0-9a-fA-F-]+)\)", _sub, source.full_text)
-            if new_text != source.full_text:
-                source.full_text = new_text
-                await session.commit()
-                logger.info(f"caption_images_task: refreshed full_text with {len(caption_by_id)} captions for {source_id}")
+                if source.full_text and caption_by_id:
+                    def _sub(match: re.Match) -> str:
+                        uid = match.group(1)
+                        cap = caption_by_id.get(uid, "")
+                        return f"![{cap}](image://{uid})"
+                    # Replace any marker (empty or already-captioned) so re-runs are idempotent.
+                    new_text = re.sub(r"!\[[^\]]*\]\(image://([0-9a-fA-F-]+)\)", _sub, source.full_text)
+                    if new_text != source.full_text:
+                        source.full_text = new_text
+                        await session.commit()
+                        logger.info(f"caption_images_task: refreshed full_text with {len(caption_by_id)} captions for {source_id}")
 
-    # Chain into MAP-REDUCE (only now that captions are baked in).
-    pool = await get_arq_pool()
-    job = await pool.enqueue_job("ingest_map_reduce_task", source_id)
-    if job:
-        async with async_session_factory() as session:
-            source = await session.get(Source, sid)
-            if source:
-                source.job_id = job.job_id
-                source.progress_message = "Extraction queued..."
-                await session.commit()
-    logger.info(f"caption_images_task: enqueued ingest_map_reduce_task for {source_id}")
+            # Chain into MAP-REDUCE (only now that captions are baked in).
+            pool = await get_arq_pool()
+            job = await pool.enqueue_job("ingest_map_reduce_task", source_id)
+            if job:
+                async with async_session_factory() as session:
+                    source = await session.get(Source, sid)
+                    if source:
+                        source.job_id = job.job_id
+                        source.progress_message = "Extraction queued..."
+                        await session.commit()
+            logger.info(f"caption_images_task: enqueued ingest_map_reduce_task for {source_id}")
+        finally:
+            flush_langfuse()
 
 
 async def ai_pre_review_draft_task(
@@ -1287,9 +1332,14 @@ async def ai_pre_review_draft_task(
     Optional for backward-compat with jobs enqueued by older code.
     Permissive: never blocks the draft regardless of verdict.
     """
+    from app.ai.tracing import flush_langfuse, trace_context
     from app.services.ai_review import run_async_checks
     _ = ctx
-    await run_async_checks(draft_id, expected_round=expected_round)
+    async with trace_context("ai_pre_review_draft_task", tags=["ai_review"], metadata={"draft_id": draft_id, "expected_round": expected_round}):
+        try:
+            await run_async_checks(draft_id, expected_round=expected_round)
+        finally:
+            flush_langfuse()
 
 
 class WorkerSettings:
@@ -1326,10 +1376,18 @@ class WorkerSettings:
 
     @staticmethod
     async def on_startup(ctx: dict):
+        from app.ai.tracing import get_langfuse, sync_all_models_to_langfuse
+        get_langfuse()
+        try:
+            sync_all_models_to_langfuse()
+        except Exception as e:
+            logger.warning(f"Could not sync models to Langfuse on worker startup: {e}")
         logger.info("arq worker started — listening for ingestion jobs...")
 
     @staticmethod
     async def on_shutdown(ctx: dict):
+        from app.ai.tracing import shutdown_langfuse
+        shutdown_langfuse()
         logger.info("arq worker shutting down...")
 
 
@@ -1351,8 +1409,12 @@ class SkillWorkerSettings:
 
     @staticmethod
     async def on_startup(ctx: dict):
+        from app.ai.tracing import get_langfuse
+        get_langfuse()
         logger.info("arq skills worker started — listening for skill jobs...")
 
     @staticmethod
     async def on_shutdown(ctx: dict):
+        from app.ai.tracing import shutdown_langfuse
+        shutdown_langfuse()
         logger.info("arq skills worker shutting down...")

@@ -236,12 +236,10 @@ async def _extract_text_from_file(
             if not text:
                 empty_pages.append((i, i + 1))
 
-        # --- Gemini Vision OCR fallback for empty pages ---
-        if empty_pages and vision_provider:
-            logger.info(
-                f"OCR fallback: {len(empty_pages)}/{len(pages_data)} empty pages "
-                f"in '{file_name}', using vision provider"
-            )
+        # --- OCR for empty pages (Dedicated GLM-OCR model first, Vision Provider fallback) ---
+        from app.services.ocr_service import ocr_service
+
+        if empty_pages and (ocr_service.is_configured or vision_provider):
             ocr_prompt = (
                 "Extract ALL text from this document page exactly as written. "
                 "Preserve the original layout, headings, tables, and formatting "
@@ -249,20 +247,47 @@ async def _extract_text_from_file(
                 "table, reproduce it as a markdown table. If there is no text "
                 "at all, respond with an empty string."
             )
+            logger.info(
+                f"OCR processing: {len(empty_pages)}/{len(pages_data)} empty pages in '{file_name}'. "
+                f"Dedicated OCR configured: {ocr_service.is_configured}, Vision provider available: {bool(vision_provider)}"
+            )
+
             for idx, page_num in empty_pages:
                 try:
                     page = doc[idx]
                     # Render at 2x for better OCR quality
                     pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
                     img_bytes = pix.tobytes("png")
-                    ocr_text = await vision_provider.analyze_image(
-                        img_bytes, mime_type="image/png", prompt=ocr_prompt,
-                    )
+                    ocr_text: Optional[str] = None
+
+                    # Step 1: Try dedicated OCR model (GLM-OCR) first
+                    if ocr_service.is_configured:
+                        try:
+                            ocr_text = await ocr_service.ocr_image(
+                                img_bytes, mime_type="image/png", prompt=ocr_prompt,
+                            )
+                            if ocr_text and ocr_text.strip():
+                                logger.info(f"GLM-OCR page {page_num}: {len(ocr_text)} chars")
+                        except Exception as ocr_err:
+                            logger.warning(f"GLM-OCR failed on page {page_num} of '{file_name}': {ocr_err}")
+                            ocr_text = None
+
+                    # Step 2: Fallback to Vision Provider if dedicated OCR didn't produce text
+                    if (not ocr_text or not ocr_text.strip()) and vision_provider:
+                        logger.info(f"Fallback to vision provider for page {page_num} of '{file_name}'")
+                        try:
+                            ocr_text = await vision_provider.analyze_image(
+                                img_bytes, mime_type="image/png", prompt=ocr_prompt,
+                            )
+                            if ocr_text and ocr_text.strip():
+                                logger.debug(f"Vision provider OCR page {page_num}: {len(ocr_text)} chars")
+                        except Exception as vis_err:
+                            logger.warning(f"Vision provider OCR failed on page {page_num} of '{file_name}': {vis_err}")
+
                     if ocr_text and ocr_text.strip():
                         pages_data[idx]["content"] = ocr_text.strip()
-                        logger.debug(f"OCR page {page_num}: {len(ocr_text)} chars")
                 except Exception as e:
-                    logger.warning(f"OCR failed for page {page_num} of '{file_name}': {e}")
+                    logger.warning(f"OCR failed completely for page {page_num} of '{file_name}': {e}")
 
         doc.close()
         return pages_data

@@ -150,7 +150,7 @@ export function MarkdownEditor({
   // to. 300 is more than enough for typical KBs; bump if you need to.
   React.useEffect(() => {
     let cancelled = false;
-    api<WikiPageSummary[]>("/api/wiki/pages?limit=300")
+    api<WikiPageSummary[]>("/api/wiki/pages")
       .then((rows) => {
         if (!cancelled) setPages(Array.isArray(rows) ? rows : []);
       })

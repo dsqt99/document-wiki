@@ -179,6 +179,16 @@ For stronger enforcement, create a **Project** in Claude Desktop, attach Arkon a
 
 ---
 
+## 📖 Documentation
+
+- **[Backend REST API Guide](docs/API.md)** — Integration guide for external services (Departments, Knowledge Types, Documents & Sources, Auth).
+- **[Setup Guide](docs/SETUP.md)** — Docker production deployment and local development setup.
+- **[MCP & Claude Integration](docs/MCP.md)** — Connecting Claude Desktop, OAuth 2.1 authentication, and MCP tool specification.
+- **[Architecture & MRP Pipeline](docs/ARCHITECTURE.md)** — Ingestion pipeline, wiki compilation engine, and system design.
+- **[Access Control & RBAC](docs/ACCESS-CONTROL.md)** — Department scopes, global realm, and permission model.
+
+---
+
 ## 🗺️ Roadmap
 
 - [x] **MRP Pipeline** - deterministic compilation with plan review, page merge, and resume-on-crash.

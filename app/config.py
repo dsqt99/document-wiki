@@ -99,7 +99,55 @@ class Settings(BaseSettings):
         description="Max times a source may be auto-flipped from stuck 'processing' back to 'error' before the retry API refuses further attempts. Prevents token-burning loops when the failure is deterministic (bad provider key, malformed file).",
     )
 
+    # --- Langfuse Tracing ---
+    langfuse_public_key: str = Field(default="", description="Langfuse public API key")
+    langfuse_secret_key: str = Field(default="", description="Langfuse secret API key")
+    langfuse_host: str = Field(
+        default="https://cloud.langfuse.com",
+        description="Langfuse host URL",
+    )
+    langfuse_base_url: str = Field(
+        default="",
+        description="Alias for Langfuse host URL",
+    )
+    langfuse_enabled: bool = Field(
+        default=True,
+        description="Global enable flag for Langfuse telemetry",
+    )
+
+    # --- Milvus Vector Database ---
+    milvus_host: str = Field(default="milvus", description="Milvus server host")
+    milvus_port: int = Field(default=19530, description="Milvus server port")
+    milvus_enabled: bool = Field(default=True, description="Enable Milvus vector database")
+    milvus_user: str = Field(default="", description="Milvus username")
+    milvus_password: str = Field(default="", description="Milvus password")
+    milvus_database: str = Field(default="default", description="Milvus database name")
+
+    # --- Dedicated OCR Service ---
+    ocr_base_url: str = Field(default="", description="Base URL for dedicated OCR service (e.g. 'https://unsloth.anm05.com/v1')")
+    ocr_api_key: str = Field(default="", description="API key for dedicated OCR service")
+    ocr_model: str = Field(default="ggml-org/GLM-OCR-GGUF:f16", description="Model name for dedicated OCR service")
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
+
+    @property
+    def effective_ocr_base_url(self) -> str:
+        url = (self.ocr_base_url or "").strip()
+        if not url:
+            return ""
+        url = url.rstrip("/")
+        if "://" in url:
+            proto, path = url.split("://", 1)
+            while "//" in path:
+                path = path.replace("//", "/")
+            url = f"{proto}://{path}"
+        if not url.endswith("/v1"):
+            url = f"{url}/v1"
+        return url
+
+    @property
+    def effective_langfuse_host(self) -> str:
+        return self.langfuse_base_url or self.langfuse_host or "https://cloud.langfuse.com"
 
     @property
     def cors_origin_list(self) -> list[str]:
