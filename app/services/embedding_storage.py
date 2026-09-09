@@ -122,6 +122,35 @@ async def cleanup_stale_embeddings(
     return total
 
 
+async def delete_wiki_page_embeddings(
+    session: AsyncSession, page_id: uuid.UUID
+) -> int:
+    """Delete page embedding rows across all dimension tables and Milvus collections."""
+    from app.database.models import (
+        WikiPageEmbedding768,
+        WikiPageEmbedding1024,
+        WikiPageEmbedding1536,
+        WikiPageEmbedding3072,
+    )
+    from app.services.milvus_service import delete_page_vectors_from_milvus
+
+    total = 0
+    for Model in (
+        WikiPageEmbedding768,
+        WikiPageEmbedding1024,
+        WikiPageEmbedding1536,
+        WikiPageEmbedding3072,
+    ):
+        stmt = delete(Model).where(Model.page_id == page_id)
+        result = await session.execute(stmt)
+        total += result.rowcount or 0  # type: ignore[union-attr]
+
+    for dim in (768, 1024, 1536, 3072):
+        delete_page_vectors_from_milvus(page_id, dim)
+
+    return total
+
+
 def get_spec_for_job(job: EmbeddingJob) -> EmbeddingModelSpec:
     return get_spec(job.model_spec_id)
 

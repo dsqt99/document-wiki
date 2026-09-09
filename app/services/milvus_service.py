@@ -96,15 +96,17 @@ def upsert_page_vector_to_milvus(
     try:
         _ensure_collection(client, collection_name, dimension, "page")
         record_id = f"{page_id}_{spec_id}"
+        # Truncate content in dynamic field so dynamic field JSON never exceeds Milvus 64KB limit
+        safe_content = (content or "")[:12000]
         data = [
             {
                 "id": record_id,
                 "page_id": str(page_id),
                 "model_spec_id": spec_id,
-                "title": title or "",
-                "summary": summary or "",
-                "content": content or "",
-                "text": content or "",
+                "title": (title or "")[:500],
+                "summary": (summary or "")[:2000],
+                "content": safe_content,
+                "text": safe_content,
                 "content_hash": content_hash,
                 "vector": vector,
             }

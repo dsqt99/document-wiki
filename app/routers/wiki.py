@@ -33,6 +33,8 @@ from app.services.permission_engine import (
     _get_user_permissions,
     get_scope_level,
 )
+from app.services.wiki_chunk_service import index_wiki_page_chunks
+from loguru import logger
 
 router = APIRouter()
 
@@ -399,6 +401,10 @@ async def direct_create_wiki_page(
         f"Created page: {page.title} ({page.slug}) by {user.name or user.email}",
         scope_type=page.scope_type or "global", scope_id=page.scope_id,
     )
+    try:
+        await index_wiki_page_chunks(db, page)
+    except Exception as e:
+        logger.warning(f"Failed to generate embeddings for created page {page.slug}: {e}")
     await db.commit()
     await db.refresh(page)
 
@@ -499,6 +505,10 @@ async def direct_edit_wiki_page(
         scope_type=edited_scope_type,
         scope_id=edited_scope_id,
     )
+    try:
+        await index_wiki_page_chunks(db, page)
+    except Exception as e:
+        logger.warning(f"Failed to generate embeddings for edited page {slug}: {e}")
     await db.commit()
     await db.refresh(page)
 
@@ -562,6 +572,10 @@ async def rollback_wiki_page(
         raise HTTPException(404, str(e))
 
     await log_audit(db, user, "update", "wiki_page", str(page.id), reason=f"rollback to v{version}: {slug}")
+    try:
+        await index_wiki_page_chunks(db, page)
+    except Exception as e:
+        logger.warning(f"Failed to generate embeddings on rollback for page {slug}: {e}")
     await db.commit()
     await db.refresh(page)
 

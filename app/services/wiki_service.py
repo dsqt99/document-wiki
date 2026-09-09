@@ -1034,11 +1034,19 @@ async def delete_page_cascade(
         cleaned = cleaned.replace(f"[[{slug}]]", slug.split("/")[-1])
         ref_page.content_md = cleaned
 
-    # 4: Delete the page itself
+    # 4: Delete embeddings and chunks from both PostgreSQL (pgvector) and Milvus
+    from app.services.embedding_storage import (
+        delete_wiki_page_chunk_embeddings,
+        delete_wiki_page_embeddings,
+    )
+    await delete_wiki_page_chunk_embeddings(session, page.id)
+    await delete_wiki_page_embeddings(session, page.id)
+
+    # 5: Delete the page itself (foreign keys cascade revisions, drafts, links)
     await session.delete(page)
 
     await session.flush()
-    logger.info(f"delete_page_cascade({slug}): deleted page + cleaned {len(referring_pages)} references")
+    logger.info(f"delete_page_cascade({slug}): deleted page + embeddings + cleaned {len(referring_pages)} references")
 
 
 # ---------------------------------------------------------------------------
@@ -1052,7 +1060,7 @@ async def detach_source_from_wiki(
     """
     Remove `source_id` from every WikiPage.source_ids.
     - Pages that have other contributing sources: keep, just remove this source_id.
-    - Pages whose only source was this one: delete immediately.
+    - Pages whose only source was this one: delete immediately with full cascade.
 
     Returns the number of pages deleted.
     """
@@ -1062,7 +1070,7 @@ async def detach_source_from_wiki(
     for page in pages:
         remaining = [sid for sid in (page.source_ids or []) if sid != source_id]
         if not remaining:
-            await session.delete(page)
+            await delete_page_cascade(session, page)
             deleted_count += 1
         else:
             page.source_ids = remaining

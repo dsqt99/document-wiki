@@ -102,16 +102,19 @@ async def trace_context(
         meta["session_id"] = session_id
 
     try:
-        with client.start_as_current_observation(
+        cm = client.start_as_current_observation(
             name=name,
             as_type="span",
             input=input_data,
             metadata=meta,
-        ) as span:
-            yield span
+        )
     except Exception as e:
-        logger.debug(f"Langfuse trace_context error: {e}")
+        logger.debug(f"Langfuse trace_context start error: {e}")
         yield None
+        return
+
+    with cm as span:
+        yield span
 
 
 def record_generation(

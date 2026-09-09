@@ -79,7 +79,7 @@ class Source(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    title: Mapped[Optional[str]] = mapped_column(String(500))
+    title: Mapped[Optional[str]] = mapped_column(Text)
     full_text: Mapped[Optional[str]] = mapped_column(Text)
     source_type: Mapped[Optional[str]] = mapped_column(String(50))  # "file", "url"
     # --- Scope: global or project (workspace) ---
@@ -289,7 +289,7 @@ class WikiPage(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     slug: Mapped[str] = mapped_column(String(300), nullable=False)
-    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="seed",
         comment="Lifecycle status: seed | developing | mature | evergreen"

@@ -24,6 +24,8 @@ from app.ai.registry import ProviderRegistry
 from app.database.models import WikiPage
 from app.services.embedding_storage import (
     delete_wiki_page_chunk_embeddings,
+    embedding_input_text,
+    upsert_page_embedding,
     upsert_wiki_chunk_embedding,
     wiki_chunk_content_hash,
 )
@@ -140,17 +142,22 @@ async def index_wiki_page_chunks(
     page: WikiPage,
     spec_id: Optional[str] = None,
 ) -> int:
-    """Chunk + embed a wiki page's content_md into wiki_page_chunk_embeddings_<dim>.
+    """Chunk + embed a wiki page's content_md into wiki_page_chunk_embeddings_<dim>
+    and page-level vector into wiki_page_embeddings_<dim> (synced to Milvus).
 
     Returns the number of chunks indexed. Returns 0 (and logs) if no embedding
-    model is configured. Does NOT commit — the caller owns the transaction so a
-    batch of pages commits together.
+    model is configured or for reserved pages (_index, _log, _hot).
+    Does NOT commit — the caller owns the transaction so a batch of pages
+    commits together.
 
     Args:
         spec_id: Embed against this specific spec instead of the system's active
             one. Used by the re-embed migration job (embeds with the NEW model
             while the active spec still points at the OLD one).
     """
+    if page.slug in ("_index", "_log", "_hot"):
+        return 0
+
     registry = ProviderRegistry(session)
     if spec_id is None:
         spec_id = await registry.get_active_embedding_spec_id()
@@ -164,17 +171,37 @@ async def index_wiki_page_chunks(
     spec = get_spec(spec_id)
     chunks = build_wiki_chunks(page.content_md or "")
 
-    # Clear prior rows for THIS page in THIS spec only, so a shorter re-edit
+    # Clear prior chunk rows for THIS page in THIS spec only, so a shorter re-edit
     # doesn't leave orphaned high-index chunks. Other specs stay intact until the
     # atomic flip prunes them.
     await delete_wiki_page_chunk_embeddings(session, page.id, spec_id=spec.id)
 
-    if not chunks:
+    page_text = embedding_input_text(page.title or "", page.summary or "", page.content_md or "")
+    if not page_text.strip() and not chunks:
         return 0
 
     provider = await registry.get_embedding(task="document", spec_id=spec.id)
-    vectors = await provider.embed_batch([_embed_input(page, c) for c in chunks])
-    for chunk, vector in zip(chunks, vectors):
+    chunk_inputs = [_embed_input(page, c) for c in chunks]
+    all_texts = [page_text] + chunk_inputs
+    vectors = await provider.embed_batch(all_texts)
+
+    # 1. Upsert page-level embedding (PostgreSQL + Milvus)
+    page_vector = list(vectors[0])
+    chash = wiki_chunk_content_hash("", page.content_md or "")
+    await upsert_page_embedding(
+        session,
+        page_id=page.id,
+        spec=spec,
+        vector=page_vector,
+        content_hash=chash,
+        title=page.title,
+        summary=page.summary,
+        content_md=page.content_md,
+    )
+
+    # 2. Upsert chunk-level embeddings (PostgreSQL + Milvus)
+    chunk_vectors = vectors[1:]
+    for chunk, vector in zip(chunks, chunk_vectors):
         await upsert_wiki_chunk_embedding(
             session,
             page_id=page.id,

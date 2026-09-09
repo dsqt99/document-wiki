@@ -624,6 +624,13 @@ async def upload_source(
 ):
     file_data = await file.read()
     file_name = file.filename or "unknown"
+    ext = (file_name.rsplit(".", 1)[-1] if "." in file_name else "").lower()
+    if ext == "doc":
+        raise HTTPException(
+            400,
+            "Định dạng file .doc (Word 97-2003) không được hỗ trợ. "
+            "Vui lòng chuyển đổi file sang định dạng .docx hoặc .pdf trước khi tải lên.",
+        )
 
     # Parse department_ids
     dept_uuids: list[uuid.UUID] = []
@@ -1188,6 +1195,13 @@ async def delete_source(
         storage_service.delete_prefix(f"sources/{source_id}/")
     except Exception as e:
         logger.warning(f"Failed to clean MinIO files for source {source_id}: {e}")
+
+    # Clean up verbatim source chunk embeddings (pgvector + Milvus) if any
+    try:
+        from app.services.embedding_storage import delete_source_chunk_embeddings
+        await delete_source_chunk_embeddings(db, source_id)
+    except Exception as e:
+        logger.warning(f"Failed to delete source chunk embeddings for source {source_id}: {e}")
 
     # Detach from wiki — single-source pages are deleted, then rebuild index.
     from app.services import wiki_service

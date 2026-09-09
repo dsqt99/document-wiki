@@ -33,6 +33,8 @@ from app.services.permission_engine import (
     _get_user_permissions,
     has_any_permission,
 )
+from app.services.wiki_chunk_service import index_wiki_page_chunks
+from loguru import logger
 
 router = APIRouter()
 
@@ -779,6 +781,10 @@ async def approve_draft(
     await contribution_service.notify_approved(
         db, wiki_draft_adapter, draft, user, version_label=f"v{page.version}",
     )
+    try:
+        await index_wiki_page_chunks(db, page)
+    except Exception as e:
+        logger.warning(f"Failed to generate embeddings for approved page {page.slug}: {e}")
     await db.commit()
     await db.refresh(draft)
     return await _draft_response(db, draft)
@@ -1108,6 +1114,10 @@ async def bulk_approve_drafts(
                     db, wiki_draft_adapter, draft, user,
                     version_label=f"v{page.version}",
                 )
+                try:
+                    await index_wiki_page_chunks(db, page)
+                except Exception as e:
+                    logger.warning(f"Failed to generate embeddings for bulk-approved page {page.slug}: {e}")
         except (wiki_service.DraftConflictError, wiki_service.CreateDraftSlugConflict) as e:
             _expire_after_failed_approve(db, draft, page)
             results.append(BulkApproveItemResult(

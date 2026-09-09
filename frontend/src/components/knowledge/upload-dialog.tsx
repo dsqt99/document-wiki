@@ -38,11 +38,10 @@ type Props = {
   onUploaded: () => void;
 };
 
-const ACCEPTED_EXTENSIONS = ["pdf", "docx", "doc", "xlsx", "xls", "csv", "txt", "md", "pptx"];
+const ACCEPTED_EXTENSIONS = ["pdf", "docx", "xlsx", "xls", "csv", "txt", "md", "pptx"];
 const ACCEPTED_MIMES = [
   "application/pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/msword",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   "application/vnd.ms-excel",
   "text/plain",
@@ -61,7 +60,6 @@ function getFileIcon(ext: string): { icon: string; color: string } {
     case "pdf":
       return { icon: "picture_as_pdf", color: "text-rose-500 bg-rose-500/10" };
     case "docx":
-    case "doc":
       return { icon: "description", color: "text-blue-500 bg-blue-500/10" };
     case "xlsx":
     case "xls":
@@ -80,11 +78,14 @@ function getFileIcon(ext: string): { icon: string; color: string } {
 
 function validateFile(f: File): string | null {
   const ext = getFileExtension(f.name);
-  if (!ACCEPTED_EXTENSIONS.includes(ext) && !ACCEPTED_MIMES.includes(f.type)) {
-    return `"${f.name}": Unsupported format ".${ext}". Accepted: ${ACCEPTED_EXTENSIONS.join(", ")}`;
+  if (ext === "doc") {
+    return `"${f.name}": Định dạng file .doc cũ không được hỗ trợ. Vui lòng chuyển đổi sang .docx hoặc .pdf trước khi tải lên.`;
+  }
+  if (!ext || !ACCEPTED_EXTENSIONS.includes(ext)) {
+    return `"${f.name}": Đuôi file ".${ext || "không rõ"}" không được hỗ trợ. Chỉ chấp nhận: ${ACCEPTED_EXTENSIONS.join(", ").toUpperCase()}`;
   }
   if (f.size > 50 * 1024 * 1024) {
-    return `"${f.name}": File too large (max 50 MB).`;
+    return `"${f.name}": Dung lượng file vượt quá giới hạn 50 MB.`;
   }
   return null;
 }
@@ -107,6 +108,7 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
   const [uploadProgress, setUploadProgress] = useState<string>("");
   const [error, setError] = useState("");
   const [dragOver, setDragOver] = useState(false);
+  const [isDragInvalid, setIsDragInvalid] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const toggleDept = (deptId: string) => {
@@ -160,6 +162,7 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
       e.preventDefault();
       e.stopPropagation();
       setDragOver(false);
+      setIsDragInvalid(false);
       const droppedFiles = Array.from(e.dataTransfer.files || []);
       if (droppedFiles.length) addFiles(droppedFiles);
     },
@@ -170,12 +173,23 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
     e.preventDefault();
     e.stopPropagation();
     setDragOver(true);
+    if (e.dataTransfer.items) {
+      for (let i = 0; i < e.dataTransfer.items.length; i++) {
+        const item = e.dataTransfer.items[i];
+        if (item.kind === "file" && (item.type === "application/msword" || item.type === "")) {
+          setIsDragInvalid(true);
+          return;
+        }
+      }
+    }
+    setIsDragInvalid(false);
   }, []);
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setDragOver(false);
+    setIsDragInvalid(false);
   }, []);
 
   const handleUpload = async () => {
@@ -282,27 +296,33 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
                 className={`
                   relative flex flex-col items-center justify-center gap-2 px-4 py-8
                   rounded-xl border-2 border-dashed cursor-pointer transition-all duration-200
-                  ${dragOver
+                  ${isDragInvalid
+                    ? "border-destructive bg-destructive/5 scale-[1.01]"
+                    : dragOver
                     ? "border-primary bg-primary/5 scale-[1.01]"
                     : "border-border hover:border-primary/40 hover:bg-accent/30"
                   }
                 `}
               >
                 <div className={`w-11 h-11 rounded-full flex items-center justify-center transition-colors ${
-                  dragOver ? "bg-primary/15" : "bg-accent/70"
+                  isDragInvalid ? "bg-destructive/15" : dragOver ? "bg-primary/15" : "bg-accent/70"
                 }`}>
                   <span className={`material-symbols-outlined transition-colors ${
-                    dragOver ? "text-primary" : "text-muted-foreground"
+                    isDragInvalid ? "text-destructive" : dragOver ? "text-primary" : "text-muted-foreground"
                   }`} style={{ fontSize: 24 }}>
-                    upload_file
+                    {isDragInvalid ? "block" : "upload_file"}
                   </span>
                 </div>
                 <div className="text-center">
-                  <p className="text-sm text-foreground font-medium">
-                    {dragOver ? "Drop files here" : "Drag & drop or click to browse"}
+                  <p className={`text-sm font-medium ${isDragInvalid ? "text-destructive" : "text-foreground"}`}>
+                    {isDragInvalid
+                      ? "Định dạng file không được hỗ trợ!"
+                      : dragOver
+                      ? "Thả file vào đây"
+                      : "Kéo thả file vào đây hoặc bấm để chọn"}
                   </p>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Select multiple files (PDF, DOCX, XLSX, CSV, TXT, MD, PPTX · Max 50 MB each)
+                    Chỉ chấp nhận: PDF, DOCX, XLSX, CSV, TXT, MD, PPTX (tối đa 50 MB)
                   </p>
                 </div>
               </div>
@@ -367,6 +387,13 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
                     </button>
                   </div>
                 )}
+              </div>
+            )}
+
+            {error && (
+              <div className="text-destructive text-xs bg-destructive/10 border border-destructive/20 px-3.5 py-2.5 rounded-xl flex items-start gap-2.5 animate-in fade-in-50">
+                <span className="material-symbols-outlined shrink-0 text-destructive mt-0.5" style={{ fontSize: 16 }}>error</span>
+                <span className="font-medium leading-relaxed">{error}</span>
               </div>
             )}
           </div>
@@ -522,13 +549,6 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
               </p>
             )}
           </div>
-
-          {error && (
-            <p className="text-destructive text-xs bg-destructive/10 px-3 py-2 rounded-lg flex items-center gap-2">
-              <span className="material-symbols-outlined shrink-0" style={{ fontSize: 15 }}>error</span>
-              <span>{error}</span>
-            </p>
-          )}
         </div>
 
         {/* Fixed Pinned Footer */}

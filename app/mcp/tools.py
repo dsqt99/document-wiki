@@ -2004,6 +2004,11 @@ def register_tools(mcp: FastMCP):
                 f"Created page: {title} ({slug}) via MCP by {employee.name or employee.email}",
                 scope_type=scope_type, scope_id=sid,
             )
+            try:
+                from app.services.wiki_chunk_service import index_wiki_page_chunks
+                await index_wiki_page_chunks(session, page)
+            except Exception as e:
+                logger.warning(f"Failed to generate embeddings for MCP created page {slug}: {e}")
             await session.commit()
 
         return f"Page `{slug}` created at v{page.version}."

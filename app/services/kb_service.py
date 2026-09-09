@@ -339,7 +339,11 @@ async def _extract_text_from_file(
     if ext in ("txt", "md"):
         return [{"content": file_data.decode("utf-8", errors="ignore"), "page_number": 1}]
 
-    # Other formats (doc, xlsx, pptx, ...): write to a temp file and let
+    if ext == "doc":
+        logger.warning("Extraction skipped: .doc format (Word 97-2003) is not supported.")
+        raise ValueError("Định dạng file .doc (Word 97-2003) không được hỗ trợ. Vui lòng chuyển đổi sang .docx hoặc .pdf.")
+
+    # Other formats (pptx, ...): write to a temp file and let
     # content-core extract via file path. Passing raw bytes as "content"
     # doesn't work for binary formats — content-core expects a string there.
     import os

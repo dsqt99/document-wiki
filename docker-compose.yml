@@ -16,6 +16,8 @@ x-backend: &backend
       condition: service_healthy
   volumes:
     - ./temp_uploads:/app/temp_uploads
+    - ./app:/app/app
+    - ./alembic:/app/alembic
 
 services:
   # ── Infrastructure ────────────────────────────────────────────

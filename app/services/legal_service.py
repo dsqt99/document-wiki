@@ -131,7 +131,12 @@ async def finalize_legal_source(session: AsyncSession, source: Source, tracker: 
     """
     await tracker.update(55, "Bóc tách văn bản quy phạm pháp luật theo từng Điều...")
 
-    doc_title = source.title or source.file_name or f"Văn bản {source.id}"
+    raw_title = (source.title or source.file_name or f"Văn bản {source.id}").strip()
+    for ext in (".docx", ".doc", ".pdf", ".txt", ".md"):
+        if raw_title.lower().endswith(ext):
+            raw_title = raw_title[: -len(ext)].strip()
+            break
+    doc_title = raw_title
     full_text = source.full_text or ""
 
     if not full_text.strip():
