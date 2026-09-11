@@ -67,6 +67,47 @@ async def _get_identity():
         if auth_svc.bumped_last_connected:
             await session.commit()
 
+        user_role = (request.headers.get("x-user-role") or "").strip().lower()
+        dept_code = (request.headers.get("x-department-code") or "").strip()
+        dept_name = (request.headers.get("x-department-name") or "").strip()
+
+        # Dynamic scope enforcement based on forwarded department and role from Chatbot
+        if user_role:
+            if user_role == "admin":
+                identity.is_admin = True
+            else:
+                identity.is_admin = False
+                matched_depts = []
+                if dept_code or dept_name:
+                    from sqlalchemy import or_, select
+                    from app.database.models import Department
+
+                    conds = []
+                    if dept_code:
+                        conds.append(Department.name.ilike(f"%{dept_code}%"))
+                    if dept_name:
+                        conds.append(Department.name.ilike(f"%{dept_name}%"))
+                    stmt = select(Department).where(or_(*conds))
+                    res = await session.execute(stmt)
+                    matched_depts = res.scalars().all()
+
+                    # If not found in Arkon DB but valid dept_code supplied, auto-register it
+                    if not matched_depts and dept_code:
+                        new_dept = Department(name=dept_code, description=dept_name or dept_code)
+                        session.add(new_dept)
+                        await session.commit()
+                        await session.refresh(new_dept)
+                        matched_depts = [new_dept]
+
+                if matched_depts:
+                    identity.department_ids = [d.id for d in matched_depts]
+                    identity.department_names = [d.name for d in matched_depts]
+                    identity.allowed_source_ids = await auth_svc._get_department_source_ids(identity.department_ids)
+                else:
+                    identity.department_ids = []
+                    identity.department_names = []
+                    identity.allowed_source_ids = await auth_svc._get_department_source_ids([])
+
     current_identity.set(identity)
     return identity, None
 
