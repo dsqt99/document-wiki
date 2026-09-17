@@ -34,11 +34,11 @@ export default function LoginPage() {
       <div className="w-full max-w-md px-8">
         {/* Brand */}
         <div className="text-center mb-10">
-          <h1 className="text-5xl tracking-tight text-foreground mb-2">
-            Arkon
+          <h1 className="text-4xl font-bold tracking-tight text-foreground mb-2">
+            Document-Wiki
           </h1>
           <p className="text-muted-foreground text-sm">
-            Enterprise AI Control Center
+            Enterprise AI Knowledge Hub & MCP Server
           </p>
         </div>
 

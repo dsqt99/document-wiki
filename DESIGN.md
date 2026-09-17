@@ -1,30 +1,36 @@
-# Sahara — Warm Minimalism
+# Cobalt Slate — Modern Enterprise AI Hub
 
-## North Star: "Sun-Baked Simplicity"
-Luxurious warmth meets disciplined minimalism. Golden tones, editorial serif headings, and abundant whitespace.
+## North Star: "Precision, Trust & High-Tech Clarity"
+Modern enterprise AI knowledge infrastructure. Deep cobalt blues, electric cyan accents, crisp slate typography, and clean, high-contrast surfaces engineered for focus and clarity.
 
 ## Colors
-- **Primary (`#c2652a`):** Burnt sienna — warm, earthy CTAs and focus states.
-- **Background (`#faf5ee`):** Warm linen — never cold white.
-- **Tertiary (`#8c3c3c`):** Dusty rose — sparse accent for emphasis.
-- Entire palette is warm-shifted. Even grays have warm undertones.
+- **Primary (`#2563eb` / Blue 600):** Deep Cobalt Blue — authoritative CTAs, active states, and focal links.
+- **Accent / Cyan (`#06b6d4` / Cyan 500):** Electric Cyan — knowledge discovery, graph connections, and verified states.
+- **Background (`#f8fafc` / Slate 50):** Crisp Slate Tint — ultra-clean, modern digital workspace without yellow undertones.
+- **Surface / Cards (`#ffffff`):** Pure White — elevated cards with subtle slate borders (`#e2e8f0`).
+- **Foreground (`#0f172a` / Slate 900):** Deep Slate — optimal readability for complex documentation and wikis.
+- **Muted (`#64748b` / Slate 500):** Secondary text, metadata badges, and timestamp indicators.
 
 ## Typography
-- **Headlines:** EB Garamond — elegant, editorial serif. Large sizes with tight leading.
-- **Body/Labels:** Manrope — geometric sans-serif, clean and modern contrast to the serif.
-- The serif/sans pairing creates a luxury editorial feel.
+- **Headlines & Interface:** Manrope / Inter — geometric, modern sans-serif with crisp hierarchy and tight tracking.
+- **Monospace:** JetBrains Mono / Cascadia Code — structured JSON, MCP tool schemas, and technical code snippets.
+- Sans-serif pairing brings an elite, authoritative enterprise AI SaaS experience.
 
-## Elevation
-- Ultra-soft shadows: `0 2px 16px rgba(58, 48, 42, 0.04)`. Barely visible.
-- Prefer warm background tinting for hierarchy.
-- Borders: thin and warm (`#d8d0c8` at 60% opacity).
+## Elevation & Glassmorphism
+- **Subtle Modern Shadows:** `0 1px 3px 0 rgb(15 23 42 / 0.06), 0 1px 2px -1px rgb(15 23 42 / 0.04)`.
+- **Active Card Glow:** Subtle cobalt/cyan outline ring on focus or active selection (`rgba(37, 99, 235, 0.15)`).
+- **Borders:** Thin, crisp slate borders (`#e2e8f0` / Slate 200).
 
 ## Components
-- **Buttons:** Primary = solid sienna fill, 8px radius. Secondary = outlined with warm border. Text links underlined on hover.
-- **Cards:** Warm white or `surface_container_low`, generous padding (28-32px). Minimal borders.
-- **Inputs:** White background, warm gray border, sienna focus state.
+- **Buttons:**
+  - Primary: Solid Cobalt Blue (`#2563eb`) with white text, 8px radius, hover brightness shift.
+  - Secondary: Outlined with slate-200 border, hover background slate-100.
+  - Accent / Tool: Cyan badge with soft cyan tint background (`#ecfeff` / `#06b6d4`).
+- **Cards & Bento Units:** Crisp white surface, 12px radius, subtle border, generous padding (24-32px).
+- **Inputs & Search Bars:** White background, slate border, focus ring with cobalt blue glow.
+- **Badges & Tags:** Rounded pill badges with soft colored backgrounds (e.g., green for verified, blue for department, cyan for AI skills).
 
-## Rules
-- Whitespace is the primary design tool. When in doubt, add more.
-- Content should feel curated, not cluttered. Limit items per section.
-- Photography should be warm-toned. Avoid cool/blue stock imagery.
+## Principles & Rules
+- **Information Density with Breathing Room:** Clear 3-column layouts (Tree navigation, Structured Content, Knowledge Graph).
+- **Predictable Visual Hierarchy:** Strict heading scale, metadata pills before title, clear citations.
+- **Enterprise-Grade Consistency:** Visual harmony between Document-Wiki portal, MCP servers, and Chatbot CAHY.

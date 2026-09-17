@@ -200,14 +200,14 @@ function OrgHeader({
         <DropdownMenuTrigger className="flex items-center gap-2.5 rounded-md px-1.5 py-1.5 hover:bg-black/[0.03] transition-colors cursor-pointer min-w-0 flex-1">
           <Image
             src="/logo.png"
-            alt="Arkon"
+            alt="Document-Wiki"
             width={24}
             height={24}
             className="shrink-0 rounded-[4px]"
           />
           <div className="flex flex-col items-start min-w-0">
             <span className="text-[15px] font-semibold text-primary truncate leading-tight font-heading">
-              Arkon
+              Document-Wiki
             </span>
             {user && (
               <span className="text-[10px] text-muted-foreground/70 truncate leading-tight">

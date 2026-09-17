@@ -4,9 +4,9 @@ import { AuthProvider } from "@/lib/auth";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Arkon - Knowledge Base Center",
+  title: "Document-Wiki — Enterprise AI Knowledge Hub",
   description:
-    "Centralized knowledge management and access control for Claude ecosystem",
+    "Hệ thống quản trị tri thức doanh nghiệp tập trung và máy chủ MCP cho các tác tử AI & LLMs",
 };
 
 export default function RootLayout({
