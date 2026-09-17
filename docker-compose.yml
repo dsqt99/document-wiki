@@ -164,6 +164,9 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+    networks:
+      - default
+      - cahy-internal
 
   worker:
     <<: *backend
@@ -206,3 +209,10 @@ volumes:
   minio_data:
   milvus_etcd_data:
   milvus_data:
+
+networks:
+  default:
+  cahy-internal:
+    name: ${CAHY_NETWORK_NAME:-cahy-internal}
+    external: true
+

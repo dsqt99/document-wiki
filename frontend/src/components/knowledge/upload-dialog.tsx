@@ -102,7 +102,6 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
   const [selectedDepts, setSelectedDepts] = useState<string[]>([]);
   const [scopeType, setScopeType] = useState("global");
   const [scopeId, setScopeId] = useState("");
-  const [keepVerbatim, setKeepVerbatim] = useState(false);
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<string>("");
@@ -215,7 +214,6 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
         if (scopeType !== "global" && scopeId) {
           formData.append("scope_id", scopeId);
         }
-        if (keepVerbatim) formData.append("preserve_verbatim", "true");
 
         await apiUpload("/api/sources/upload", formData);
         successCount++;
@@ -235,7 +233,6 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
       setSelectedDepts([]);
       setScopeType("global");
       setScopeId("");
-      setKeepVerbatim(false);
     } else {
       if (successCount > 0) {
         onUploaded();
@@ -425,24 +422,6 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
                 ))}
               </SelectContent>
             </Select>
-          </div>
-
-          {/* Verbatim mode */}
-          <div className="rounded-lg border bg-accent/10 p-2.5 flex flex-col gap-1">
-            <label className="flex items-start gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={keepVerbatim}
-                onChange={(e) => setKeepVerbatim(e.target.checked)}
-                className="rounded border-border mt-0.5"
-              />
-              <span className="text-xs font-medium text-foreground">
-                Keep verbatim — skip wiki generation
-              </span>
-            </label>
-            <p className="text-[11px] text-muted-foreground ml-5">
-              Documents are stored and indexed exactly as-is (e.g. contracts, decrees, regulations), skipping AI summarization.
-            </p>
           </div>
 
           {/* Departments */}
