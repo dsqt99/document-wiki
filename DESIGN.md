@@ -33,4 +33,13 @@ Modern enterprise AI knowledge infrastructure. Deep cobalt blues, electric cyan 
 ## Principles & Rules
 - **Information Density with Breathing Room:** Clear 3-column layouts (Tree navigation, Structured Content, Knowledge Graph).
 - **Predictable Visual Hierarchy:** Strict heading scale, metadata pills before title, clear citations.
-- **Enterprise-Grade Consistency:** Visual harmony between Document-Wiki portal, MCP servers, and Chatbot CAHY.
+- **Enterprise-Grade Consistency:** Visual harmony between Document Wiki portal, MCP servers, and connected AI clients.
+
+## Brand Identity & Logo System
+![Document Wiki Brandkit](docs/assets/Document Wiki-brandkit.png)
+
+### The "DW" Monogram Symbol
+- **Concept:** An interlocking ribbon/origami construct uniting the letters **D** (Document) and **W** (Wiki).
+- **Metaphor:** Layered document folios folded into an interconnected intelligent network, with a central glowing cyan spark representing AI intelligence and instant context retrieval.
+- **Geometry:** 45-degree ribbon angles, circle arcs for the 'D' loop, and razor-sharp clean geometric alignment.
+- **Scalability:** Optimized as a dark squircle app icon ([frontend/public/logo.png](file:///d:/code/dsqt/conganhungyen/chatbot_cahy/Document Wiki/frontend/public/logo.png)) that retains legibility from 16x16px (favicon, sidebar header) to high-resolution display boards.

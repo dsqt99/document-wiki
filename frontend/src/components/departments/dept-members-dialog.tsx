@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useCallback } from "react";
 import { api } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -33,6 +34,7 @@ type Props = {
 };
 
 export function DeptMembersDialog({ open, onOpenChange, deptId, deptName }: Props) {
+  const { t } = useI18n();
   const [members, setMembers] = useState<Employee[]>([]);
   const [allEmployees, setAllEmployees] = useState<Employee[]>([]);
   const [selectedEmpId, setSelectedEmpId] = useState("");
@@ -74,7 +76,7 @@ export function DeptMembersDialog({ open, onOpenChange, deptId, deptName }: Prop
       setSelectedEmpId("");
       await loadMembers();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to add member");
+      setError(err instanceof Error ? err.message : t("common.error", "Failed to add member"));
     } finally {
       setSaving(false);
     }
@@ -88,7 +90,7 @@ export function DeptMembersDialog({ open, onOpenChange, deptId, deptName }: Prop
       });
       await loadMembers();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to remove member");
+      setError(err instanceof Error ? err.message : t("common.error", "Failed to remove member"));
     }
   };
 
@@ -99,7 +101,9 @@ export function DeptMembersDialog({ open, onOpenChange, deptId, deptName }: Prop
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle className="text-xl">Member Management — {deptName}</DialogTitle>
+          <DialogTitle className="text-xl">
+            {t("dept.membersTitle", `Member Management — ${deptName}`).replace("{name}", deptName)}
+          </DialogTitle>
         </DialogHeader>
 
         <div className="flex flex-col gap-5 mt-1">
@@ -119,7 +123,7 @@ export function DeptMembersDialog({ open, onOpenChange, deptId, deptName }: Prop
                     })()}
                   </span>
                 ) : (
-                  <SelectValue placeholder="Select employee to add..." />
+                  <SelectValue placeholder={t("dept.selectEmpToAdd", "Select employee to add...")} />
                 )}
               </SelectTrigger>
               <SelectContent>
@@ -138,7 +142,7 @@ export function DeptMembersDialog({ open, onOpenChange, deptId, deptName }: Prop
             >
               {saving
                 ? <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
-                : "Add"}
+                : t("dept.addMember", "Add")}
             </Button>
           </div>
 
@@ -146,7 +150,7 @@ export function DeptMembersDialog({ open, onOpenChange, deptId, deptName }: Prop
           <div className="border border-border rounded-xl bg-card overflow-hidden">
             <div className="bg-muted/50 px-4 py-2 border-b border-border">
               <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Current Members ({members.length})
+                {t("dept.currentMembers", "Current Members")} ({members.length})
               </h3>
             </div>
 
@@ -156,7 +160,7 @@ export function DeptMembersDialog({ open, onOpenChange, deptId, deptName }: Prop
               </div>
             ) : members.length === 0 ? (
               <div className="p-4">
-                <EmptyState icon="group_off" title="No members" description="No employees are assigned to this department yet." />
+                <EmptyState icon="group_off" title={t("dept.noMembers", "No members")} description={t("dept.noMembersDesc", "No employees are assigned to this department yet.")} />
               </div>
             ) : (
               <div className="flex flex-col divide-y divide-border max-h-60 overflow-y-auto">
@@ -182,8 +186,7 @@ export function DeptMembersDialog({ open, onOpenChange, deptId, deptName }: Prop
           </div>
 
           <p className="text-xs text-muted-foreground">
-            Employees can belong to multiple departments. Removing them here only revokes
-            this department&apos;s access — their other memberships are untouched.
+            {t("dept.memberMultiHint", "Employees can belong to multiple departments. Removing them here only revokes this department's access.")}
           </p>
         </div>
       </DialogContent>

@@ -108,6 +108,50 @@
   --surface-variant: #f8fafc;
 }
 
+.dark {
+  /* Cobalt Slate Dark Palette */
+  --background: #0a0f1a;
+  --foreground: #f1f5f9;
+  --card: #111827;
+  --card-foreground: #f1f5f9;
+  --popover: #131c2e;
+  --popover-foreground: #f1f5f9;
+  --primary: #60a5fa;
+  --primary-foreground: #0a0f1a;
+  --secondary: #1e293b;
+  --secondary-foreground: #e2e8f0;
+  --muted: #1a2332;
+  --muted-foreground: #94a3b8;
+  --accent: #1e293b;
+  --accent-foreground: #f1f5f9;
+  --destructive: #f87171;
+  --border: #2a3548;
+  --input: #1e293b;
+  --ring: #60a5fa;
+  /* Charts */
+  --chart-1: #60a5fa;
+  --chart-2: #22d3ee;
+  --chart-3: #818cf8;
+  --chart-4: #a78bfa;
+  --chart-5: #64748b;
+  /* Sidebar */
+  --sidebar: #0c1222;
+  --sidebar-foreground: #f1f5f9;
+  --sidebar-primary: #60a5fa;
+  --sidebar-primary-foreground: #0a0f1a;
+  --sidebar-accent: rgba(96, 165, 250, 0.12);
+  --sidebar-accent-foreground: #93c5fd;
+  --sidebar-border: #1e293b;
+  --sidebar-ring: #60a5fa;
+  /* Brand compatibility tokens */
+  --sahara: #60a5fa;
+  --sahara-foreground: #0a0f1a;
+  --sahara-container: #2563eb;
+  --sahara-muted: #93c5fd;
+  --surface: #111827;
+  --surface-variant: #1e293b;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

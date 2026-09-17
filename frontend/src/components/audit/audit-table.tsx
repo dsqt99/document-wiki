@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/shared/empty-state";
+import { useI18n } from "@/lib/i18n";
 
 export type AuditLogEntry = {
   id: string;
@@ -31,6 +32,8 @@ type Props = {
 };
 
 export function AuditTable({ logs, loading }: Props) {
+  const { t } = useI18n();
+
   if (loading) {
     return (
       <div className="bg-card rounded-xl border border-border shadow-sahara flex items-center justify-center py-16">
@@ -46,8 +49,8 @@ export function AuditTable({ logs, loading }: Props) {
       <div className="bg-card rounded-xl border border-border shadow-sahara">
         <EmptyState
           icon="policy"
-          title="No audit logs found"
-          description="Access control events will appear here."
+          title={t("audit.noLogs", "No audit logs found")}
+          description={t("audit.noLogsDesc", "Access control events will appear here.")}
         />
       </div>
     );
@@ -58,11 +61,11 @@ export function AuditTable({ logs, loading }: Props) {
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
-            <TableHead className="text-xs uppercase tracking-wider">Timestamp</TableHead>
-            <TableHead className="text-xs uppercase tracking-wider">Principal</TableHead>
-            <TableHead className="text-xs uppercase tracking-wider">Action</TableHead>
-            <TableHead className="text-xs uppercase tracking-wider">Resource</TableHead>
-            <TableHead className="text-xs uppercase tracking-wider">Decision</TableHead>
+            <TableHead className="text-xs uppercase tracking-wider">{t("audit.colTimestamp", "Timestamp")}</TableHead>
+            <TableHead className="text-xs uppercase tracking-wider">{t("audit.colPrincipal", "Principal")}</TableHead>
+            <TableHead className="text-xs uppercase tracking-wider">{t("audit.colAction", "Action")}</TableHead>
+            <TableHead className="text-xs uppercase tracking-wider">{t("audit.colResource", "Resource")}</TableHead>
+            <TableHead className="text-xs uppercase tracking-wider">{t("audit.colDecision", "Decision")}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>

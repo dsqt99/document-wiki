@@ -1,7 +1,6 @@
-"use client";
-
 import React from "react";
 import { api } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -33,6 +32,7 @@ export function ExtractionReviewDialog({
   onClose: () => void;
   onDone: () => void;
 }) {
+  const { t } = useI18n();
   const [submitting, setSubmitting] = React.useState<"approve" | "cancel" | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [confirmCancel, setConfirmCancel] = React.useState(false);
@@ -48,7 +48,7 @@ export function ExtractionReviewDialog({
       await api(`/api/sources/${source.id}/approve-extraction`, { method: "POST" });
       onDone();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to approve");
+      setError(e instanceof Error ? e.message : t("common.error", "Failed to approve"));
       setSubmitting(null);
     }
   };
@@ -64,7 +64,7 @@ export function ExtractionReviewDialog({
       await api(`/api/sources/${source.id}`, { method: "DELETE" });
       onDone();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to cancel");
+      setError(e instanceof Error ? e.message : t("common.error", "Failed to cancel"));
       setSubmitting(null);
     }
   };
@@ -75,13 +75,12 @@ export function ExtractionReviewDialog({
         <DialogHeader>
           <DialogTitle className="text-lg font-heading flex items-center gap-2">
             <span className="material-symbols-outlined text-orange-500">scale</span>
-            Review document size
+            {t("extraction.title", "Review document size")}
           </DialogTitle>
         </DialogHeader>
 
         <div className="text-sm text-muted-foreground mb-3">
-          This document is larger than the auto-approve threshold.
-          Review the extraction stats before spending AI tokens on ingestion.
+          {t("extraction.desc", "This document is larger than the auto-approve threshold. Review the extraction stats before spending AI tokens on ingestion.")}
         </div>
 
         <div className="rounded-xl border border-border p-4 mb-3">
@@ -91,21 +90,21 @@ export function ExtractionReviewDialog({
           <div className="grid grid-cols-3 gap-3 text-center">
             <div>
               <div className="text-2xl font-mono font-semibold">{formatTokens(tokens)}</div>
-              <div className="text-xs text-muted-foreground">tokens</div>
+              <div className="text-xs text-muted-foreground">{t("extraction.tokens", "tokens")}</div>
             </div>
             <div>
               <div className="text-2xl font-mono font-semibold">{pages}</div>
-              <div className="text-xs text-muted-foreground">pages</div>
+              <div className="text-xs text-muted-foreground">{t("extraction.pages", "pages")}</div>
             </div>
             <div>
               <div className="text-2xl font-mono font-semibold">{images}</div>
-              <div className="text-xs text-muted-foreground">images</div>
+              <div className="text-xs text-muted-foreground">{t("extraction.images", "images")}</div>
             </div>
           </div>
         </div>
 
         <div className="rounded-xl bg-muted/30 p-3 mb-4 text-sm">
-          <div className="font-medium mb-2">Fits in context (at 85% budget):</div>
+          <div className="font-medium mb-2">{t("extraction.fitsInContext", "Fits in context (at 85% budget):")}</div>
           <div className="flex flex-col gap-1">
             {KNOWN_CONTEXTS.map((c) => {
               const budget = Math.round(c.tokens * BUDGET_RATIO);
@@ -119,7 +118,7 @@ export function ExtractionReviewDialog({
                     {fits ? "check_circle" : "warning"}
                   </span>
                   <span className="text-xs">
-                    {c.name} — budget ~{formatTokens(budget)} tokens
+                    {c.name} — {t("extraction.budget", "budget ~{budget} tokens").replace("{budget}", formatTokens(budget))}
                   </span>
                 </div>
               );
@@ -127,7 +126,7 @@ export function ExtractionReviewDialog({
           </div>
           {tokens > KNOWN_CONTEXTS[0].tokens * BUDGET_RATIO && (
             <div className="mt-2 text-xs text-muted-foreground italic">
-              Multi-pass writer will split the doc across multiple LLM calls.
+              {t("extraction.multiPassNote", "Multi-pass writer will split the doc across multiple LLM calls.")}
             </div>
           )}
         </div>
@@ -146,16 +145,16 @@ export function ExtractionReviewDialog({
             className={confirmCancel ? "border-destructive text-destructive" : ""}
           >
             {submitting === "cancel"
-              ? "Deleting…"
+              ? t("common.loading", "Deleting…")
               : confirmCancel
-                ? "Click again to confirm delete"
-                : "Cancel & delete"}
+                ? t("extraction.confirmCancelDelete", "Click again to confirm delete")
+                : t("extraction.cancelDelete", "Cancel & delete")}
           </Button>
           <Button
             onClick={handleApprove}
             disabled={submitting !== null}
           >
-            {submitting === "approve" ? "Starting…" : "Approve & process"}
+            {submitting === "approve" ? t("common.loading", "Starting…") : t("extraction.approveProcess", "Approve & process")}
           </Button>
         </div>
       </DialogContent>

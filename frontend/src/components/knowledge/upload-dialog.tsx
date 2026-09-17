@@ -17,6 +17,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useI18n } from "@/lib/i18n";
 
 type KnowledgeType = {
   id: string;
@@ -97,6 +98,7 @@ function formatFileSize(bytes: number): string {
 }
 
 export function UploadDialog({ open, onOpenChange, types, departments, onUploaded }: Props) {
+  const { t } = useI18n();
   const [files, setFiles] = useState<File[]>([]);
   const [typeId, setTypeId] = useState("");
   const [selectedDepts, setSelectedDepts] = useState<string[]>([]);
@@ -217,7 +219,7 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
 
         await apiUpload("/api/sources/upload", formData);
         successCount++;
-      } catch (err) {
+      } catch {
         failedNames.push(f.name);
       }
     }
@@ -250,10 +252,10 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
         {/* Fixed Header */}
         <DialogHeader className="px-6 pt-5 pb-3 border-b border-border/60 shrink-0 pr-12">
           <DialogTitle className="text-xl font-heading font-semibold text-foreground">
-            Upload Documents
+            {t("knowledge.upload.title", "Upload Documents")}
           </DialogTitle>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Upload one or multiple files to your knowledge base
+            {t("knowledge.upload.subtitle", "Upload one or multiple files to your knowledge base")}
           </p>
         </DialogHeader>
 
@@ -275,7 +277,7 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
 
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
-              <Label className="text-sm font-medium">Files</Label>
+              <Label className="text-sm font-medium">{t("knowledge.upload.files", "Files")}</Label>
               {files.length > 0 && (
                 <span className="text-xs text-muted-foreground">
                   {files.length} file{files.length > 1 ? "s" : ""} · {formatFileSize(totalBytes)}
@@ -313,13 +315,13 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
                 <div className="text-center">
                   <p className={`text-sm font-medium ${isDragInvalid ? "text-destructive" : "text-foreground"}`}>
                     {isDragInvalid
-                      ? "Định dạng file không được hỗ trợ!"
+                      ? t("knowledge.upload.dropzoneInvalid", "Unsupported file format!")
                       : dragOver
-                      ? "Thả file vào đây"
-                      : "Kéo thả file vào đây hoặc bấm để chọn"}
+                      ? t("knowledge.upload.dropzoneActive", "Drop files here")
+                      : t("knowledge.upload.dropzone", "Drag & drop files here or click to browse")}
                   </p>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Chỉ chấp nhận: PDF, DOCX, XLSX, CSV, TXT, MD, PPTX (tối đa 50 MB)
+                    {t("knowledge.upload.hint", "Accepted: PDF, DOCX, XLSX, CSV, TXT, MD, PPTX (max 50 MB)")}
                   </p>
                 </div>
               </div>
@@ -373,14 +375,14 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
                       className="text-xs h-8 gap-1.5"
                     >
                       <span className="material-symbols-outlined" style={{ fontSize: 15 }}>add</span>
-                      Add more files
+                      {t("knowledge.upload.addMore", "Add more files")}
                     </Button>
                     <button
                       type="button"
                       onClick={() => setFiles([])}
                       className="text-xs text-muted-foreground hover:text-destructive transition-colors"
                     >
-                      Clear all
+                      {t("knowledge.upload.clearAll", "Clear all")}
                     </button>
                   </div>
                 )}
@@ -397,26 +399,26 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
 
           {/* Knowledge Type */}
           <div className="flex flex-col gap-1.5">
-            <Label className="text-xs font-medium">Knowledge Type</Label>
+            <Label className="text-xs font-medium">{t("knowledge.upload.typeLabel", "Knowledge Type")}</Label>
             <Select value={typeId} onValueChange={(v) => setTypeId(v ?? "")}>
               <SelectTrigger className="bg-background w-full h-9 text-xs">
                 {typeId ? (() => {
-                  const t = types.find((x) => x.id === typeId);
-                  return t ? (
+                  const item = types.find((x) => x.id === typeId);
+                  return item ? (
                     <div className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: t.color }} />
-                      <span>{t.name}</span>
+                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+                      <span>{item.name}</span>
                     </div>
-                  ) : <SelectValue placeholder="Select type (optional)" />;
-                })() : <SelectValue placeholder="Select type (optional)" />}
+                  ) : <SelectValue placeholder={t("knowledge.upload.typePlaceholder", "Select type (optional)")} />;
+                })() : <SelectValue placeholder={t("knowledge.upload.typePlaceholder", "Select type (optional)")} />}
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">None</SelectItem>
-                {types.map((t) => (
-                  <SelectItem key={t.id} value={t.id}>
+                <SelectItem value="">{t("knowledge.upload.none", "None")}</SelectItem>
+                {types.map((typeItem) => (
+                  <SelectItem key={typeItem.id} value={typeItem.id}>
                     <div className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: t.color }} />
-                      {t.name}
+                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: typeItem.color }} />
+                      {typeItem.name}
                     </div>
                   </SelectItem>
                 ))}
@@ -427,12 +429,12 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
           {/* Departments */}
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center justify-between">
-              <Label className="text-xs font-medium">Departments</Label>
-              <span className="text-[11px] text-muted-foreground">Leave empty for global access</span>
+              <Label className="text-xs font-medium">{t("knowledge.upload.departments", "Departments")}</Label>
+              <span className="text-[11px] text-muted-foreground">{t("knowledge.upload.deptHint", "Leave empty for global access")}</span>
             </div>
             <div className="border rounded-lg p-2 max-h-32 overflow-y-auto bg-background divide-y divide-border/40">
               {departments.length === 0 ? (
-                <span className="text-xs text-muted-foreground px-1">No departments available</span>
+                <span className="text-xs text-muted-foreground px-1">{t("dept.noDepts", "No departments available")}</span>
               ) : (
                 departments.map((d) => (
                   <label
@@ -470,7 +472,7 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
 
           {/* Visibility / Scope */}
           <div className="flex flex-col gap-1.5">
-            <Label className="text-xs font-medium">Visibility</Label>
+            <Label className="text-xs font-medium">{t("knowledge.upload.visibility", "Visibility")}</Label>
             <Select
               value={scopeType}
               onValueChange={(v) => {
@@ -484,20 +486,20 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
                   <span className="material-symbols-outlined" style={{ fontSize: 14 }}>
                     {scopeType === "global" ? "public" : "folder_special"}
                   </span>
-                  <span className="capitalize">{scopeType === "project" ? "Workspace" : scopeType}</span>
+                  <span className="capitalize">{scopeType === "project" ? t("scope.project", "Workspace") : t("scope.global", "Global")}</span>
                 </div>
               </SelectTrigger>
               <SelectContent className="min-w-[220px]">
                 <SelectItem value="global">
                   <div className="flex items-center gap-2 text-xs">
                     <span className="material-symbols-outlined" style={{ fontSize: 14 }}>public</span>
-                    Global
+                    {t("scope.global", "Global")}
                   </div>
                 </SelectItem>
                 <SelectItem value="project">
                   <div className="flex items-center gap-2 text-xs">
                     <span className="material-symbols-outlined" style={{ fontSize: 14 }}>folder_special</span>
-                    Workspace
+                    {t("scope.project", "Workspace")}
                   </div>
                 </SelectItem>
               </SelectContent>
@@ -505,7 +507,7 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
 
             {scopeType === "project" && (
               <div className="flex flex-col gap-1 mt-1">
-                <Label className="text-xs font-medium">Target Workspace</Label>
+                <Label className="text-xs font-medium">{t("scope.project", "Workspace")}</Label>
                 <Select value={scopeId} onValueChange={(v) => setScopeId(v ?? "")}>
                   <SelectTrigger className="bg-background h-9 text-xs">
                     <span>{scopeId ? (projects.find((p) => p.id === scopeId)?.name ?? "Select...") : "Select workspace..."}</span>
@@ -524,7 +526,7 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
             {scopeType === "global" && (
               <p className="text-[11px] text-amber-600 dark:text-amber-400 flex items-start gap-1.5 mt-0.5">
                 <span className="material-symbols-outlined shrink-0" style={{ fontSize: 13, marginTop: 1 }}>warning</span>
-                Document content will be compiled into the shared wiki and visible to all employees.
+                {t("knowledge.upload.globalNotice", "Document content will be compiled into the shared wiki and visible to all employees.")}
               </p>
             )}
           </div>
@@ -536,9 +538,9 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
             {uploading ? (
               <span className="text-primary font-medium">{uploadProgress}</span>
             ) : files.length > 0 ? (
-              `${files.length} file${files.length > 1 ? "s" : ""} selected`
+              `${files.length} ${t("knowledge.upload.files", "files")}`
             ) : (
-              "No files selected"
+              t("knowledge.upload.noFiles", "No files selected")
             )}
           </div>
           <div className="flex items-center gap-2">
@@ -549,7 +551,7 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
               disabled={uploading}
               className="text-xs h-8"
             >
-              Cancel
+              {t("common.cancel", "Cancel")}
             </Button>
             <Button
               size="sm"
@@ -560,10 +562,10 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
               {uploading ? (
                 <>
                   <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
-                  <span>Uploading...</span>
+                  <span>{t("knowledge.upload.uploading", "Uploading...")}</span>
                 </>
               ) : (
-                `Upload ${files.length > 1 ? `(${files.length})` : ""}`
+                `${t("knowledge.upload.startBtn", "Upload")} ${files.length > 1 ? `(${files.length})` : ""}`
               )}
             </Button>
           </div>

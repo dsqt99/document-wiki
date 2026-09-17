@@ -1,7 +1,6 @@
-"use client";
-
 import React, { useEffect, useState, useCallback } from "react";
 import { api } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -41,6 +40,7 @@ type Props = {
 };
 
 export function ScopeMembersDialog({ open, onOpenChange, label, scopeType, scopeId }: Props) {
+  const { t } = useI18n();
   const [members, setMembers] = useState<Member[]>([]);
   const [allEmployees, setAllEmployees] = useState<Employee[]>([]);
   const [selectedEmpId, setSelectedEmpId] = useState("");
@@ -55,12 +55,12 @@ export function ScopeMembersDialog({ open, onOpenChange, label, scopeType, scope
       const data = await api<Member[]>(`/api/scopes/${scopeType}/${scopeId}/members`);
       setMembers(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load members");
+      setError(err instanceof Error ? err.message : t("common.error", "Failed to load members"));
       setMembers([]);
     } finally {
       setLoading(false);
     }
-  }, [scopeType, scopeId]);
+  }, [scopeType, scopeId, t]);
 
   useEffect(() => {
     if (!open) return;
@@ -86,20 +86,20 @@ export function ScopeMembersDialog({ open, onOpenChange, label, scopeType, scope
       setSelectedEmpId("");
       await loadMembers();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to add member");
+      setError(err instanceof Error ? err.message : t("common.error", "Failed to add member"));
     } finally {
       setSaving(false);
     }
   };
 
   const handleRemove = async (empId: string) => {
-    if (!confirm("Remove this member's access?")) return;
+    if (!confirm(t("scope.removeConfirm", "Remove this member's access?"))) return;
     setError("");
     try {
       await api(`/api/scopes/${scopeType}/${scopeId}/members/${empId}`, { method: "DELETE" });
       await loadMembers();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to remove member");
+      setError(err instanceof Error ? err.message : t("common.error", "Failed to remove member"));
     }
   };
 
@@ -110,7 +110,9 @@ export function ScopeMembersDialog({ open, onOpenChange, label, scopeType, scope
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle className="text-xl">Access Control — {label}</DialogTitle>
+          <DialogTitle className="text-xl">
+            {t("scope.membersTitle", `Access Control — ${label}`).replace("{label}", label)}
+          </DialogTitle>
         </DialogHeader>
 
         <div className="flex flex-col gap-5 mt-1">
@@ -121,11 +123,10 @@ export function ScopeMembersDialog({ open, onOpenChange, label, scopeType, scope
             </span>
             <div className="flex flex-col">
               <span className="font-medium">
-                {scopeType === "department" ? "Realm 1: Org Knowledge" : "Realm 2: Workspace"}
+                {scopeType === "department" ? t("scope.realmOrg", "Realm 1: Org Knowledge") : t("scope.realmWorkspace", "Realm 2: Workspace")}
               </span>
               <span>
-                Assign roles to employees to grant them access to this scope. 
-                Members will be able to read or maintain documents according to their role.
+                {t("scope.realmDesc", "Assign roles to employees to grant them access to this scope. Members will be able to read or maintain documents according to their role.")}
               </span>
             </div>
           </div>
@@ -146,7 +147,7 @@ export function ScopeMembersDialog({ open, onOpenChange, label, scopeType, scope
                     })()}
                   </span>
                 ) : (
-                  <SelectValue placeholder="Select employee to add..." />
+                  <SelectValue placeholder={t("scope.selectEmp", "Select employee to add...")} />
                 )}
               </SelectTrigger>
               <SelectContent>
@@ -163,10 +164,10 @@ export function ScopeMembersDialog({ open, onOpenChange, label, scopeType, scope
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="reader">Reader</SelectItem>
-                <SelectItem value="contributor">Contributor</SelectItem>
-                <SelectItem value="owner">Owner</SelectItem>
-                <SelectItem value="admin">Admin</SelectItem>
+                <SelectItem value="reader">{t("scope.roleReader", "Reader")}</SelectItem>
+                <SelectItem value="contributor">{t("scope.roleContributor", "Contributor")}</SelectItem>
+                <SelectItem value="owner">{t("scope.roleOwner", "Owner")}</SelectItem>
+                <SelectItem value="admin">{t("scope.roleAdmin", "Admin")}</SelectItem>
               </SelectContent>
             </Select>
 
@@ -175,14 +176,16 @@ export function ScopeMembersDialog({ open, onOpenChange, label, scopeType, scope
               onClick={handleAdd}
               className="bg-primary text-primary-foreground shrink-0"
             >
-              {saving ? <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span> : "Add"}
+              {saving ? <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span> : t("common.create", "Add")}
             </Button>
           </div>
 
           {/* Member list */}
           <div className="border border-border rounded-xl bg-card overflow-hidden">
             <div className="bg-muted/50 px-4 py-2 border-b border-border">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Current Members ({members.length})</h3>
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                {t("dept.currentMembers", "Current Members")} ({members.length})
+              </h3>
             </div>
             
             {loading ? (
@@ -191,7 +194,7 @@ export function ScopeMembersDialog({ open, onOpenChange, label, scopeType, scope
               </div>
             ) : members.length === 0 ? (
               <div className="p-4">
-                <EmptyState icon="group_off" title="No members" description="This scope has no specific members assigned yet." />
+                <EmptyState icon="group_off" title={t("scope.noMembers", "No members")} description={t("scope.noMembersDesc", "This scope has no specific members assigned yet.")} />
               </div>
             ) : (
               <div className="flex flex-col divide-y divide-border max-h-60 overflow-y-auto">
@@ -210,7 +213,7 @@ export function ScopeMembersDialog({ open, onOpenChange, label, scopeType, scope
                       <button
                         onClick={() => handleRemove(m.employee_id)}
                         className="text-muted-foreground hover:text-destructive transition-colors shrink-0"
-                        title="Remove access"
+                        title={t("common.delete", "Remove access")}
                       >
                         <span className="material-symbols-outlined text-base">close</span>
                       </button>

@@ -3,6 +3,7 @@
 import React from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
 import { WikiPageSummary } from "@/types/wiki";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { wikiTypeIcon, wikiTypeColor, wikiTypeGroupLabel } from "./wiki-type-badge";
@@ -25,6 +26,7 @@ export function WikiSearchDialog({
   open: boolean;
   onOpenChange: (v: boolean) => void;
 }) {
+  const { t } = useI18n();
   const router = useRouter();
   const [pages, setPages] = React.useState<WikiPageSummary[]>([]);
   const [query, setQuery] = React.useState("");
@@ -84,7 +86,7 @@ export function WikiSearchDialog({
           <input
             ref={inputRef}
             type="text"
-            placeholder="Search wiki pages..."
+            placeholder={t("wiki.searchDialogPlaceholder", "Search wiki pages...")}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {
@@ -103,10 +105,12 @@ export function WikiSearchDialog({
         <div className="max-h-96 overflow-y-auto py-2">
           {filtered.length === 0 ? (
             <p className="text-sm text-muted-foreground px-4 py-6 text-center">
-              {query ? "No pages match your search." : "No pages yet."}
+              {query
+                ? t("wiki.noSearchMatch", "No pages match your search.")
+                : t("wiki.noSearchYet", "No pages yet.")}
             </p>
           ) : (
-            GROUP_ORDER.filter((t) => grouped.has(t)).map((type) => (
+            GROUP_ORDER.filter((tKey) => grouped.has(tKey)).map((type) => (
               <div key={type} className="mb-1">
                 <div className="flex items-center gap-2 px-4 py-1.5">
                   <span
@@ -148,13 +152,13 @@ export function WikiSearchDialog({
         <div className="border-t border-border px-4 py-2 flex items-center gap-4 text-xs text-muted-foreground">
           <span className="flex items-center gap-1">
             <kbd className="px-1 py-0.5 rounded border border-border font-mono text-xs">↵</kbd>
-            navigate
+            {t("wiki.navHint", "navigate")}
           </span>
           <span className="flex items-center gap-1">
             <kbd className="px-1 py-0.5 rounded border border-border font-mono text-xs">Esc</kbd>
-            close
+            {t("wiki.closeHint", "close")}
           </span>
-          <span className="ml-auto">{filtered.length} pages</span>
+          <span className="ml-auto">{filtered.length} {t("wiki.pagesCount", "pages")}</span>
         </div>
       </DialogContent>
     </Dialog>

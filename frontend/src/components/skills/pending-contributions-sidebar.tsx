@@ -1,8 +1,7 @@
-"use client";
-
 import React, { useEffect, useCallback, useState } from "react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 export type PendingContribution = {
@@ -29,6 +28,7 @@ export function PendingContributionsSidebar({
   refreshInterval = 30000, // Default 30s
   skillId,
 }: PendingContributionsSidebarProps) {
+  const { t } = useI18n();
   const { canAccess, hasPermission } = useAuth();
   const [internalContributions, setInternalContributions] = useState<PendingContribution[]>([]);
   const [loading, setLoading] = useState(false);
@@ -66,7 +66,7 @@ export function PendingContributionsSidebar({
       <div className="flex items-center justify-between mb-4">
         <h4 className="text-sm font-semibold text-foreground tracking-tight flex items-center gap-2">
           <span className="material-symbols-outlined text-primary/70 text-sm">rate_review</span>
-          Pending Review
+          {t("skills.pendingReview", "Pending Review")}
         </h4>
         <span className="bg-primary/10 text-primary text-[10px] font-bold px-2 py-0.5 rounded-full">
           {contributions.length}

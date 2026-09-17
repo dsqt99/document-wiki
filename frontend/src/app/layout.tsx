@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/lib/auth";
+import { ThemeProvider } from "@/lib/theme";
+import { I18nProvider } from "@/lib/i18n";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Document-Wiki — Enterprise AI Knowledge Hub",
+  title: "Document Wiki — Enterprise AI Knowledge Hub",
   description:
     "Hệ thống quản trị tri thức doanh nghiệp tập trung và máy chủ MCP cho các tác tử AI & LLMs",
 };
@@ -15,7 +17,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="vi" suppressHydrationWarning>
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
@@ -30,7 +32,11 @@ export default function RootLayout({
       </head>
       <body>
         <AuthProvider>
-          <TooltipProvider>{children}</TooltipProvider>
+          <ThemeProvider>
+            <I18nProvider>
+              <TooltipProvider>{children}</TooltipProvider>
+            </I18nProvider>
+          </ThemeProvider>
         </AuthProvider>
       </body>
     </html>

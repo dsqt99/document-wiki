@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -40,6 +41,7 @@ export function KnowledgeTypeDialog({
   knowledgeType,
   onSaved,
 }: Props) {
+  const { t } = useI18n();
   const isEdit = !!knowledgeType;
   const [name, setName] = useState("");
   const [color, setColor] = useState("#6366F1");
@@ -79,7 +81,7 @@ export function KnowledgeTypeDialog({
       onSaved();
       onOpenChange(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Save failed");
+      setError(err instanceof Error ? err.message : t("common.error", "Save failed"));
     } finally {
       setSaving(false);
     }
@@ -90,24 +92,24 @@ export function KnowledgeTypeDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="text-xl">
-            {isEdit ? "Edit Knowledge Type" : "Create Knowledge Type"}
+            {isEdit ? t("type.editTitle", "Edit Knowledge Type") : t("type.createTitle", "Create Knowledge Type")}
           </DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4 mt-2">
           <div className="flex flex-col gap-2">
-            <Label>Name</Label>
+            <Label>{t("type.name", "Name")}</Label>
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Product Documentation"
+              placeholder={t("type.namePlaceholder", "e.g. Product Documentation")}
               required
               className="bg-background"
             />
           </div>
 
           <div className="flex flex-col gap-2">
-            <Label>Color</Label>
+            <Label>{t("type.color", "Color")}</Label>
             <div className="flex flex-wrap gap-2">
               {PRESET_COLORS.map((c) => (
                 <button
@@ -129,7 +131,7 @@ export function KnowledgeTypeDialog({
                     background:
                       "conic-gradient(#f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00)",
                   }}
-                  title="Pick custom color"
+                  title={t("type.customColor", "Pick custom color")}
                 >
                   <span className="w-full h-full rounded-full bg-background flex items-center justify-center">
                     <span className="material-symbols-outlined text-muted-foreground" style={{ fontSize: "14px" }}>
@@ -149,11 +151,11 @@ export function KnowledgeTypeDialog({
           </div>
 
           <div className="flex flex-col gap-2">
-            <Label>Description</Label>
+            <Label>{t("common.description", "Description")}</Label>
             <Textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Optional description..."
+              placeholder={t("type.descPlaceholder", "Optional description...")}
               rows={2}
               className="bg-background"
             />
@@ -167,14 +169,14 @@ export function KnowledgeTypeDialog({
 
           <div className="flex justify-end gap-2 mt-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
+              {t("common.cancel", "Cancel")}
             </Button>
             <Button
               type="submit"
               disabled={saving}
               className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
-              {saving ? "Saving..." : isEdit ? "Update" : "Create"}
+              {saving ? t("common.loading", "Saving...") : isEdit ? t("common.save", "Update") : t("common.create", "Create")}
             </Button>
           </div>
         </form>

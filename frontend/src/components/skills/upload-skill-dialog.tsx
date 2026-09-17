@@ -1,10 +1,8 @@
-"use client";
-
-import { useState, useRef, useMemo, useEffect } from "react";
-import { apiUpload, api, ApiError } from "@/lib/api";
+import { useState } from "react";
+import { apiUpload, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
-import { Badge } from "@/components/ui/badge";
+import { useI18n } from "@/lib/i18n";
 import {
   Dialog,
   DialogContent,
@@ -16,13 +14,11 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { cn } from "@/lib/utils";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 
@@ -32,7 +28,8 @@ type UploadSkillDialogProps = {
 };
 
 export function UploadSkillDialog({ allDepartments, onUploaded }: UploadSkillDialogProps) {
-  const { canAccess, hasPermission } = useAuth();
+  const { t } = useI18n();
+  const { canAccess } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [uploadLoading, setUploadLoading] = useState(false);
 
@@ -41,8 +38,6 @@ export function UploadSkillDialog({ allDepartments, onUploaded }: UploadSkillDia
   const [deptIds, setDeptIds] = useState<string[]>([]);
   const [force, setForce] = useState(false);
   const [conflictFiles, setConflictFiles] = useState<string[]>([]);
-
-  const inputRef = useRef<HTMLInputElement>(null);
 
   const resetForm = () => {
     setSelectedFiles(null);
@@ -81,15 +76,15 @@ export function UploadSkillDialog({ allDepartments, onUploaded }: UploadSkillDia
       resetForm();
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
-        setConflictFiles((err.data as any)?.detail?.conflicts || []);
+        const data = err.data as { detail?: { conflicts?: string[] } } | undefined;
+        setConflictFiles(data?.detail?.conflicts || []);
       } else {
-        alert(err instanceof Error ? err.message : "Upload failed");
+        alert(err instanceof Error ? err.message : t("common.error", "Upload failed"));
       }
     } finally {
       setUploadLoading(false);
     }
   };
-
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => {
@@ -101,7 +96,7 @@ export function UploadSkillDialog({ allDepartments, onUploaded }: UploadSkillDia
           render={
             <Button className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-sahara">
               <span className="material-symbols-outlined text-base mr-1">upload</span>
-              Upload Skill
+              {t("skills.uploadBtn", "Upload Skill")}
             </Button>
           }
         />
@@ -109,15 +104,15 @@ export function UploadSkillDialog({ allDepartments, onUploaded }: UploadSkillDia
       <DialogContent className="sm:max-w-[500px]">
         <form onSubmit={handleUpload}>
           <DialogHeader>
-            <DialogTitle className="text-xl font-heading">Upload AI Skill</DialogTitle>
+            <DialogTitle className="text-xl font-heading">{t("skills.uploadSkill", "Upload AI Skill")}</DialogTitle>
             <DialogDescription className="font-manrope">
-              Select one or more ZIP packages containing AI skills.
+              {t("knowledge.upload.subtitle", "Select one or more ZIP packages containing AI skills.")}
             </DialogDescription>
           </DialogHeader>
 
           <div className="grid gap-6 py-6">
             <div className="grid gap-2">
-              <Label htmlFor="files">Skill Packages (ZIP)</Label>
+              <Label htmlFor="files">{t("skills.selectZip", "Skill Packages (ZIP)")}</Label>
               <Input
                 id="files"
                 type="file"
@@ -128,13 +123,13 @@ export function UploadSkillDialog({ allDepartments, onUploaded }: UploadSkillDia
               />
               {selectedFiles && selectedFiles.length > 0 && (
                 <p className="text-[11px] text-primary font-medium animate-in fade-in">
-                  {selectedFiles.length} file(s) selected
+                  {selectedFiles.length} {t("knowledge.upload.files", "file(s) selected")}
                 </p>
               )}
             </div>
 
             <div className="grid gap-2">
-              <Label>Visibility</Label>
+              <Label>{t("knowledge.colVisibility", "Visibility")}</Label>
               <Select value={scopeType} onValueChange={(v) => {
                 setScopeType(v || "global");
                 setDeptIds([]);
@@ -145,7 +140,7 @@ export function UploadSkillDialog({ allDepartments, onUploaded }: UploadSkillDia
                       {scopeType === "global" ? "public" : "corporate_fare"}
                     </span>
                     <span className="capitalize">
-                      {scopeType === "global" ? "Global" : "Department"}
+                      {scopeType === "global" ? t("scope.global", "Global") : t("scope.department", "Department")}
                     </span>
                   </div>
                 </SelectTrigger>
@@ -153,13 +148,13 @@ export function UploadSkillDialog({ allDepartments, onUploaded }: UploadSkillDia
                   <SelectItem value="global">
                     <div className="flex items-center gap-2">
                       <span className="material-symbols-outlined text-base text-muted-foreground">public</span>
-                      Global (All Departments)
+                      {t("scope.global", "Global (All Departments)")}
                     </div>
                   </SelectItem>
                   <SelectItem value="department">
                     <div className="flex items-center gap-2">
                       <span className="material-symbols-outlined text-base text-muted-foreground">corporate_fare</span>
-                      Specific Departments
+                      {t("scope.department", "Specific Departments")}
                     </div>
                   </SelectItem>
                 </SelectContent>

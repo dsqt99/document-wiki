@@ -1,6 +1,10 @@
-# DOCUMENT-WIKI — ENTERPRISE AI KNOWLEDGE HUB & MCP SERVER 🌐
+# Document Wiki — ENTERPRISE AI KNOWLEDGE HUB & MCP SERVER 🌐
 
 ### Nền tảng Quản trị Tri thức Tự động, Biên tập Wiki Thông minh & Máy chủ MCP Chuẩn hóa
+
+<p align="center">
+  <img src="docs/assets/logo.png" alt="Document Wiki Logo" width="88" style="border-radius: 18px;">
+</p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Bản_quyền-Enterprise_Internal_Use-blue.svg" alt="License">
@@ -11,29 +15,29 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/banner.png" alt="Document-Wiki: Enterprise AI Knowledge Hub" width="760">
+  <img src="docs/assets/banner.png" alt="Document Wiki: Enterprise AI Knowledge Hub" width="760">
 </p>
 
-**Document-Wiki** là hệ sinh thái quản trị tri thức doanh nghiệp tự lưu trữ (Self-hosted Enterprise Knowledge Hub), đóng vai trò lớp hạ tầng dữ liệu thông minh kết nối giữa kho tài liệu nội bộ (SOPs, quy trình nghiệp vụ, thông tư, chính sách, tài liệu kỹ thuật...) với các mô hình ngôn ngữ lớn (LLMs) và các ứng dụng AI đầu cuối.
+**Document Wiki** là hệ sinh thái quản trị tri thức doanh nghiệp tự lưu trữ (Self-hosted Enterprise Knowledge Hub), đóng vai trò lớp hạ tầng dữ liệu thông minh kết nối giữa kho tài liệu nội bộ (SOPs, quy trình nghiệp vụ, thông tư, chính sách, tài liệu kỹ thuật...) với các mô hình ngôn ngữ lớn (LLMs) và các ứng dụng AI đầu cuối.
 
-Hệ thống vận hành như một **Máy chủ MCP tập trung** (Model Context Protocol) và **RAG Engine** thế hệ mới. Thay vì chỉ cắt nhỏ văn bản (chunking) rồi lưu trữ vector phân tán, Document-Wiki tổng hợp và biên soạn toàn bộ tài liệu thành một **Mạng lưới Wiki tri thức liên kết (Interlinked Knowledge Wiki)** có cấu trúc, có thể truy vết nguồn gốc và phục vụ cho bất kỳ AI Client nào (Claude Desktop, AI Chatbot WebUI, AI Agents) thông qua một điểm cuối bảo mật, phân quyền nghiêm ngặt.
+Hệ thống vận hành như một **Máy chủ MCP tập trung** (Model Context Protocol) và **RAG Engine** thế hệ mới. Thay vì chỉ cắt nhỏ văn bản (chunking) rồi lưu trữ vector phân tán, Document Wiki tổng hợp và biên soạn toàn bộ tài liệu thành một **Mạng lưới Wiki tri thức liên kết (Interlinked Knowledge Wiki)** có cấu trúc, có thể truy vết nguồn gốc và phục vụ cho bất kỳ AI Client nào (Claude Desktop, AI Chatbot WebUI, AI Agents) thông qua một điểm cuối bảo mật, phân quyền nghiêm ngặt.
 
 ---
 
-## 🚀 1. Vì sao nên sử dụng Document-Wiki?
+## 🚀 1. Vì sao nên sử dụng Document Wiki?
 
 Trong hầu hết các tổ chức và doanh nghiệp, việc ứng dụng AI thường gặp phải các hạn chế lớn:
 - **Ngữ cảnh phân mảnh & Trùng lặp:** Nhân sự sao chép - dán thủ công tài liệu vào chatbot dẫn tới ngữ cảnh không đồng nhất, xung đột giữa tài liệu cũ và tài liệu mới.
 - **Rủi ro lộ lọt dữ liệu:** Thiếu ranh giới phân quyền bảo mật giữa các phòng ban chuyên môn (Kỹ thuật, Pháp chế, Nhân sự, Vận hành...).
 - **Rào cản của RAG truyền thống:** Vector database thông thường chỉ trả về các mảnh văn bản vụn vặt (raw chunks), không phản ánh được tổng quan cấu trúc logic và tính liên kết của tài liệu nghiệp vụ.
 
-**Document-Wiki biến tri thức tổ chức thành tài nguyên AI được quản trị tập trung:**
+**Document Wiki biến tri thức tổ chức thành tài nguyên AI được quản trị tập trung:**
 1. **Biến tài liệu tĩnh thành Wiki sống:** Sử dụng quy trình **MRP Pipeline** để tự động biên dịch, hợp nhất thông tin và tạo liên kết chéo giữa các bài viết.
 2. **Cách ly phạm vi theo phòng ban (Department Scopes):** Mỗi đơn vị có không gian tri thức riêng biệt, bên cạnh không gian chung toàn tổ chức (Global Scope).
 3. **Cung cấp ngữ cảnh toàn vẹn cho AI:** Các mô hình AI truy vấn trực tiếp vào các trang wiki đã được thẩm định, nâng cao độ chính xác và giảm thiểu hiện tượng ảo giác (hallucination).
 
 <p align="center">
-  <img src="docs/assets/how-document-wiki-works.png" alt="Nguyên lý hoạt động Document-Wiki - Quy trình MRP Pipeline" width="760">
+  <img src="docs/assets/how-Document Wiki-works.png" alt="Nguyên lý hoạt động Document Wiki - Quy trình MRP Pipeline" width="760">
 </p>
 
 ---
@@ -41,7 +45,7 @@ Trong hầu hết các tổ chức và doanh nghiệp, việc ứng dụng AI th
 ## ✨ 2. Tính năng cốt lõi
 
 ### 🧠 Quy trình biên dịch tri thức thông minh (MRP Pipeline)
-Khác biệt hoàn toàn với các giải pháp RAG chỉ chia nhỏ tài liệu đơn thuần, quy trình **MRP Pipeline** (**M**ap → **R**educe → **P**lan-review → **R**efine → **V**erify → Commit) của Document-Wiki biên soạn tài liệu thành một hệ thống wiki hoàn chỉnh:
+Khác biệt hoàn toàn với các giải pháp RAG chỉ chia nhỏ tài liệu đơn thuần, quy trình **MRP Pipeline** (**M**ap → **R**educe → **P**lan-review → **R**efine → **V**erify → Commit) của Document Wiki biên soạn tài liệu thành một hệ thống wiki hoàn chỉnh:
 - **Thẩm định kế hoạch trước khi lưu (Plan Review):** Khi nạp tài liệu, hệ thống tự động sinh kế hoạch biên tập (liệt kê các trang wiki mới sẽ tạo hoặc các trang cũ cần bổ sung). Biên tập viên có thể duyệt, sửa đổi hoặc từ chối kế hoạch trước khi hệ thống ghi dữ liệu.
 - **Hợp nhất trang thông minh (Page Merge):** Khi văn bản mới liên quan tới trang wiki đã có, LLM sẽ tự động tổng hợp bổ sung tri thức mới mà không xóa bỏ hoặc ghi đè mất mát thông tin lịch sử.
 - **Truy vết minh bạch (Traceable Claims):** Mỗi trang wiki đều gắn liền với danh sách tài liệu tham chiếu nguồn gốc (Source Drill-down).
@@ -56,7 +60,7 @@ Khác biệt hoàn toàn với các giải pháp RAG chỉ chia nhỏ tài liệ
 - **Lịch sử phiên bản & Rollback:** Theo dõi chi tiết mọi thay đổi theo thời gian và hỗ trợ khôi phục phiên bản trước đó chỉ với một click.
 
 <p align="center">
-  <img src="docs/assets/document-wiki-ui.png" alt="Giao diện Trình duyệt Document-Wiki & Đồ thị Tri thức" width="760">
+  <img src="docs/assets/Document Wiki-ui.png" alt="Giao diện Trình duyệt Document Wiki & Đồ thị Tri thức" width="760">
 </p>
 
 ### 🏢 Phân tách phạm vi Phòng ban & Toàn cục (Department & Global Scopes)
@@ -70,7 +74,7 @@ Khác biệt hoàn toàn với các giải pháp RAG chỉ chia nhỏ tài liệ
 - **Nhật ký kiểm vết bất biến (Audit Trail):** Ghi nhận chi tiết toàn bộ các thao tác nhạy cảm (duyệt kế hoạch, sửa vai trò, thay đổi cấu hình bảo mật).
 
 ### 🔌 Cổng MCP Server cho Claude Desktop & AI Clients
-Document-Wiki cung cấp giao thức **Model Context Protocol (MCP)** chuẩn hóa, cho phép các AI Clients (Claude Desktop, Claude.ai, Chatbot WebUI, AI Agents) kết nối nhanh chóng thông qua **OAuth 2.1 + PKCE** hoặc **Bearer Token**:
+Document Wiki cung cấp giao thức **Model Context Protocol (MCP)** chuẩn hóa, cho phép các AI Clients (Claude Desktop, Claude.ai, Chatbot WebUI, AI Agents) kết nối nhanh chóng thông qua **OAuth 2.1 + PKCE** hoặc **Bearer Token**:
 - **Nhóm công cụ tra cứu Wiki:** `search_wiki`, `read_wiki_page`, `list_wiki_pages`, `read_wiki_index`.
 - **Nhóm công cụ tài liệu nguồn:** `get_source`, `get_source_outline`, `get_source_pages`, `list_sources`.
 - **Nhóm công cụ quy trình biên tập:** `propose_wiki_edit`, `edit_wiki_page`, `list_pending_drafts`, `review_draft`, `approve_draft`, `reject_draft`.
@@ -95,10 +99,10 @@ Document-Wiki cung cấp giao thức **Model Context Protocol (MCP)** chuẩn h�
 ## 🛠️ 3. Kiến trúc hệ thống & Cụm dịch vụ Docker
 
 <p align="center">
-  <img src="docs/assets/document-wiki-architecture.png" alt="Kiến trúc hệ thống Document-Wiki" width="760">
+  <img src="docs/assets/Document Wiki-architecture.png" alt="Kiến trúc hệ thống Document Wiki" width="760">
 </p>
 
-Hệ thống Document-Wiki vận hành đồng bộ thông qua cụm 11 dịch vụ container Docker:
+Hệ thống Document Wiki vận hành đồng bộ thông qua cụm 11 dịch vụ container Docker:
 
 | Dịch vụ Container | Vai trò & Công nghệ | Cổng Host / Mạng nội bộ |
 | :--- | :--- | :---: |
@@ -129,7 +133,7 @@ Hệ thống Document-Wiki vận hành đồng bộ thông qua cụm 11 dịch v
 > [!NOTE]
 > - **Bộ nhớ RAM** là ưu tiên hàng đầu: Các worker của quy trình MRP cần bộ nhớ để nạp ngữ cảnh văn bản lớn trong quá trình xử lý LLM.
 > - **Lưu trữ SSD/NVMe**: Đảm bảo hiệu năng truy vấn nhanh cho các chỉ mục vector (pgvector, Milvus) và kho lưu trữ MinIO.
-> - **GPU**: Không bắt buộc trên máy chủ Document-Wiki nếu sử dụng API suy luận từ máy chủ vLLM riêng biệt hoặc nhà cung cấp đám mây.
+> - **GPU**: Không bắt buộc trên máy chủ Document Wiki nếu sử dụng API suy luận từ máy chủ vLLM riêng biệt hoặc nhà cung cấp đám mây.
 
 ---
 
@@ -137,8 +141,8 @@ Hệ thống Document-Wiki vận hành đồng bộ thông qua cụm 11 dịch v
 
 ### Bước 1: Chuẩn bị mã nguồn
 ```bash
-git clone <repository-url> document-wiki
-cd document-wiki
+git clone <repository-url> Document Wiki
+cd Document Wiki
 ```
 
 ### Bước 2: Thiết lập biến môi trường
@@ -160,7 +164,7 @@ SECRET_KEY=change-me-to-a-secure-random-secret
 MCP_TOKEN_PEPPER=change-me-to-a-secure-random-pepper
 
 # Tài khoản Quản trị viên ban đầu
-DEFAULT_ADMIN_EMAIL=admin@document-wiki.local
+DEFAULT_ADMIN_EMAIL=admin@Document Wiki.local
 DEFAULT_ADMIN_PASSWORD=admin123
 
 # Kho lưu trữ tệp MinIO
@@ -190,7 +194,7 @@ docker compose ps
 
 ### Bước 4: Truy cập hệ thống
 Khi các container ở trạng thái `healthy`, bạn có thể truy cập:
-* 🌐 **Cổng thông tin Document-Wiki Portal:** [http://localhost:3119](http://localhost:3119)
+* 🌐 **Cổng thông tin Document Wiki Portal:** [http://localhost:3119](http://localhost:3119)
 * ⚙️ **Tài liệu Swagger REST API:** [http://localhost:5055/docs](http://localhost:5055/docs)
 * 🔌 **Điểm cuối máy chủ FastMCP:** `http://localhost:5055/mcp`
 * 🗄️ **Bảng điều khiển MinIO Console:** [http://localhost:9003](http://localhost:9003)
@@ -207,12 +211,12 @@ Trong ứng dụng **Claude Desktop** (cấu hình trong `claude_desktop_config.
 - **Tên kết nối:** `Document Wiki`
 - **URL máy chủ MCP:** `http://localhost:5055/mcp`
 
-Tiến hành kết nối qua trình duyệt với cơ chế OAuth 2.1 hoặc nhập Bearer Token được cấp từ trang Hồ sơ cá nhân (Profile) của Document-Wiki.
+Tiến hành kết nối qua trình duyệt với cơ chế OAuth 2.1 hoặc nhập Bearer Token được cấp từ trang Hồ sơ cá nhân (Profile) của Document Wiki.
 
 **Gợi ý Custom Instructions cho AI Client:**
 ```
 Mỗi khi trả lời các câu hỏi liên quan đến chính sách, quy trình làm việc, tài liệu kỹ thuật, 
-hướng dẫn nội bộ và thông tin tổ chức, hãy luôn tìm kiếm trên Document-Wiki thông qua công cụ 
+hướng dẫn nội bộ và thông tin tổ chức, hãy luôn tìm kiếm trên Document Wiki thông qua công cụ 
 search_wiki trước khi dựa vào kiến thức tổng quát.
 ```
 
@@ -246,13 +250,13 @@ Hệ thống hỗ trợ tích hợp với bất kỳ nền tảng Chatbot nào t
 - [x] **Nhận dạng văn bản OCR:** Hỗ trợ GLM-OCR xử lý tài liệu quét.
 - [x] **Nhật ký kiểm vết (Audit Trail):** Ghi nhận đầy đủ thao tác hệ thống.
 - [ ] **Trình kết nối dữ liệu tự động (Data Connectors):** Tự động đồng bộ từ Google Drive, SharePoint, Notion, Confluence.
-- [ ] **Document-Wiki CLI:** Công cụ dòng lệnh hỗ trợ thiết lập nhanh cho nhà phát triển.
+- [ ] **Document Wiki CLI:** Công cụ dòng lệnh hỗ trợ thiết lập nhanh cho nhà phát triển.
 - [ ] **Hệ thống cảnh báo & Thông báo đa kênh:** Hỗ trợ Webhook, Email và Slack khi có bản nháp hoặc kế hoạch cần phê duyệt.
 
 ---
 
 ## 🔒 9. An toàn thông tin & Bản quyền
 
-Document-Wiki là giải pháp quản trị tri thức tự lưu trữ phục vụ các nhu cầu nội bộ của doanh nghiệp và tổ chức.
+Document Wiki là giải pháp quản trị tri thức tự lưu trữ phục vụ các nhu cầu nội bộ của doanh nghiệp và tổ chức.
 
 Mọi bản quyền, mã nguồn và cấu trúc hệ thống được đóng gói để đảm bảo tính tự chủ, bảo mật và an toàn dữ liệu cao nhất.

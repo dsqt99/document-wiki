@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { BarList, LineChart } from "@/components/stats/charts";
@@ -214,6 +215,8 @@ export default function DashboardPage() {
       });
   };
 
+  const { t } = useI18n();
+
   if (!user) {
     return <LoadingTransition />;
   }
@@ -225,21 +228,21 @@ export default function DashboardPage() {
   return (
     <>
       <PageHeader
-        title="Statistics & Diagnostics"
-        description="Measure knowledge health, contribution velocity, knowledge gaps, and monitor active MCP queries."
+        title={t("stats.title", "Statistics & Diagnostics")}
+        description={t("stats.description", "Measure knowledge health, contribution velocity, knowledge gaps, and monitor active MCP queries.")}
         action={
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => loadAll()} disabled={loading}>
               <span className={`material-symbols-outlined text-base mr-2 ${loading ? "animate-spin" : ""}`}>
                 refresh
               </span>
-              Refresh
+              {t("stats.refresh", "Refresh")}
             </Button>
             <Button variant="outline" onClick={triggerBackfill} disabled={backfilling}>
               <span className={`material-symbols-outlined text-base mr-2 ${backfilling ? "animate-spin" : ""}`}>
                 calculate
               </span>
-              {backfilling ? "Computing…" : `Rollup ${toDate}`}
+              {backfilling ? t("stats.rolling", "Computing…") : `${t("stats.rollup", "Rollup")} ${toDate}`}
             </Button>
           </div>
         }
@@ -248,7 +251,9 @@ export default function DashboardPage() {
       {/* Filter bar */}
       <div className="mt-4 flex flex-wrap items-end gap-3 rounded-xl border bg-card p-3">
         <div>
-          <label className="block text-[11px] uppercase tracking-wide text-muted-foreground mb-1">From</label>
+          <label className="block text-[11px] uppercase tracking-wide text-muted-foreground mb-1">
+            {t("stats.from", "From")}
+          </label>
           <input
             type="date"
             value={fromDate}
@@ -257,7 +262,9 @@ export default function DashboardPage() {
           />
         </div>
         <div>
-          <label className="block text-[11px] uppercase tracking-wide text-muted-foreground mb-1">To</label>
+          <label className="block text-[11px] uppercase tracking-wide text-muted-foreground mb-1">
+            {t("stats.to", "To")}
+          </label>
           <input
             type="date"
             value={toDate}
@@ -266,17 +273,34 @@ export default function DashboardPage() {
           />
         </div>
         <div className="flex gap-1 ml-auto">
-          {(["overview", "content", "contribution", "usage", "gaps", "diagnostics"] as TabKey[]).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`px-3 h-9 text-sm rounded-md border transition-colors ${
-                tab === t ? "bg-foreground text-background border-foreground" : "bg-background hover:bg-black/[0.03]"
-              }`}
-            >
-              {t === "diagnostics" ? "Linter" : t[0].toUpperCase() + t.slice(1)}
-            </button>
-          ))}
+          {(["overview", "content", "contribution", "usage", "gaps", "diagnostics"] as TabKey[]).map((tabKey) => {
+            const tabLabel =
+              tabKey === "overview"
+                ? t("stats.tabOverview", "Overview")
+                : tabKey === "content"
+                ? t("stats.tabContent", "Content")
+                : tabKey === "contribution"
+                ? t("stats.tabContribution", "Contribution")
+                : tabKey === "usage"
+                ? t("stats.tabUsage", "Usage")
+                : tabKey === "gaps"
+                ? t("stats.tabGaps", "Gaps")
+                : t("stats.tabLinter", "Linter");
+
+            return (
+              <button
+                key={tabKey}
+                onClick={() => setTab(tabKey)}
+                className={`px-3 h-9 text-sm rounded-md border transition-colors ${
+                  tab === tabKey
+                    ? "bg-foreground text-background border-foreground"
+                    : "bg-background hover:bg-black/[0.03]"
+                }`}
+              >
+                {tabLabel}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -326,29 +350,72 @@ function LoadingTransition({ message = "Loading data and resolving workspace sco
 /* ──────────────────────────────────────────────────────────────────────── */
 
 function OverviewTab({ data }: { data: OverviewResponse | null }) {
+  const { t } = useI18n();
   if (!data) return <SkeletonGrid />;
   const k = data.kpis;
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <KpiCard label="Total wiki pages" value={fmtNumber(k["wiki.pages.total"])} icon="auto_stories" />
         <KpiCard
-          label="Stale pages (30d)"
+          label={t("stats.kpiTotalPages", "Total wiki pages")}
+          value={fmtNumber(k["wiki.pages.total"])}
+          icon="auto_stories"
+        />
+        <KpiCard
+          label={t("stats.kpiStalePages", "Stale pages (30d)")}
           value={fmtNumber(k["wiki.pages.stale_30d"])}
           icon="hourglass_empty"
           tone={k["wiki.pages.stale_30d"] && k["wiki.pages.stale_30d"]! > 0 ? "warn" : "default"}
         />
-        <KpiCard label="Orphan pages" value={fmtNumber(k["wiki.pages.orphan"])} icon="link_off" tone={k["wiki.pages.orphan"] && k["wiki.pages.orphan"]! > 0 ? "warn" : "default"} />
-        <KpiCard label="Pages updated today" value={fmtNumber(k["wiki.pages.updated"])} icon="edit_note" />
-        <KpiCard label="Drafts pending" value={fmtNumber(k["draft.pending"])} icon="rate_review" />
-        <KpiCard label="Avg time-to-review" value={fmtDuration(k["draft.time_to_review_avg_seconds"])} icon="schedule" />
-        <KpiCard label="Plans awaiting review" value={fmtNumber(k["compile_plan.pending_review"])} icon="task_alt" />
-        <KpiCard label="Denied access (today)" value={fmtNumber(k["audit.denied"])} icon="block" tone={k["audit.denied"] && k["audit.denied"]! > 0 ? "warn" : "default"} />
-        <KpiCard label="MCP active users (today)" value={fmtNumber(k["mcp.active_users"])} icon="person" />
-        <KpiCard label="MCP WAU" value={fmtNumber(k["mcp.weekly_active_users"])} icon="group" />
-        <KpiCard label="MCP queries (today)" value={fmtNumber(k["mcp.queries.total"])} icon="search" />
         <KpiCard
-          label="Zero-result queries (today)"
+          label={t("stats.kpiOrphanPages", "Orphan pages")}
+          value={fmtNumber(k["wiki.pages.orphan"])}
+          icon="link_off"
+          tone={k["wiki.pages.orphan"] && k["wiki.pages.orphan"]! > 0 ? "warn" : "default"}
+        />
+        <KpiCard
+          label={t("stats.kpiPagesUpdatedToday", "Pages updated today")}
+          value={fmtNumber(k["wiki.pages.updated"])}
+          icon="edit_note"
+        />
+        <KpiCard
+          label={t("stats.kpiDraftsPending", "Drafts pending")}
+          value={fmtNumber(k["draft.pending"])}
+          icon="rate_review"
+        />
+        <KpiCard
+          label={t("stats.kpiAvgTimeToReview", "Avg time-to-review")}
+          value={fmtDuration(k["draft.time_to_review_avg_seconds"])}
+          icon="schedule"
+        />
+        <KpiCard
+          label={t("stats.kpiPlansAwaitingReview", "Plans awaiting review")}
+          value={fmtNumber(k["compile_plan.pending_review"])}
+          icon="task_alt"
+        />
+        <KpiCard
+          label={t("stats.kpiDeniedAccess", "Denied access (today)")}
+          value={fmtNumber(k["audit.denied"])}
+          icon="block"
+          tone={k["audit.denied"] && k["audit.denied"]! > 0 ? "warn" : "default"}
+        />
+        <KpiCard
+          label={t("stats.kpiMcpActiveUsers", "MCP active users (today)")}
+          value={fmtNumber(k["mcp.active_users"])}
+          icon="person"
+        />
+        <KpiCard
+          label={t("stats.kpiMcpWau", "MCP WAU")}
+          value={fmtNumber(k["mcp.weekly_active_users"])}
+          icon="group"
+        />
+        <KpiCard
+          label={t("stats.kpiMcpQueries", "MCP queries (today)")}
+          value={fmtNumber(k["mcp.queries.total"])}
+          icon="search"
+        />
+        <KpiCard
+          label={t("stats.kpiZeroResultQueries", "Zero-result queries (today)")}
           value={fmtNumber(k["mcp.queries.zero_result"])}
           icon="search_off"
           tone={k["mcp.queries.zero_result"] && k["mcp.queries.zero_result"]! > 0 ? "warn" : "default"}
@@ -357,7 +424,9 @@ function OverviewTab({ data }: { data: OverviewResponse | null }) {
 
       <div className="grid md:grid-cols-2 gap-4">
         <div className="rounded-xl border bg-card p-4">
-          <div className="text-sm font-medium mb-2">Top knowledge gap</div>
+          <div className="text-sm font-medium mb-2">
+            {t("stats.topGapTitle", "Top knowledge gap")}
+          </div>
           {data.top_gap_topic ? (
             <>
               <div className="text-lg">{data.top_gap_topic.normalized || "—"}</div>
@@ -366,18 +435,24 @@ function OverviewTab({ data }: { data: OverviewResponse | null }) {
               </div>
             </>
           ) : (
-            <div className="text-sm text-muted-foreground">No zero-result queries — KB is covering everything.</div>
+            <div className="text-sm text-muted-foreground">
+              {t("stats.noGapNotice", "No zero-result queries — KB is covering everything.")}
+            </div>
           )}
         </div>
         <div className="rounded-xl border bg-card p-4">
-          <div className="text-sm font-medium mb-2">Top contributor (last 30d)</div>
+          <div className="text-sm font-medium mb-2">
+            {t("stats.topContributorTitle", "Top contributor (last 30d)")}
+          </div>
           {data.top_contributor ? (
             <>
               <div className="text-lg">{data.top_contributor.name || "—"}</div>
               <div className="text-xs text-muted-foreground mt-1">{data.top_contributor.count} drafts submitted</div>
             </>
           ) : (
-            <div className="text-sm text-muted-foreground">No drafts in the window.</div>
+            <div className="text-sm text-muted-foreground">
+              {t("stats.noContributorNotice", "No drafts in the window.")}
+            </div>
           )}
         </div>
       </div>

@@ -1,9 +1,9 @@
-"use client";
-
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { useI18n } from "@/lib/i18n";
 
 export function McpConnectionCard() {
+  const { t } = useI18n();
   const [copied, setCopied] = useState(false);
 
   const configSnippet = `{
@@ -26,10 +26,10 @@ export function McpConnectionCard() {
   return (
     <div className="bg-surface-variant rounded-xl p-6 border border-border">
       <h3 className="text-xl tracking-tight text-foreground mb-2">
-        MCP Connection
+        {t("dash.mcpConnection", "MCP Connection")}
       </h3>
       <p className="text-xs text-muted-foreground mb-4">
-        Connect Claude Desktop to Arkon with this config snippet.
+        {t("dash.mcpDesc", "Connect Claude Desktop to Arkon with this config snippet.")}
       </p>
 
       <div className="bg-[#3a302a] rounded-lg p-4 font-mono text-xs text-[#faf5ee] overflow-x-auto">
@@ -45,7 +45,7 @@ export function McpConnectionCard() {
         <span className="material-symbols-outlined text-sm mr-1">
           {copied ? "check" : "content_copy"}
         </span>
-        {copied ? "Copied!" : "Copy Config"}
+        {copied ? t("dash.copied", "Copied!") : t("dash.copyConfig", "Copy Config")}
       </Button>
     </div>
   );

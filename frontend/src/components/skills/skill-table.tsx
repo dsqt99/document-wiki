@@ -5,6 +5,7 @@ import { ScopeBadge } from "@/components/shared/scope-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import {
   Table,
@@ -70,7 +71,8 @@ export function SkillTable({
   total,
   search,
 }: SkillTableProps) {
-  const { canAccess, hasPermission } = useAuth();
+  const { t } = useI18n();
+  const { canAccess } = useAuth();
   const [editSkill, setEditSkill] = React.useState<Skill | null>(null);
   const [uploadSkill, setUploadSkill] = React.useState<Skill | null>(null);
   const [searchInput, setSearchInput] = React.useState(search);
@@ -92,7 +94,7 @@ export function SkillTable({
                 setSearchInput(val);
                 onSearch(val);
               }}
-              placeholder="Search skills..."
+              placeholder={t("skills.searchPlaceholder", "Search skills...")}
               className="h-9 pl-9 pr-3 text-sm rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 w-[280px] placeholder:text-muted-foreground/60"
             />
             {searchInput && (
@@ -107,7 +109,7 @@ export function SkillTable({
           </div>
         </div>
         <span className="text-xs text-muted-foreground tabular-nums">
-          {total} skill{total !== 1 ? "s" : ""}
+          {total} {t("skills.skillCount", "skills")}
         </span>
       </div>
 
@@ -120,19 +122,19 @@ export function SkillTable({
         ) : skills.length === 0 ? (
           <EmptyState
             icon="smart_toy"
-            title={search ? "No results found" : "No skills found"}
-            description={search ? `No skills matching "${search}"` : "Upload skills to start building your AI library."}
+            title={search ? t("common.noResults", "No results found") : t("skills.noSkills", "No skills found")}
+            description={search ? `${t("common.noResults", "No results matching")} "${search}"` : t("skills.noSkillsDesc", "Upload skills to start building your AI library.")}
           />
         ) : (
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent border-b border-border/50">
-                <TableHead className="text-[11px] uppercase tracking-wider font-bold text-muted-foreground">Skill</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-bold text-muted-foreground">Version</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-bold text-muted-foreground">Visibility</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-bold text-muted-foreground">Department</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-bold text-muted-foreground">Status</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-bold text-muted-foreground">Updated</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-bold text-muted-foreground">{t("skills.colSkill", "Skill")}</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-bold text-muted-foreground">{t("skills.colVersion", "Version")}</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-bold text-muted-foreground">{t("skills.colVisibility", "Visibility")}</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-bold text-muted-foreground">{t("skills.colDepartment", "Department")}</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-bold text-muted-foreground">{t("skills.colStatus", "Status")}</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-bold text-muted-foreground">{t("skills.colUpdated", "Updated")}</TableHead>
                 <TableHead className="text-[11px] uppercase tracking-wider font-bold text-muted-foreground text-right w-[80px]"></TableHead>
               </TableRow>
             </TableHeader>
@@ -158,7 +160,7 @@ export function SkillTable({
                         {skill.is_system && (
                           <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-amber-500/10 text-amber-600 border border-amber-500/20 shrink-0">
                             <span className="material-symbols-outlined text-[11px]">lock</span>
-                            System
+                            {t("skills.systemSkill", "System")}
                           </span>
                         )}
                       </div>
@@ -177,7 +179,6 @@ export function SkillTable({
                     <ScopeBadge scopeType={skill.scope_type} scopeId={skill.scope_id || undefined} />
                   </TableCell>
 
-
                   {/* Department */}
                   <TableCell>
                     <div className="flex items-center gap-1.5 overflow-x-auto max-w-[180px] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
@@ -191,7 +192,7 @@ export function SkillTable({
                       ) : (
                         <div className="flex items-center gap-1 text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">
                           <span className="material-symbols-outlined text-[12px]">public</span>
-                          Global
+                          {t("scope.global", "Global")}
                         </div>
                       )}
                     </div>
@@ -233,7 +234,7 @@ export function SkillTable({
                           {canAccess("skill", "edit") && (
                             <DropdownMenuItem onClick={() => setEditSkill(skill)} className="flex items-center gap-2 py-2.5 cursor-pointer">
                               <span className="material-symbols-outlined text-base">edit</span>
-                              Edit Skill
+                              {t("skills.editSkill", "Edit Skill")}
                             </DropdownMenuItem>
                           )}
                           {(canAccess("skill", "edit") || canAccess("skill", "delete")) && <DropdownMenuSeparator className="bg-border/50" />}
@@ -243,7 +244,7 @@ export function SkillTable({
                               className="flex items-center gap-2 py-2.5 text-destructive focus:text-destructive cursor-pointer"
                             >
                               <span className="material-symbols-outlined text-base">delete</span>
-                              Delete
+                              {t("common.delete", "Delete")}
                             </DropdownMenuItem>
                           )}
                         </DropdownMenuContent>

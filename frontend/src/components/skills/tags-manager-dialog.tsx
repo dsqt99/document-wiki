@@ -1,7 +1,6 @@
-"use client";
-
 import { useState, useEffect, useCallback } from "react";
 import { api, ApiError } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { 
   Dialog, 
@@ -25,6 +24,7 @@ type TagsManagerDialogProps = {
 };
 
 export function TagsManagerDialog({ onUpdate }: TagsManagerDialogProps) {
+  const { t } = useI18n();
   const [isOpen, setIsOpen] = useState(false);
   const [tags, setTags] = useState<string[]>([]);
   const [total, setTotal] = useState(0);
@@ -70,11 +70,11 @@ export function TagsManagerDialog({ onUpdate }: TagsManagerDialogProps) {
     }
   };
 
-  const toggleTag = (t: string) => {
-    if (selectedTags.includes(t)) {
-      setSelectedTags(selectedTags.filter(item => item !== t));
+  const toggleTag = (tName: string) => {
+    if (selectedTags.includes(tName)) {
+      setSelectedTags(selectedTags.filter(item => item !== tName));
     } else {
-      setSelectedTags([...selectedTags, t]);
+      setSelectedTags([...selectedTags, tName]);
     }
   };
 
@@ -91,7 +91,7 @@ export function TagsManagerDialog({ onUpdate }: TagsManagerDialogProps) {
       if (onUpdate) onUpdate();
     } catch (error) {
       const msg = error instanceof ApiError ? (error.data as any)?.detail || error.message : "Unknown error";
-      alert("Failed to delete tags: " + msg);
+      alert(t("common.error", "Failed to delete tags: ") + msg);
     }
   };
 
@@ -103,7 +103,7 @@ export function TagsManagerDialog({ onUpdate }: TagsManagerDialogProps) {
         render={
           <Button variant="outline" className="shadow-sahara border-primary/20 hover:border-primary/50 text-primary">
             <span className="material-symbols-outlined text-base mr-1">sell</span>
-            Manage Tags
+            {t("skills.manageTags", "Manage Tags")}
           </Button>
         }
       />
@@ -111,7 +111,7 @@ export function TagsManagerDialog({ onUpdate }: TagsManagerDialogProps) {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <span className="material-symbols-outlined text-primary">sell</span>
-            Tags Management
+            {t("skills.manageTags", "Tags Management")}
           </DialogTitle>
         </DialogHeader>
 
@@ -121,7 +121,7 @@ export function TagsManagerDialog({ onUpdate }: TagsManagerDialogProps) {
             <div className="relative flex-1">
               <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">search</span>
               <Input 
-                placeholder="Search tags..." 
+                placeholder={t("common.search", "Search tags...")} 
                 className="pl-8 h-9 text-sm"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -159,26 +159,26 @@ export function TagsManagerDialog({ onUpdate }: TagsManagerDialogProps) {
                 </div>
               ) : tags.length === 0 ? (
                 <div className="col-span-2 py-10 text-center text-xs text-muted-foreground italic">
-                  No tags found.
+                  {t("common.noResults", "No tags found.")}
                 </div>
               ) : (
                 <>
-                  {tags.map(t => (
+                  {tags.map(tagItem => (
                     <div 
-                      key={t}
-                      onClick={() => toggleTag(t)}
+                      key={tagItem}
+                      onClick={() => toggleTag(tagItem)}
                       className={cn(
                         "flex items-center gap-2 p-2 rounded-md hover:bg-secondary/20 cursor-pointer transition-colors",
-                        selectedTags.includes(t) && "bg-primary/5 border-primary/20"
+                        selectedTags.includes(tagItem) && "bg-primary/5 border-primary/20"
                       )}
                     >
                       <input 
                         type="checkbox" 
                         className="w-3.5 h-3.5 cursor-pointer"
-                        checked={selectedTags.includes(t)}
+                        checked={selectedTags.includes(tagItem)}
                         readOnly
                       />
-                      <span className="text-xs truncate">{t}</span>
+                      <span className="text-xs truncate">{tagItem}</span>
                     </div>
                   ))}
                 </>
@@ -199,7 +199,7 @@ export function TagsManagerDialog({ onUpdate }: TagsManagerDialogProps) {
             className="h-8 px-4"
           >
             <span className="material-symbols-outlined text-sm mr-1">delete</span>
-            Delete ({selectedTags.length})
+            {t("common.delete", "Delete")} ({selectedTags.length})
           </Button>
         </DialogFooter>
       </DialogContent>

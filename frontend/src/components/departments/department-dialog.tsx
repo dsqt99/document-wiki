@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,6 +29,7 @@ export function DepartmentDialog({
   department,
   onSaved,
 }: Props) {
+  const { t } = useI18n();
   const isEdit = !!department;
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -60,7 +62,7 @@ export function DepartmentDialog({
       onSaved();
       onOpenChange(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Save failed");
+      setError(err instanceof Error ? err.message : t("common.error", "Save failed"));
     } finally {
       setSaving(false);
     }
@@ -71,13 +73,13 @@ export function DepartmentDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="text-xl">
-            {isEdit ? "Edit Department" : "Create Department"}
+            {isEdit ? t("dept.editTitle", "Edit Department") : t("dept.createTitle", "Create Department")}
           </DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4 mt-2">
           <div className="flex flex-col gap-2">
-            <Label htmlFor="dept-name">Name</Label>
+            <Label htmlFor="dept-name">{t("dept.nameLabel", "Name")}</Label>
             <Input
               id="dept-name"
               value={name}
@@ -89,12 +91,12 @@ export function DepartmentDialog({
           </div>
 
           <div className="flex flex-col gap-2">
-            <Label htmlFor="dept-desc">Description</Label>
+            <Label htmlFor="dept-desc">{t("dept.descLabel", "Description")}</Label>
             <Textarea
               id="dept-desc"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Optional description..."
+              placeholder={t("type.descPlaceholder", "Optional description...")}
               rows={3}
               className="bg-background"
             />
@@ -112,14 +114,14 @@ export function DepartmentDialog({
               variant="outline"
               onClick={() => onOpenChange(false)}
             >
-              Cancel
+              {t("common.cancel", "Cancel")}
             </Button>
             <Button
               type="submit"
               disabled={saving}
               className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
-              {saving ? "Saving..." : isEdit ? "Update" : "Create"}
+              {saving ? t("common.loading", "Saving...") : isEdit ? t("common.save", "Update") : t("common.create", "Create")}
             </Button>
           </div>
         </form>

@@ -2,6 +2,7 @@
 
 import React from "react";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n";
 
 export type WikiStatus = "seed" | "developing" | "mature" | "evergreen";
 
@@ -42,7 +43,23 @@ export function WikiStatusBadge({
   status: WikiStatus | string;
   className?: string;
 }) {
+  const { t } = useI18n();
   const normStatus = (status?.toLowerCase() || "seed") as WikiStatus;
+
+  const getDesc = (st: WikiStatus) => {
+    switch (st) {
+      case "developing":
+        return t("wiki.status.developing", "In active development with additional documents.");
+      case "mature":
+        return t("wiki.status.mature", "Knowledge is well-consolidated and comprehensive.");
+      case "evergreen":
+        return t("wiki.status.evergreen", "Core, sustainable, and highly reliable knowledge.");
+      case "seed":
+      default:
+        return t("wiki.status.seed", "Initial knowledge just added to the system.");
+    }
+  };
+
   const config = STATUS_CONFIGS[normStatus] || STATUS_CONFIGS.seed;
 
   return (
@@ -52,7 +69,7 @@ export function WikiStatusBadge({
         config.classes,
         className
       )}
-      title={config.description}
+      title={getDesc(normStatus)}
     >
       <span className="w-1 h-1 rounded-full bg-current" />
       {config.label}

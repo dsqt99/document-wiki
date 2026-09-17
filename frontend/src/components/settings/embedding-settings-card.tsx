@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
 
 type EmbeddingSpec = {
   id: string;
@@ -38,6 +39,7 @@ type JobResp = {
 };
 
 export function EmbeddingSettingsCard() {
+  const { t } = useI18n();
   const [catalog, setCatalog] = useState<CatalogResp | null>(null);
   const [status, setStatus] = useState<StatusResp | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -61,13 +63,14 @@ export function EmbeddingSettingsCard() {
 
   // Poll active job every 2s while one is running.
   useEffect(() => {
-    const job = status?.current_job;
-    if (!job || (job.status !== "pending" && job.status !== "running")) return;
-    const t = setInterval(() => {
-      void refreshStatus();
+    if (!status?.current_job || (status.current_job.status !== "pending" && status.current_job.status !== "running")) {
+      return;
+    }
+    const timer = setInterval(() => {
+      void refresh();
     }, 2000);
-    return () => clearInterval(t);
-  }, [status?.current_job?.id, status?.current_job?.status]);
+    return () => clearInterval(timer);
+  }, [status]);
 
   async function refresh() {
     try {
@@ -78,24 +81,20 @@ export function EmbeddingSettingsCard() {
       ]);
       setCatalog(c);
       setStatus(s);
+      setSelected((prev) => prev ?? c.active_spec_id);
+
+      // Extract masked embedding API keys from the general settings payload.
+      // Keys follow the convention `embedding_api_key__<provider>`.
       const masked: Record<string, string> = {};
-      for (const provider of new Set(c.specs.map((sp) => sp.provider))) {
-        const v = settings[`embedding_api_key__${provider}`];
-        if (typeof v === "string" && v.length > 0) masked[provider] = v;
+      for (const [k, v] of Object.entries(settings || {})) {
+        if (k.startsWith("embedding_api_key__") && typeof v === "string" && v) {
+          const provider = k.replace("embedding_api_key__", "");
+          masked[provider] = v;
+        }
       }
       setMaskedKeys(masked);
-      if (!selected) setSelected(c.active_spec_id ?? c.specs[0]?.id ?? null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load embedding catalog");
-    }
-  }
-
-  async function refreshStatus() {
-    try {
-      const s = await api<StatusResp>("/api/settings/embeddings/status");
-      setStatus(s);
-    } catch {
-      // ignore — keep last known
+      setError(e instanceof Error ? e.message : "Load failed");
     }
   }
 
@@ -171,9 +170,11 @@ export function EmbeddingSettingsCard() {
           <span className="material-symbols-outlined text-primary text-base">data_array</span>
         </div>
         <div className="flex-1">
-          <h3 className="text-base font-semibold text-foreground">Embedding Model</h3>
+          <h3 className="text-base font-semibold text-foreground">
+            {t("settings.embeddingTitle", "Embedding Model")}
+          </h3>
           <p className="text-xs text-muted-foreground">
-            Choose a model and save its API key.
+            {t("settings.embeddingDesc", "Choose a model and save its API key.")}
           </p>
         </div>
       </div>
@@ -186,7 +187,7 @@ export function EmbeddingSettingsCard() {
               Migrating to <strong>{job.model_spec_id}</strong> — {job.done_pages}/{job.total_pages} pages
             </span>
             <button onClick={cancelJob} className="text-xs underline hover:no-underline">
-              Cancel
+              {t("settings.cancel", "Cancel")}
             </button>
           </div>
           <div className="h-2 rounded bg-blue-100 dark:bg-blue-900 overflow-hidden">
@@ -232,7 +233,7 @@ export function EmbeddingSettingsCard() {
               <span className="text-xs text-muted-foreground">{spec.provider}</span>
               {isActive && (
                 <span className="text-[10px] uppercase tracking-wide bg-green-500/15 text-green-700 dark:text-green-400 px-1.5 py-0.5 rounded">
-                  Active
+                  {t("settings.active", "Active")}
                 </span>
               )}
             </label>
@@ -244,9 +245,11 @@ export function EmbeddingSettingsCard() {
       {selectedSpec && (
         <div className="mb-4 flex flex-col gap-1.5">
           <Label className="text-xs">
-            API key for {selectedSpec.provider}
+            {t("settings.apiKeyFor", "API key for")} {selectedSpec.provider}
             {selectedSpec.api_key_configured && (
-              <span className="ml-2 text-green-600 dark:text-green-400">✓ saved</span>
+              <span className="ml-2 text-green-600 dark:text-green-400">
+                {t("settings.apiKeySaved", "✓ saved")}
+              </span>
             )}
           </Label>
           <Input
@@ -257,7 +260,9 @@ export function EmbeddingSettingsCard() {
               if (isMaskedKey) setApiKey("");
             }}
             placeholder={
-              selectedSpec.api_key_configured ? "Replace existing key…" : "Paste API key"
+              selectedSpec.api_key_configured
+                ? t("settings.replaceKey", "Replace existing key…")
+                : t("settings.pasteKey", "Paste API key")
             }
             className="bg-background"
           />
@@ -271,7 +276,7 @@ export function EmbeddingSettingsCard() {
           onClick={handleSave}
           className="bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
         >
-          {saving ? "Saving…" : "Save"}
+          {saving ? t("settings.saving", "Saving…") : t("common.save", "Save")}
         </button>
         {error && <p className="text-xs text-destructive">{error}</p>}
       </div>

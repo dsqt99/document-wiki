@@ -1,7 +1,5 @@
-"use client";
-
-import React, { useState, useMemo } from "react";
-import { Input } from "@/components/ui/input";
+import React from "react";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 type Department = {
@@ -20,6 +18,7 @@ export function SkillSidebarFilters({
   selectedDepartment,
   onSelectDepartment,
 }: SkillSidebarFiltersProps) {
+  const { t } = useI18n();
 
   return (
     <div className="w-full flex flex-col gap-4 animate-in fade-in slide-in-from-left-4 duration-700">
@@ -29,13 +28,13 @@ export function SkillSidebarFilters({
         <div className="flex items-center justify-between mb-4">
           <h4 className="text-sm font-semibold text-foreground tracking-tight flex items-center gap-2">
             <span className="material-symbols-outlined text-primary/70 text-sm">corporate_fare</span>
-            Department
+            {t("skills.colDepartment", "Department")}
           </h4>
         </div>
 
         <div className="flex flex-col gap-1 max-h-[250px] overflow-y-auto custom-scrollbar -mx-1 px-1">
           <FilterItem
-            label="All Departments"
+            label={t("skills.allDepartments", "All Departments")}
             icon="grid_view"
             active={selectedDepartment === null}
             onClick={() => onSelectDepartment(null)}

@@ -1,7 +1,6 @@
-"use client";
-
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/shared/empty-state";
 
@@ -15,6 +14,7 @@ type Source = {
 };
 
 export function RecentSourcesCard() {
+  const { t } = useI18n();
   const [sources, setSources] = useState<Source[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -35,7 +35,7 @@ export function RecentSourcesCard() {
   return (
     <div className="bg-card rounded-xl p-6 border border-border shadow-sahara">
       <h3 className="text-xl tracking-tight text-foreground border-b border-border pb-3 mb-4">
-        Recent Documents
+        {t("dash.recentDocs", "Recent Documents")}
       </h3>
 
       {loading ? (
@@ -47,8 +47,8 @@ export function RecentSourcesCard() {
       ) : sources.length === 0 ? (
         <EmptyState
           icon="description"
-          title="No documents yet"
-          description="Upload your first document in the Knowledge Base"
+          title={t("dash.noRecentDocs", "No documents yet")}
+          description={t("dash.uploadFirstDoc", "Upload your first document in the Knowledge Base")}
         />
       ) : (
         <div className="flex flex-col gap-3">

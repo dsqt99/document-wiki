@@ -6,10 +6,10 @@ import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { KnowledgeTable } from "@/components/knowledge/knowledge-table";
-import { KnowledgeFilters } from "@/components/knowledge/knowledge-filters";
 import { UploadDialog } from "@/components/knowledge/upload-dialog";
 import { KnowledgeTypeCards } from "@/components/types/knowledge-type-cards";
 import { KnowledgeTypeDialog } from "@/components/types/knowledge-type-dialog";
+import { useI18n } from "@/lib/i18n";
 
 export type KnowledgeType = {
   id: string;
@@ -148,11 +148,13 @@ export default function KnowledgePage() {
     loadSources(false, p, search);
   };
 
+  const { t } = useI18n();
+
   return (
     <>
       <PageHeader
-        title="Knowledge Base"
-        description="Manage and organize your organization's documents and categories."
+        title={t("knowledge.title", "Knowledge Base")}
+        description={t("knowledge.description", "Manage and organize your organization's documents and categories.")}
         action={
           activeTab === "documents" ? (
             <Button
@@ -160,7 +162,7 @@ export default function KnowledgePage() {
               className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
               <span className="material-symbols-outlined text-base mr-1">add</span>
-              Upload Document
+              {t("knowledge.uploadBtn", "Upload Document")}
             </Button>
           ) : (
             <Button
@@ -168,7 +170,7 @@ export default function KnowledgePage() {
               className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
               <span className="material-symbols-outlined text-base mr-1">add</span>
-              Add Category
+              {t("knowledge.addCategoryBtn", "Add Category")}
             </Button>
           )
         }
@@ -178,42 +180,32 @@ export default function KnowledgePage() {
         <TabsList className="mb-6">
           <TabsTrigger value="documents" className="gap-2">
             <span className="material-symbols-outlined text-[18px]">files</span>
-            Documents
+            {t("knowledge.documents", "Documents")}
           </TabsTrigger>
           <TabsTrigger value="types" className="gap-2">
             <span className="material-symbols-outlined text-[18px]">category</span>
-            Categories
+            {t("knowledge.categories", "Categories")}
           </TabsTrigger>
         </TabsList>
 
         <TabsContent value="documents" className="mt-0 outline-none">
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-            <div className="lg:col-span-1">
-              <KnowledgeFilters
-                types={types}
-                selectedType={selectedType}
-                onSelectType={setSelectedType}
-                departments={departments}
-                selectedDepartment={selectedDepartment}
-                onSelectDepartment={setSelectedDepartment}
-              />
-            </div>
-            <div className="lg:col-span-3">
-              <KnowledgeTable
-                sources={sources}
-                types={types}
-                departments={departments}
-                loading={loading}
-                onRefresh={() => loadSources(false, page, search)}
-                page={page}
-                totalPages={totalPages}
-                total={total}
-                onPageChange={handlePageChange}
-                search={search}
-                onSearch={handleSearch}
-              />
-            </div>
-          </div>
+          <KnowledgeTable
+            sources={sources}
+            types={types}
+            departments={departments}
+            loading={loading}
+            onRefresh={() => loadSources(false, page, search)}
+            page={page}
+            totalPages={totalPages}
+            total={total}
+            onPageChange={handlePageChange}
+            search={search}
+            onSearch={handleSearch}
+            selectedType={selectedType}
+            onSelectType={setSelectedType}
+            selectedDepartment={selectedDepartment}
+            onSelectDepartment={setSelectedDepartment}
+          />
         </TabsContent>
 
         <TabsContent value="types" className="mt-0 outline-none">

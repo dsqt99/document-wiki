@@ -7,6 +7,13 @@ import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { WikiPageSummary } from "@/types/wiki";
 import { wikiTypeIcon, wikiTypeColor, wikiTypeGroupLabel } from "./wiki-type-badge";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
+import { useI18n } from "@/lib/i18n";
 
 const GROUP_ORDER = ["entity", "concept", "topic", "source"];
 
@@ -87,6 +94,7 @@ export function WikiPageTree({
   onCreatePage?: (scope: { scope_type: string; scope_id: string | null }) => void;
 }) {
   const pathname = usePathname();
+  const { t } = useI18n();
   const [pages, setPages] = React.useState<WikiPageSummary[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [search, setSearch] = React.useState("");
@@ -309,6 +317,22 @@ export function WikiPageTree({
     () => pages.filter((p) => p.page_type !== "index" && p.page_type !== "log" && p.page_type !== "hot").length,
     [pages]
   );
+
+  const isFiltered = Boolean(debouncedSearch.trim() || selectedSourceId || categoryFilter !== "all");
+
+  const resetAllFilters = React.useCallback(() => {
+    setSearch("");
+    setSelectedSourceId(null);
+    setCategoryFilter("all");
+  }, []);
+
+  const selectedDoc = React.useMemo(() => {
+    if (!selectedSourceId) return null;
+    if (selectedSourceId === "other") {
+      return { id: "other", title: "Khác / Chưa phân loại", count: sourceStats.otherCount };
+    }
+    return sourceStats.sources.find((s) => s.id === selectedSourceId) || null;
+  }, [selectedSourceId, sourceStats]);
 
   const currentSlug = activeSlug ?? pathname.replace(/^\/wiki\//, "");
 
@@ -597,9 +621,22 @@ export function WikiPageTree({
   const renderPagesList = (pageList: WikiPageSummary[]) => {
     if (pageList.length === 0) {
       return (
-        <div className="px-4 py-4 text-center">
-          <span className="material-symbols-outlined text-muted-foreground/50 text-2xl mb-1">search_off</span>
-          <p className="text-xs text-muted-foreground">Không tìm thấy trang phù hợp.</p>
+        <div className="px-4 py-8 text-center">
+          <span className="material-symbols-outlined text-muted-foreground/40 text-2xl mb-1.5 block">
+            search_off
+          </span>
+          <p className="text-xs text-foreground font-medium mb-0.5">{t("wiki.noPages")}</p>
+          <p className="text-[11px] text-muted-foreground mb-3">{t("wiki.noPagesDesc")}</p>
+          {isFiltered && (
+            <button
+              type="button"
+              onClick={resetAllFilters}
+              className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium rounded-md bg-primary/10 hover:bg-primary/20 text-primary transition-colors cursor-pointer"
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: 13 }}>restart_alt</span>
+              {t("wiki.reset")}
+            </button>
+          )}
         </div>
       );
     }
@@ -704,153 +741,281 @@ export function WikiPageTree({
       {/* === PAGES SECTION === */}
       <div className="flex flex-col min-h-0" style={{ flex: sourcesCollapsed ? "1 1 auto" : "1 1 58%" }}>
         {/* Header */}
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
-          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex-1">
-            Pages
+        <div className="flex items-center gap-1.5 px-3 py-2.5 border-b border-border">
+          <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+            {t("wiki.pages")}
           </span>
-          <span className="text-xs text-muted-foreground tabular-nums bg-muted rounded-md px-1.5 py-0.5">
-            {filtered.length} / {totalCount}
-          </span>
-          <button
-            onClick={() => setCollapsed(true)}
-            className="text-muted-foreground hover:text-foreground transition-colors"
-            title="Collapse"
-          >
-            <span className="material-symbols-outlined text-base">left_panel_close</span>
-          </button>
-        </div>
-
-        {/* Search & Filters Toolbar */}
-        <div className="px-3 py-2.5 border-b border-border space-y-2 bg-muted/15">
-          {/* Search Input */}
-          <div className="flex items-center gap-2 bg-background border border-border rounded-lg px-2.5 py-1.5 focus-within:border-primary/50 transition-colors shadow-xs">
-            <span className="material-symbols-outlined text-sm text-muted-foreground">
-              search
-            </span>
-            <input
-              type="text"
-              placeholder="Tìm điều, từ khóa (vd: 12, xử phạt)..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="flex-1 text-xs bg-transparent outline-none text-foreground placeholder:text-muted-foreground"
-            />
-            {search && (
-              <button
-                onClick={() => setSearch("")}
-                className="text-muted-foreground hover:text-foreground"
-                title="Xóa tìm kiếm"
-              >
-                <span className="material-symbols-outlined text-sm">close</span>
-              </button>
+          <span
+            className={cn(
+              "text-[10px] tabular-nums rounded-md px-1.5 py-0.5 transition-colors",
+              isFiltered
+                ? "bg-primary/10 text-primary font-medium border border-primary/20"
+                : "bg-muted text-muted-foreground"
             )}
-          </div>
-
-          {/* Document filter dropdown (when sources exist) */}
-          {sources.length > 0 && (
-            <div className="relative">
-              <select
-                value={selectedSourceId || ""}
-                onChange={(e) => setSelectedSourceId(e.target.value || null)}
-                className="w-full text-xs bg-background border border-border rounded-md px-2 py-1.5 text-foreground focus:outline-none focus:border-primary/50 pr-7 appearance-none cursor-pointer truncate"
-                title="Lọc theo tài liệu / văn bản"
-              >
-                <option value="">📂 Tất cả văn bản ({totalCount})</option>
-                {sourceStats.sources.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    📄 {s.title} ({s.count})
-                  </option>
-                ))}
-                {sourceStats.otherCount > 0 && (
-                  <option value="other">
-                    📄 Khác / Chưa phân loại ({sourceStats.otherCount})
-                  </option>
-                )}
-              </select>
-              <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">
-                expand_more
-              </span>
-            </div>
+            title={isFiltered ? `Đang lọc ${filtered.length} trên tổng số ${totalCount} trang` : `Tổng số ${totalCount} trang`}
+          >
+            {isFiltered ? `${filtered.length} / ${totalCount}` : totalCount}
+          </span>
+          {isFiltered && (
+            <button
+              type="button"
+              onClick={resetAllFilters}
+              className="text-[10px] text-primary hover:underline font-medium cursor-pointer"
+              title={t("wiki.reset")}
+            >
+              {t("wiki.reset")}
+            </button>
           )}
-
-          {/* Quick Category Filters & Group Mode Toggle */}
-          <div className="flex items-center justify-between gap-1 pt-0.5">
-            {/* Filter pills */}
-            <div className="flex items-center gap-1 overflow-x-auto custom-scrollbar pb-0.5">
-              <button
-                type="button"
-                onClick={() => setCategoryFilter("all")}
-                className={cn(
-                  "px-2 py-0.5 text-[10px] rounded-full transition-colors shrink-0",
-                  categoryFilter === "all"
-                    ? "bg-primary text-primary-foreground font-semibold"
-                    : "bg-muted text-muted-foreground hover:text-foreground hover:bg-muted/80"
-                )}
-              >
-                Tất cả
-              </button>
-              <button
-                type="button"
-                onClick={() => setCategoryFilter("articles")}
-                className={cn(
-                  "px-2 py-0.5 text-[10px] rounded-full transition-colors shrink-0",
-                  categoryFilter === "articles"
-                    ? "bg-primary text-primary-foreground font-semibold"
-                    : "bg-muted text-muted-foreground hover:text-foreground hover:bg-muted/80"
-                )}
-              >
-                Điều luật ({sourceStats.articlesCount})
-              </button>
-              <button
-                type="button"
-                onClick={() => setCategoryFilter("overview")}
-                className={cn(
-                  "px-2 py-0.5 text-[10px] rounded-full transition-colors shrink-0",
-                  categoryFilter === "overview"
-                    ? "bg-primary text-primary-foreground font-semibold"
-                    : "bg-muted text-muted-foreground hover:text-foreground hover:bg-muted/80"
-                )}
-              >
-                Tổng quan ({sourceStats.overviewsCount})
-              </button>
-            </div>
-
-            {/* Group mode toggle button */}
+          <div className="flex items-center gap-0.5 ml-auto">
             <button
               type="button"
               onClick={() => setGroupByDocument(!groupByDocument)}
               className={cn(
-                "p-1 rounded text-muted-foreground hover:text-foreground transition-colors shrink-0 ml-auto",
-                groupByDocument ? "text-primary bg-primary/10" : "hover:bg-muted"
+                "p-1 rounded-md transition-colors cursor-pointer",
+                groupByDocument
+                  ? "text-primary hover:bg-primary/10"
+                  : "text-muted-foreground hover:text-foreground hover:bg-accent/60"
               )}
               title={
                 groupByDocument
-                  ? "Đang gom theo văn bản (Bấm để chuyển sang danh sách phẳng)"
+                  ? "Đang gom theo văn bản (Bấm để xem danh sách phẳng)"
                   : "Đang xem danh sách phẳng (Bấm để gom theo văn bản)"
               }
             >
-              <span className="material-symbols-outlined text-sm">
+              <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
                 {groupByDocument ? "account_tree" : "format_list_bulleted"}
               </span>
             </button>
+            <button
+              type="button"
+              onClick={() => setCollapsed(true)}
+              className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors cursor-pointer"
+              title="Thu gọn danh mục"
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: 16 }}>left_panel_close</span>
+            </button>
           </div>
+        </div>
 
-          {/* Active filter counter & reset button */}
-          {(selectedSourceId || search || categoryFilter !== "all") && (
-            <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-1 border-t border-border/40">
-              <span className="truncate">
-                Tìm thấy <strong className="text-foreground font-semibold">{filtered.length}</strong> kết quả
-              </span>
+        {/* Search & Filters Toolbar */}
+        <div className="px-3 py-2 border-b border-border space-y-1.5 bg-muted/10">
+          {/* Search Input */}
+          <div className="flex items-center gap-2 bg-background border border-border/80 rounded-lg px-2.5 h-8 focus-within:border-primary/60 focus-within:ring-2 focus-within:ring-primary/10 transition-all shadow-2xs">
+            <span className="material-symbols-outlined text-muted-foreground/70 shrink-0" style={{ fontSize: 15 }}>
+              search
+            </span>
+            <input
+              type="text"
+              placeholder={t("wiki.searchPlaceholder")}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="flex-1 text-xs bg-transparent outline-none text-foreground placeholder:text-muted-foreground/60 min-w-0"
+            />
+            {search && (
               <button
                 type="button"
-                onClick={() => {
-                  setSearch("");
-                  setSelectedSourceId(null);
-                  setCategoryFilter("all");
-                }}
-                className="text-primary hover:underline text-[10px] font-medium shrink-0 ml-1 cursor-pointer"
+                onClick={() => setSearch("")}
+                className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-accent transition-colors shrink-0 cursor-pointer"
+                title="Xóa tìm kiếm"
               >
-                Đặt lại
+                <span className="material-symbols-outlined shrink-0" style={{ fontSize: 14 }}>close</span>
               </button>
+            )}
+          </div>
+
+          {/* Quick Category Segmented Tabs */}
+          <div className="grid grid-cols-3 p-0.5 bg-muted/60 rounded-lg text-xs select-none">
+            <button
+              type="button"
+              onClick={() => setCategoryFilter("all")}
+              className={cn(
+                "py-1 px-1 text-[11px] rounded-md transition-all text-center truncate cursor-pointer",
+                categoryFilter === "all"
+                  ? "bg-background text-foreground font-semibold shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {t("wiki.all")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setCategoryFilter("articles")}
+              className={cn(
+                "py-1 px-1 text-[11px] rounded-md transition-all text-center truncate flex items-center justify-center gap-0.5 cursor-pointer",
+                categoryFilter === "articles"
+                  ? "bg-background text-foreground font-semibold shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+              title={`${t("wiki.articles")} (${sourceStats.articlesCount})`}
+            >
+              <span>{t("wiki.articles")}</span>
+              <span className="text-[10px] opacity-60 tabular-nums">({sourceStats.articlesCount})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setCategoryFilter("overview")}
+              className={cn(
+                "py-1 px-1 text-[11px] rounded-md transition-all text-center truncate flex items-center justify-center gap-0.5 cursor-pointer",
+                categoryFilter === "overview"
+                  ? "bg-background text-foreground font-semibold shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+              title={`${t("wiki.overview")} (${sourceStats.overviewsCount})`}
+            >
+              <span>{t("wiki.overview")}</span>
+              <span className="text-[10px] opacity-60 tabular-nums">({sourceStats.overviewsCount})</span>
+            </button>
+          </div>
+
+          {/* Document filter (when sources exist) */}
+          {sources.length > 0 && (
+            <div>
+              {selectedDoc ? (
+                /* Active Document Filter Chip */
+                <div className="flex items-center justify-between gap-1.5 px-2 h-7 rounded-md bg-primary/10 border border-primary/25 text-primary text-[11px] font-medium transition-all">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger className="flex items-center gap-1.5 truncate min-w-0 flex-1 text-left cursor-pointer hover:opacity-85 outline-none">
+                      <span className="material-symbols-outlined shrink-0 text-primary" style={{ fontSize: 14 }}>
+                        {selectedDoc.id === "other" ? "folder_open" : "description"}
+                      </span>
+                      <span className="truncate" title={selectedDoc.title}>
+                        {selectedDoc.title}
+                      </span>
+                      <span className="material-symbols-outlined text-xs text-primary/70 shrink-0">
+                        expand_more
+                      </span>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-(--anchor-width) min-w-[240px] max-h-[300px] overflow-y-auto">
+                      <DropdownMenuItem
+                        onClick={() => setSelectedSourceId(null)}
+                        className="flex items-center gap-2 text-xs cursor-pointer"
+                      >
+                        <span className="material-symbols-outlined text-primary shrink-0" style={{ fontSize: 14 }}>
+                          folder
+                        </span>
+                        <span className="flex-1 truncate">Tất cả văn bản</span>
+                        <span className="text-[10px] text-muted-foreground tabular-nums">({totalCount})</span>
+                      </DropdownMenuItem>
+                      {sourceStats.sources.map((s) => {
+                        const isSel = selectedSourceId === s.id;
+                        return (
+                          <DropdownMenuItem
+                            key={s.id}
+                            onClick={() => setSelectedSourceId(s.id)}
+                            className={cn("flex items-center gap-2 text-xs cursor-pointer", isSel && "bg-accent/70 font-medium")}
+                          >
+                            <span className="material-symbols-outlined text-muted-foreground shrink-0" style={{ fontSize: 14 }}>
+                              description
+                            </span>
+                            <span className="flex-1 truncate" title={s.title}>
+                              {s.title}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">
+                              ({s.count})
+                            </span>
+                            {isSel && (
+                              <span className="material-symbols-outlined text-primary ml-1 shrink-0" style={{ fontSize: 14 }}>
+                                check
+                              </span>
+                            )}
+                          </DropdownMenuItem>
+                        );
+                      })}
+                      {sourceStats.otherCount > 0 && (
+                        <DropdownMenuItem
+                          onClick={() => setSelectedSourceId("other")}
+                          className={cn("flex items-center gap-2 text-xs cursor-pointer", selectedSourceId === "other" && "bg-accent/70 font-medium")}
+                        >
+                          <span className="material-symbols-outlined text-muted-foreground shrink-0" style={{ fontSize: 14 }}>
+                            folder_open
+                          </span>
+                          <span className="flex-1 truncate">Khác / Chưa phân loại</span>
+                          <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">
+                            ({sourceStats.otherCount})
+                          </span>
+                          {selectedSourceId === "other" && (
+                            <span className="material-symbols-outlined text-primary ml-1 shrink-0" style={{ fontSize: 14 }}>
+                              check
+                            </span>
+                          )}
+                        </DropdownMenuItem>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedSourceId(null)}
+                    className="p-0.5 rounded hover:bg-primary/20 text-primary/80 hover:text-primary transition-colors shrink-0 cursor-pointer"
+                    title="Bỏ lọc văn bản này (Hiển thị tất cả)"
+                  >
+                    <span className="material-symbols-outlined shrink-0" style={{ fontSize: 14 }}>
+                      close
+                    </span>
+                  </button>
+                </div>
+              ) : (
+                /* Neutral Document Selector */
+                <DropdownMenu>
+                  <DropdownMenuTrigger className="w-full flex items-center justify-between gap-1.5 px-2.5 h-7 rounded-md bg-background/50 hover:bg-accent/60 border border-border/70 text-[11px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer select-none text-left min-w-0 outline-none">
+                    <div className="flex items-center gap-1.5 truncate min-w-0">
+                      <span className="material-symbols-outlined text-primary/70 shrink-0" style={{ fontSize: 14 }}>
+                        folder
+                      </span>
+                      <span className="truncate">Tất cả văn bản</span>
+                      <span className="text-[10px] opacity-60 tabular-nums shrink-0">({totalCount})</span>
+                    </div>
+                    <span className="material-symbols-outlined text-xs text-muted-foreground shrink-0">
+                      expand_more
+                    </span>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-(--anchor-width) min-w-[240px] max-h-[300px] overflow-y-auto">
+                    <DropdownMenuItem
+                      onClick={() => setSelectedSourceId(null)}
+                      className="flex items-center gap-2 text-xs cursor-pointer bg-accent/70 font-medium"
+                    >
+                      <span className="material-symbols-outlined text-primary shrink-0" style={{ fontSize: 14 }}>
+                        folder
+                      </span>
+                      <span className="flex-1 truncate">Tất cả văn bản</span>
+                      <span className="text-[10px] text-muted-foreground tabular-nums">({totalCount})</span>
+                      <span className="material-symbols-outlined text-primary ml-1 shrink-0" style={{ fontSize: 14 }}>
+                        check
+                      </span>
+                    </DropdownMenuItem>
+                    {sourceStats.sources.map((s) => (
+                      <DropdownMenuItem
+                        key={s.id}
+                        onClick={() => setSelectedSourceId(s.id)}
+                        className="flex items-center gap-2 text-xs cursor-pointer"
+                      >
+                        <span className="material-symbols-outlined text-muted-foreground shrink-0" style={{ fontSize: 14 }}>
+                          description
+                        </span>
+                        <span className="flex-1 truncate" title={s.title}>
+                          {s.title}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">
+                          ({s.count})
+                        </span>
+                      </DropdownMenuItem>
+                    ))}
+                    {sourceStats.otherCount > 0 && (
+                      <DropdownMenuItem
+                        onClick={() => setSelectedSourceId("other")}
+                        className="flex items-center gap-2 text-xs cursor-pointer"
+                      >
+                        <span className="material-symbols-outlined text-muted-foreground shrink-0" style={{ fontSize: 14 }}>
+                          folder_open
+                        </span>
+                        <span className="flex-1 truncate">Khác / Chưa phân loại</span>
+                        <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">
+                          ({sourceStats.otherCount})
+                        </span>
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
             </div>
           )}
         </div>

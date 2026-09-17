@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/shared/empty-state";
 import { ScopeDialog } from "@/components/shared/scope-dialog";
+import { useI18n } from "@/lib/i18n";
 
 type Employee = {
   id: string;
@@ -66,6 +67,7 @@ export function EmployeeTable({
   search,
   onSearch,
 }: Props) {
+  const { t } = useI18n();
   const [actionError, setActionError] = useState<string | null>(null);
   const [tokenDialog, setTokenDialog] = useState<{ token: string; instructions: string } | null>(null);
   const [scopeEmployee, setScopeEmployee] = useState<Employee | null>(null);
@@ -96,7 +98,7 @@ export function EmployeeTable({
   };
 
   const handleRevokeToken = async (id: string) => {
-    if (!confirm("Revoke this employee's MCP token?")) return;
+    if (!confirm(t("emp.revokeToken", "Revoke this employee's MCP token?"))) return;
     setActionError(null);
     try {
       await api(`/api/employees/${id}/token`, { method: "DELETE" });
@@ -107,7 +109,7 @@ export function EmployeeTable({
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Delete this employee? This cannot be undone.")) return;
+    if (!confirm(t("common.delete", "Delete this employee? This cannot be undone."))) return;
     setActionError(null);
     try {
       await api(`/api/employees/${id}`, { method: "DELETE" });
@@ -120,6 +122,21 @@ export function EmployeeTable({
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onSearch(searchInput);
+  };
+
+  const getRoleLabel = (role: string) => {
+    switch (role) {
+      case "admin":
+        return t("emp.roleAdmin", "System Admin");
+      case "knowledge_manager":
+        return t("emp.roleKM", "Knowledge Manager");
+      case "contributor":
+        return t("emp.roleContributor", "Contributor");
+      case "viewer":
+        return t("emp.roleViewer", "Viewer");
+      default:
+        return role;
+    }
   };
 
   return (
@@ -142,7 +159,7 @@ export function EmployeeTable({
               type="text"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Search by name or email..."
+              placeholder={t("common.search", "Search by name or email...")}
               className="h-9 pl-9 pr-3 text-sm rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 w-[280px] placeholder:text-muted-foreground/60"
             />
             {searchInput && (
@@ -157,7 +174,7 @@ export function EmployeeTable({
           </div>
         </form>
         <span className="text-xs text-muted-foreground tabular-nums">
-          {total} employee{total !== 1 ? "s" : ""}
+          {total} {t("dept.employees", "employees")}
         </span>
       </div>
 
@@ -171,19 +188,19 @@ export function EmployeeTable({
           </div>
         ) : employees.length === 0 ? (
           <EmptyState
-            icon="group"
-            title={search ? "No results found" : "No employees"}
-            description={search ? `No employees matching "${search}"` : "Add employees to give them access to the knowledge base."}
+            icon="badge"
+            title={search ? t("common.noResults", "No results found") : t("emp.noEmployees", "No employees")}
+            description={search ? `${t("common.noResults", "No results found")}: "${search}"` : ""}
           />
         ) : (
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">Employee</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">Role</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">Department</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">Status</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">MCP Token</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">{t("emp.colEmp", "Employee")}</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">{t("emp.colRole", "Role")}</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">{t("emp.colDept", "Department")}</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">{t("emp.colStatus", "Status")}</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">{t("emp.colToken", "MCP Token")}</TableHead>
                 <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground text-right w-[60px]"></TableHead>
               </TableRow>
             </TableHeader>
@@ -209,7 +226,7 @@ export function EmployeeTable({
                       variant={emp.global_role === "admin" ? "default" : emp.global_role === "knowledge_manager" ? "outline" : "secondary"}
                       className="text-[10px] capitalize h-5 px-2 font-medium"
                     >
-                      {emp.global_role === "admin" ? "System Admin" : emp.global_role === "knowledge_manager" ? "Knowledge Manager" : emp.global_role === "contributor" ? "Contributor" : "Viewer"}
+                      {getRoleLabel(emp.global_role)}
                     </Badge>
                   </TableCell>
                   <TableCell>
@@ -234,7 +251,7 @@ export function EmployeeTable({
                         }`} />
                       <span className={`text-xs ${emp.is_active ? "text-green-700" : "text-muted-foreground"
                         }`}>
-                        {emp.is_active ? "Active" : "Inactive"}
+                        {emp.is_active ? t("emp.statusActive", "Active") : t("emp.statusInactive", "Inactive")}
                       </span>
                     </div>
                   </TableCell>
@@ -242,7 +259,7 @@ export function EmployeeTable({
                     {emp.has_token ? (
                       <span className="text-xs text-green-600 flex items-center gap-1">
                         <span className="material-symbols-outlined text-sm filled">vpn_key</span>
-                        Connected
+                        {t("emp.connected", "Connected")}
                       </span>
                     ) : (
                       <span className="text-xs text-muted-foreground/50">—</span>
@@ -257,33 +274,33 @@ export function EmployeeTable({
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem onClick={() => onEdit(emp)}>
                           <span className="material-symbols-outlined text-base mr-2" style={{ fontSize: 16 }}>edit</span>
-                          Edit
+                          {t("common.edit", "Edit")}
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => handleToggle(emp.id)}>
                           <span className="material-symbols-outlined text-base mr-2" style={{ fontSize: 16 }}>
                             {emp.is_active ? "lock" : "lock_open"}
                           </span>
-                          {emp.is_active ? "Deactivate" : "Activate"}
+                          {emp.is_active ? t("emp.statusInactive", "Disable") : t("emp.statusActive", "Enable")}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setScopeEmployee(emp)}>
+                          <span className="material-symbols-outlined text-base mr-2" style={{ fontSize: 16 }}>folder_shared</span>
+                          {t("scope.project", "Workspaces")}
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        {emp.has_token ? (
-                          <DropdownMenuItem onClick={() => handleRevokeToken(emp.id)}>
-                            <span className="material-symbols-outlined text-base mr-2" style={{ fontSize: 16 }}>vpn_key_off</span>
-                            Revoke Token
-                          </DropdownMenuItem>
-                        ) : (
-                          <DropdownMenuItem onClick={() => handleGenerateToken(emp.id)}>
-                            <span className="material-symbols-outlined text-base mr-2" style={{ fontSize: 16 }}>vpn_key</span>
-                            Generate Token
+                        <DropdownMenuItem onClick={() => handleGenerateToken(emp.id)}>
+                          <span className="material-symbols-outlined text-base mr-2" style={{ fontSize: 16 }}>vpn_key</span>
+                          {t("emp.generateToken", "Generate Token")}
+                        </DropdownMenuItem>
+                        {emp.has_token && (
+                          <DropdownMenuItem onClick={() => handleRevokeToken(emp.id)} className="text-destructive">
+                            <span className="material-symbols-outlined text-base mr-2" style={{ fontSize: 16 }}>key_off</span>
+                            {t("emp.revokeToken", "Revoke Token")}
                           </DropdownMenuItem>
                         )}
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          onClick={() => handleDelete(emp.id)}
-                          className="text-destructive"
-                        >
-                          <span className="material-symbols-outlined text-base mr-2 " style={{ fontSize: 16 }}>delete</span>
-                          Delete
+                        <DropdownMenuItem onClick={() => handleDelete(emp.id)} className="text-destructive">
+                          <span className="material-symbols-outlined text-base mr-2" style={{ fontSize: 16 }}>delete</span>
+                          {t("common.delete", "Delete")}
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -299,7 +316,7 @@ export function EmployeeTable({
       {totalPages > 1 && (
         <div className="flex items-center justify-between mt-4">
           <span className="text-xs text-muted-foreground">
-            Page {page} of {totalPages}
+            {t("common.page", "Page")} {page} {t("common.of", "of")} {totalPages}
           </span>
           <div className="flex items-center gap-1">
             <Button

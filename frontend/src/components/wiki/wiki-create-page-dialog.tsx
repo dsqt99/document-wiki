@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MarkdownEditor } from "./markdown-editor";
 import { api } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
 import { WikiScope, WikiPageDetail, DraftResponse } from "@/types/wiki";
 
 type Mode = "direct" | "propose";
@@ -56,6 +57,7 @@ export function WikiCreatePageDialog({
   getCreateModeForScope,
   defaultTitle = "",
 }: Props) {
+  const { t } = useI18n();
   const router = useRouter();
   const [title, setTitle] = React.useState(defaultTitle);
   const [slug, setSlug] = React.useState("");
@@ -170,18 +172,20 @@ export function WikiCreatePageDialog({
       <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
-            {effectiveMode === "direct" ? "Create new page" : "Propose new page"}
+            {effectiveMode === "direct"
+              ? t("wiki.createTitle", "Create new page")
+              : t("wiki.proposeTitle", "Propose new page")}
           </DialogTitle>
           <DialogDescription>
             {effectiveMode === "direct"
-              ? "The page is created immediately and added to the index."
-              : "An editor will review the proposal before the page is materialised."}
+              ? t("wiki.createDesc", "The page is created immediately and added to the index.")
+              : t("wiki.proposeDesc", "An editor will review the proposal before the page is materialised.")}
           </DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-4 py-2">
           <div className="grid gap-1.5">
-            <Label htmlFor="cp-title">Title</Label>
+            <Label htmlFor="cp-title">{t("wiki.pageTitle", "Title")}</Label>
             <Input
               id="cp-title"
               value={title}
@@ -193,7 +197,7 @@ export function WikiCreatePageDialog({
 
           <div className="grid gap-1.5">
             <Label htmlFor="cp-slug">
-              Slug <span className="text-muted-foreground font-normal">(URL identifier)</span>
+              {t("wiki.slugLabel", "Slug (URL identifier)")}
             </Label>
             <Input
               id="cp-slug"
@@ -208,7 +212,7 @@ export function WikiCreatePageDialog({
           </div>
 
           <div className="grid gap-1.5">
-            <Label htmlFor="cp-scope">Scope</Label>
+            <Label htmlFor="cp-scope">{t("wiki.scopeLabel", "Scope")}</Label>
             <select
               id="cp-scope"
               value={scopeKey}
@@ -227,7 +231,7 @@ export function WikiCreatePageDialog({
           </div>
 
           <div className="grid gap-1.5">
-            <Label>Content</Label>
+            <Label>{t("wiki.contentLabel", "Content")}</Label>
             <MarkdownEditor
               value={content}
               onChange={setContent}
@@ -239,13 +243,13 @@ export function WikiCreatePageDialog({
           {effectiveMode === "propose" && (
             <div className="grid gap-1.5">
               <Label htmlFor="cp-note">
-                Note for reviewer <span className="text-muted-foreground font-normal">(optional)</span>
+                {t("wiki.noteForReviewer", "Note for reviewer (optional)")}
               </Label>
               <Input
                 id="cp-note"
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
-                placeholder="One line: why does this page need to exist?"
+                placeholder={t("wiki.notePlaceholder", "One line: why does this page need to exist?")}
               />
             </div>
           )}
@@ -255,7 +259,7 @@ export function WikiCreatePageDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
-            Cancel
+            {t("common.cancel", "Cancel")}
           </Button>
           <Button onClick={submit} disabled={busy} className="gap-1.5">
             {busy ? (
@@ -267,7 +271,9 @@ export function WikiCreatePageDialog({
                 {effectiveMode === "direct" ? "add" : "send"}
               </span>
             )}
-            {effectiveMode === "direct" ? "Create page" : "Submit proposal"}
+            {effectiveMode === "direct"
+              ? t("wiki.createPageBtn", "Create page")
+              : t("wiki.submitProposalBtn", "Submit proposal")}
           </Button>
         </DialogFooter>
       </DialogContent>

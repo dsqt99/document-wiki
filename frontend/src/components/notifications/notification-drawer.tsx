@@ -1,7 +1,6 @@
-"use client";
-
 import React from "react";
 import { NotificationItem } from "@/types/notification";
+import { useI18n } from "@/lib/i18n";
 
 type Props = {
   open: boolean;
@@ -47,6 +46,8 @@ export function NotificationDrawer({
   onMarkAllRead,
   onItemClick,
 }: Props) {
+  const { t } = useI18n();
+
   if (!open) return null;
 
   const hasUnread = items.some((n) => !n.read_at);
@@ -56,7 +57,7 @@ export function NotificationDrawer({
       className="fixed inset-0 z-50 flex justify-end"
       onClick={onClose}
       role="dialog"
-      aria-label="Notifications"
+      aria-label={t("common.notifications", "Notifications")}
     >
       <div
         className="absolute inset-0 bg-black/30 backdrop-blur-[1px]"
@@ -71,7 +72,7 @@ export function NotificationDrawer({
             <span className="material-symbols-outlined text-muted-foreground" style={{ fontSize: 20 }}>
               notifications
             </span>
-            <h2 className="text-sm font-semibold">Notifications</h2>
+            <h2 className="text-sm font-semibold">{t("common.notifications", "Notifications")}</h2>
           </div>
           <div className="flex items-center gap-1">
             {hasUnread && (
@@ -80,14 +81,14 @@ export function NotificationDrawer({
                 onClick={onMarkAllRead}
                 className="text-xs text-primary hover:underline px-2 py-1"
               >
-                Mark all read
+                {t("common.clear", "Mark all read")}
               </button>
             )}
             <button
               type="button"
               onClick={onClose}
               className="w-7 h-7 flex items-center justify-center rounded hover:bg-secondary"
-              aria-label="Close"
+              aria-label={t("common.close", "Close")}
             >
               <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
                 close
@@ -98,10 +99,10 @@ export function NotificationDrawer({
 
         <div className="flex-1 overflow-y-auto">
           {loading && items.length === 0 ? (
-            <div className="p-6 text-center text-sm text-muted-foreground">Loading…</div>
+            <div className="p-6 text-center text-sm text-muted-foreground">{t("common.loading", "Loading...")}</div>
           ) : items.length === 0 ? (
             <div className="p-10 text-center text-sm text-muted-foreground">
-              No notifications yet.
+              {t("audit.noLogs", "No notifications yet.")}
             </div>
           ) : (
             <ul className="divide-y divide-border">

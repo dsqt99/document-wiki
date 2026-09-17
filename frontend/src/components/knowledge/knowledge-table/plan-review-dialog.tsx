@@ -1,7 +1,6 @@
-"use client";
-
 import React from "react";
 import { api } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -46,6 +45,7 @@ export function PlanReviewDialog({
   onClose: () => void;
   onDone: () => void;
 }) {
+  const { t } = useI18n();
   const [plan, setPlan] = React.useState<PlanData | null>(null);
   const [planStatus, setPlanStatus] = React.useState<string>("pending_review");
   const [loading, setLoading] = React.useState(true);
@@ -61,11 +61,11 @@ export function PlanReviewDialog({
       setPlanStatus(res.status);
       setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load plan");
+      setError(e instanceof Error ? e.message : t("common.error", "Failed to load plan"));
     } finally {
       setLoading(false);
     }
-  }, [source.id]);
+  }, [source.id, t]);
 
   React.useEffect(() => {
     setLoading(true);
@@ -93,7 +93,7 @@ export function PlanReviewDialog({
       });
       onDone();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to approve plan");
+      setError(e instanceof Error ? e.message : t("common.error", "Failed to approve plan"));
       setSubmitting(null);
     }
   };
@@ -112,14 +112,14 @@ export function PlanReviewDialog({
       });
       onDone();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to reject plan");
+      setError(e instanceof Error ? e.message : t("common.error", "Failed to reject plan"));
       setSubmitting(null);
     }
   };
 
   const handleRegenerate = async () => {
     if (!reviewNote.trim()) {
-      setError("Please describe what should be changed before regenerating.");
+      setError(t("plan.feedbackRequired", "Please describe what should be changed before regenerating."));
       return;
     }
     setSubmitting("regenerate");
@@ -134,7 +134,7 @@ export function PlanReviewDialog({
       setReviewNote("");
       setConfirmReject(false);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to regenerate plan");
+      setError(e instanceof Error ? e.message : t("common.error", "Failed to regenerate plan"));
     } finally {
       setSubmitting(null);
     }
@@ -152,10 +152,10 @@ export function PlanReviewDialog({
             <span className="material-symbols-outlined text-blue-500" style={{ fontSize: 20 }}>
               fact_check
             </span>
-            Review Compilation Plan
+            {t("plan.title", "Review Compilation Plan")}
           </DialogTitle>
           <p className="text-sm text-muted-foreground mt-1">
-            {source.title} — approve to start writing wiki pages, or reject to stop.
+            {t("plan.subtitle", "{title} — approve to start writing wiki pages, or reject to stop.").replace("{title}", source.title || "")}
           </p>
         </DialogHeader>
 
@@ -179,7 +179,7 @@ export function PlanReviewDialog({
               <span className="material-symbols-outlined animate-spin" style={{ fontSize: 18 }}>
                 progress_activity
               </span>
-              Regenerating plan with your feedback… this can take 30–90 seconds.
+              {t("plan.regenerating", "Regenerating plan with your feedback… this can take 30–90 seconds.")}
             </div>
           )}
 
@@ -189,11 +189,11 @@ export function PlanReviewDialog({
               <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
                 <span className="flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-green-500" />
-                  {creates.length} page{creates.length !== 1 ? "s" : ""} to create
+                  {creates.length} {t("plan.toCreate", "pages to create")}
                 </span>
                 <span className="flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-yellow-500" />
-                  {updates.length} page{updates.length !== 1 ? "s" : ""} to update
+                  {updates.length} {t("plan.toUpdate", "pages to update")}
                 </span>
                 {plan.strategy && (
                   <span className="flex items-center gap-1.5">
@@ -206,7 +206,7 @@ export function PlanReviewDialog({
               {/* Planner notes */}
               {plan.compilation_notes && (
                 <div className="text-xs text-muted-foreground bg-secondary/40 rounded-lg px-3 py-2 border border-border">
-                  <span className="font-medium text-foreground">Planner note: </span>
+                  <span className="font-medium text-foreground">{t("plan.plannerNote", "Planner note:")} </span>
                   {plan.compilation_notes}
                 </div>
               )}
@@ -256,23 +256,14 @@ export function PlanReviewDialog({
           <textarea
             value={reviewNote}
             onChange={(e) => setReviewNote(e.target.value)}
-            placeholder="Feedback or correction for the AI (e.g. 'Page X already exists, it should be UPDATE not CREATE'). Required to regenerate."
+            placeholder={t("plan.feedbackPlaceholder", "Feedback or correction for the AI (e.g. 'Page X already exists, it should be UPDATE not CREATE'). Required to regenerate.")}
             disabled={isRegenerating}
             className="w-full text-sm rounded-lg border border-border bg-background px-3 py-2 resize-none h-16 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 disabled:opacity-60"
           />
           <p className="text-[11px] text-muted-foreground">
-            Write feedback then click <strong>Regenerate</strong> to have AI redo the plan, or click <strong>Approve</strong> to proceed as-is.
+            {t("plan.feedbackHelp", "Write feedback then click Regenerate to have AI redo the plan, or click Approve to proceed as-is.")}
           </p>
         </div>
-
-        {isRegenerating && (
-          <div className="mt-2 flex items-center gap-2 text-sm text-blue-600 bg-blue-500/10 rounded-lg px-3 py-2 shrink-0">
-            <span className="material-symbols-outlined animate-spin" style={{ fontSize: 18 }}>
-              progress_activity
-            </span>
-            Regenerating plan with your feedback — this can take up to a minute.
-          </div>
-        )}
 
         <div className="flex items-center justify-between mt-4 pt-4 border-t border-border shrink-0">
           <div className="flex items-center gap-2">
@@ -290,7 +281,7 @@ export function PlanReviewDialog({
               ) : (
                 <span className="material-symbols-outlined" style={{ fontSize: 15 }}>refresh</span>
               )}
-              {isRegenerating ? "Regenerating..." : "Regenerate"}
+              {isRegenerating ? t("common.retrying", "Regenerating...") : t("plan.regenerateBtn", "Regenerate")}
             </Button>
           </div>
 
@@ -300,7 +291,7 @@ export function PlanReviewDialog({
               onClick={onClose}
               disabled={submitting !== null}
             >
-              Cancel
+              {t("common.cancel", "Cancel")}
             </Button>
             {!confirmReject ? (
               <Button
@@ -310,7 +301,7 @@ export function PlanReviewDialog({
                 className="text-destructive border-destructive/30 hover:bg-destructive/10"
               >
                 <span className="material-symbols-outlined" style={{ fontSize: 16 }}>close</span>
-                Reject
+                {t("plan.rejectBtn", "Reject")}
               </Button>
             ) : (
               <Button
@@ -325,7 +316,7 @@ export function PlanReviewDialog({
                 ) : (
                   <span className="material-symbols-outlined" style={{ fontSize: 16 }}>close</span>
                 )}
-                Confirm Reject
+                {t("plan.confirmRejectBtn", "Confirm Reject")}
               </Button>
             )}
             <Button
@@ -339,7 +330,7 @@ export function PlanReviewDialog({
               ) : (
                 <span className="material-symbols-outlined" style={{ fontSize: 16 }}>check</span>
               )}
-              Approve & Compile
+              {t("plan.approveBtn", "Approve & Compile")}
             </Button>
           </div>
         </div>

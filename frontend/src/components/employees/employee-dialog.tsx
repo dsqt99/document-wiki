@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -47,6 +48,7 @@ export function EmployeeDialog({
   roles = [],
   onSaved,
 }: Props) {
+  const { t } = useI18n();
   const isEdit = !!employee;
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -73,8 +75,8 @@ export function EmployeeDialog({
   const handleCreateDepartment = () => {
     setInlinePrompt({
       open: true,
-      title: "Create Department",
-      label: "Department Name",
+      title: t("emp.createDeptModalTitle", "Create Department"),
+      label: t("emp.createDeptModalLabel", "Department Name"),
       value: "",
       saving: false,
       error: "",
@@ -136,7 +138,7 @@ export function EmployeeDialog({
         await api(`/api/employees/${employee.id}`, { method: "PUT", body });
       } else {
         if (!password) {
-          setError("Password is required");
+          setError(t("emp.passwordRequired", "Password is required"));
           setSaving(false);
           return;
         }
@@ -146,7 +148,7 @@ export function EmployeeDialog({
       onSaved();
       onOpenChange(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Save failed");
+      setError(err instanceof Error ? err.message : t("common.error", "Save failed"));
     } finally {
       setSaving(false);
     }
@@ -158,13 +160,13 @@ export function EmployeeDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="text-xl">
-            {isEdit ? "Edit Employee" : "Add Employee"}
+            {isEdit ? t("emp.editTitle", "Edit Employee") : t("emp.createTitle", "Add Employee")}
           </DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4 mt-2">
           <div className="flex flex-col gap-2">
-            <Label htmlFor="emp-name">Name</Label>
+            <Label htmlFor="emp-name">{t("emp.name", "Name")}</Label>
             <Input
               id="emp-name"
               value={name}
@@ -175,7 +177,7 @@ export function EmployeeDialog({
           </div>
 
           <div className="flex flex-col gap-2">
-            <Label htmlFor="emp-email">Email</Label>
+            <Label htmlFor="emp-email">{t("emp.email", "Email")}</Label>
             <Input
               id="emp-email"
               type="email"
@@ -188,21 +190,21 @@ export function EmployeeDialog({
 
           <div className="flex flex-col gap-2">
             <Label htmlFor="emp-password">
-              Password {isEdit && "(leave blank to keep current)"}
+              {t("emp.password", "Password")} {isEdit && t("emp.passwordEditHint", "(leave blank to keep current)")}
             </Label>
             <Input
               id="emp-password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder={isEdit ? "••••••••" : "Min 8 characters"}
+              placeholder={isEdit ? "••••••••" : t("emp.passwordMinHint", "Min 8 characters")}
               className="bg-background"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col gap-2">
-              <Label>Role</Label>
+              <Label>{t("emp.role", "Role")}</Label>
               <Select value={globalRole} onValueChange={(v) => v && setGlobalRole(v)}>
                 <SelectTrigger className="bg-background">
                   <SelectValue />
@@ -218,7 +220,7 @@ export function EmployeeDialog({
             </div>
 
             <div className="flex flex-col gap-2">
-              <Label>Departments</Label>
+              <Label>{t("emp.departments", "Departments")}</Label>
               <Select
                 value=""
                 onValueChange={(v) => {
@@ -231,7 +233,7 @@ export function EmployeeDialog({
                 }}
               >
                 <SelectTrigger className="bg-background">
-                  <span className="text-muted-foreground">Add department…</span>
+                  <span className="text-muted-foreground">{t("emp.addDeptPlaceholder", "Add department…")}</span>
                 </SelectTrigger>
                 <SelectContent className="!w-max min-w-(--anchor-width)">
                   {localDepartments
@@ -245,7 +247,7 @@ export function EmployeeDialog({
                   <SelectItem value="__new__" className="text-primary font-medium focus:text-primary">
                     <span className="flex items-center gap-2">
                       <span className="material-symbols-outlined text-sm">add</span>
-                      Create new department...
+                      {t("emp.createNewDept", "Create new department...")}
                     </span>
                   </SelectItem>
                 </SelectContent>
@@ -253,7 +255,7 @@ export function EmployeeDialog({
               <div className="flex flex-wrap gap-1.5 min-h-7">
                 {deptIds.length === 0 ? (
                   <span className="text-xs text-muted-foreground italic">
-                    No departments — user will only see global resources
+                    {t("emp.noDeptsHint", "No departments — user will only see global resources")}
                   </span>
                 ) : (
                   deptIds.map((id) => {
@@ -292,14 +294,14 @@ export function EmployeeDialog({
               variant="outline"
               onClick={() => onOpenChange(false)}
             >
-              Cancel
+              {t("common.cancel", "Cancel")}
             </Button>
             <Button
               type="submit"
               disabled={saving}
               className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
-              {saving ? "Saving..." : isEdit ? "Update" : "Create"}
+              {saving ? t("common.loading", "Saving...") : isEdit ? t("common.save", "Update") : t("common.create", "Create")}
             </Button>
           </div>
         </form>
@@ -332,13 +334,13 @@ export function EmployeeDialog({
           </div>
           <div className="flex justify-end gap-2 mt-2">
             <Button type="button" variant="outline" onClick={() => setInlinePrompt(p => ({ ...p, open: false }))}>
-              Cancel
+              {t("common.cancel", "Cancel")}
             </Button>
             <Button 
               disabled={inlinePrompt.saving || !inlinePrompt.value.trim()} 
               onClick={submitInlinePrompt}
             >
-              {inlinePrompt.saving ? "Saving..." : "Create"}
+              {inlinePrompt.saving ? t("common.loading", "Saving...") : t("common.create", "Create")}
             </Button>
           </div>
         </DialogContent>

@@ -1,8 +1,7 @@
-"use client";
-
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 export type Skill = {
@@ -34,7 +33,8 @@ export function SkillCard({
   onEdit,
   onClick
 }: SkillCardProps) {
-  const { canAccess, hasPermission } = useAuth();
+  const { t } = useI18n();
+  const { canAccess } = useAuth();
   const dateStr = (() => {
     const d = new Date(skill.updated_at);
     return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
@@ -80,7 +80,7 @@ export function SkillCard({
               ) : (
                 <div className="flex items-center gap-1 text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">
                   <span className="material-symbols-outlined text-[12px]">public</span>
-                  Global
+                  {t("scope.global", "Global")}
                 </div>
               )}
               <span className={cn(
@@ -107,7 +107,7 @@ export function SkillCard({
             onClick={() => onClick?.(skill.slug)}
             disabled={skill.status === "deleting"}
           >
-            Details
+            {t("skills.details", "Details")}
           </Button>
           {canAccess("skill", "edit") && (
             <Button
@@ -117,7 +117,7 @@ export function SkillCard({
               onClick={() => onEdit?.(skill.slug)}
               disabled={skill.status === "deleting"}
             >
-              Edit
+              {t("common.edit", "Edit")}
             </Button>
           )}
           {canAccess("skill", "delete") && (
@@ -128,7 +128,7 @@ export function SkillCard({
               onClick={() => onDelete(skill.id, skill.name)}
               disabled={skill.status === "deleting"}
             >
-              Delete
+              {t("common.delete", "Delete")}
             </Button>
           )}
         </div>

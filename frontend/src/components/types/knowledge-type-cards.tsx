@@ -1,8 +1,7 @@
-"use client";
-
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/shared/empty-state";
+import { useI18n } from "@/lib/i18n";
 
 type KnowledgeType = {
   id: string;
@@ -22,8 +21,10 @@ type Props = {
 };
 
 export function KnowledgeTypeCards({ types, loading, onEdit, onRefresh }: Props) {
+  const { t } = useI18n();
+
   const handleDelete = async (id: string) => {
-    if (!confirm("Delete this knowledge type?")) return;
+    if (!confirm(t("common.delete", "Delete this knowledge type?"))) return;
     await api(`/api/knowledge-types/${id}`, { method: "DELETE" });
     onRefresh();
   };
@@ -42,8 +43,8 @@ export function KnowledgeTypeCards({ types, loading, onEdit, onRefresh }: Props)
     return (
       <EmptyState
         icon="category"
-        title="No knowledge types"
-        description="Create types to categorize your documents"
+        title={t("knowledge.emptyTitle", "No knowledge types")}
+        description={t("knowledge.emptyDesc", "Create types to categorize your documents")}
       />
     );
   }
@@ -68,7 +69,7 @@ export function KnowledgeTypeCards({ types, loading, onEdit, onRefresh }: Props)
             </div>
             {type.source_count !== undefined && (
               <span className="text-xs text-muted-foreground bg-secondary px-2 py-0.5 rounded-full">
-                {type.source_count} docs
+                {type.source_count} {t("knowledge.docCount", "docs")}
               </span>
             )}
           </div>
@@ -82,7 +83,7 @@ export function KnowledgeTypeCards({ types, loading, onEdit, onRefresh }: Props)
           <div className="flex gap-2 pt-2 border-t border-border">
             <Button variant="ghost" size="sm" onClick={() => onEdit(type)} className="text-xs">
               <span className="material-symbols-outlined text-sm mr-1">edit</span>
-              Edit
+              {t("common.edit", "Edit")}
             </Button>
             <Button
               variant="ghost"
@@ -91,7 +92,7 @@ export function KnowledgeTypeCards({ types, loading, onEdit, onRefresh }: Props)
               className="text-xs text-destructive hover:text-destructive"
             >
               <span className="material-symbols-outlined text-sm mr-1">delete</span>
-              Delete
+              {t("common.delete", "Delete")}
             </Button>
           </div>
         </div>

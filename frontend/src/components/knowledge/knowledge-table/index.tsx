@@ -30,6 +30,7 @@ import { StatusDot } from "./status-dot";
 import { EditSourceDialog } from "./edit-source-dialog";
 import { PlanReviewDialog } from "./plan-review-dialog";
 import { ExtractionReviewDialog } from "./extraction-review-dialog";
+import { useI18n } from "@/lib/i18n";
 
 type Props = {
   sources: Source[];
@@ -43,6 +44,10 @@ type Props = {
   onPageChange: (page: number) => void;
   search: string;
   onSearch: (q: string) => void;
+  selectedType: string | null;
+  onSelectType: (slug: string | null) => void;
+  selectedDepartment: string | null;
+  onSelectDepartment: (id: string | null) => void;
 };
 
 export function KnowledgeTable({
@@ -57,17 +62,23 @@ export function KnowledgeTable({
   onPageChange,
   search,
   onSearch,
+  selectedType,
+  onSelectType,
+  selectedDepartment,
+  onSelectDepartment,
 }: Props) {
+  const { t } = useI18n();
   const [actionError, setActionError] = React.useState<string | null>(null);
   const [editSource, setEditSource] = React.useState<Source | null>(null);
   const [reviewPlanSource, setReviewPlanSource] = React.useState<Source | null>(null);
   const [reviewExtractionSource, setReviewExtractionSource] = React.useState<Source | null>(null);
   const [retryingIds, setRetryingIds] = React.useState<Set<string>>(new Set());
   const [searchInput, setSearchInput] = React.useState(search);
+  const [statusFilter, setStatusFilter] = React.useState<string | null>(null);
   const router = useRouter();
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Delete this document? This cannot be undone.")) return;
+    if (!confirm(t("knowledge.deleteConfirm", "Delete this document? This cannot be undone."))) return;
     setActionError(null);
     try {
       await api(`/api/sources/${id}`, { method: "DELETE" });
@@ -95,6 +106,23 @@ export function KnowledgeTable({
     onSearch(searchInput);
   };
 
+  const filteredSources = statusFilter
+    ? sources.filter((s) => s.status === statusFilter)
+    : sources;
+
+  const hasActiveFilters = selectedType || selectedDepartment || statusFilter;
+  const clearAllFilters = () => {
+    onSelectType(null);
+    onSelectDepartment(null);
+    setStatusFilter(null);
+    if (searchInput) { setSearchInput(""); onSearch(""); }
+  };
+
+  const statuses = React.useMemo(() => {
+    const set = new Set(sources.map((s) => s.status));
+    return Array.from(set).sort();
+  }, [sources]);
+
   return (
     <div className="flex flex-col gap-2">
       {actionError && (
@@ -104,9 +132,10 @@ export function KnowledgeTable({
         </div>
       )}
 
-      {/* Search bar + stats */}
-      <div className="flex items-center justify-between mb-2">
-        <form onSubmit={handleSearchSubmit} className="flex items-center gap-2">
+      {/* Inline Filter Bar */}
+      <div className="flex flex-wrap items-center gap-2 mb-1">
+        {/* Search */}
+        <form onSubmit={handleSearchSubmit} className="flex-1 min-w-[200px] max-w-[300px]">
           <div className="relative">
             <span className="material-symbols-outlined text-sm text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2">
               search
@@ -115,23 +144,82 @@ export function KnowledgeTable({
               type="text"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Search documents..."
-              className="h-9 pl-9 pr-3 text-sm rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 w-[260px] placeholder:text-muted-foreground/60"
+              placeholder={t("knowledge.searchPlaceholder", "Search documents...")}
+              className="h-8 w-full pl-9 pr-3 text-xs rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 placeholder:text-muted-foreground/60"
             />
             {searchInput && (
               <button
                 type="button"
                 onClick={() => { setSearchInput(""); onSearch(""); }}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
               >
                 <span className="material-symbols-outlined text-sm">close</span>
               </button>
             )}
           </div>
         </form>
-        <span className="text-xs text-muted-foreground tabular-nums">
-          {total} document{total !== 1 ? "s" : ""}
-        </span>
+
+        {/* Category Filter */}
+        <select
+          value={selectedType ?? ""}
+          onChange={(e) => onSelectType(e.target.value || null)}
+          className="h-8 px-2.5 text-xs rounded-lg border border-border bg-background text-foreground cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 min-w-[120px] appearance-none"
+          style={{ backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`, backgroundPosition: 'right 6px center', backgroundRepeat: 'no-repeat', backgroundSize: '16px', paddingRight: '24px' }}
+        >
+          <option value="">{t("knowledge.allCategories", "All Categories")}</option>
+          {types.map((tItem) => (
+            <option key={tItem.slug} value={tItem.slug}>{tItem.name}</option>
+          ))}
+        </select>
+
+        {/* Department Filter */}
+        {departments.length > 0 && (
+          <select
+            value={selectedDepartment ?? ""}
+            onChange={(e) => onSelectDepartment(e.target.value || null)}
+            className="h-8 px-2.5 text-xs rounded-lg border border-border bg-background text-foreground cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 min-w-[130px] appearance-none"
+            style={{ backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`, backgroundPosition: 'right 6px center', backgroundRepeat: 'no-repeat', backgroundSize: '16px', paddingRight: '24px' }}
+          >
+            <option value="">{t("knowledge.allDepartments", "All Departments")}</option>
+            {departments.map((d) => (
+              <option key={d.id} value={d.id}>{d.name}</option>
+            ))}
+          </select>
+        )}
+
+        {/* Status Filter */}
+        <select
+          value={statusFilter ?? ""}
+          onChange={(e) => setStatusFilter(e.target.value || null)}
+          className="h-8 px-2.5 text-xs rounded-lg border border-border bg-background text-foreground cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 min-w-[110px] appearance-none capitalize"
+          style={{ backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`, backgroundPosition: 'right 6px center', backgroundRepeat: 'no-repeat', backgroundSize: '16px', paddingRight: '24px' }}
+        >
+          <option value="">{t("knowledge.allStatuses", "All Statuses")}</option>
+          {statuses.map((s) => (
+            <option key={s} value={s} className="capitalize">
+              {t(`knowledge.status.${s}`, s)}
+            </option>
+          ))}
+        </select>
+
+        {/* Clear All */}
+        {hasActiveFilters && (
+          <button
+            type="button"
+            onClick={clearAllFilters}
+            className="h-8 px-2.5 text-xs rounded-lg border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors cursor-pointer flex items-center gap-1"
+          >
+            <span className="material-symbols-outlined text-sm">filter_alt_off</span>
+            {t("common.clear", "Clear")}
+          </button>
+        )}
+
+        {/* Spacer + Count */}
+        <div className="ml-auto shrink-0">
+          <span className="text-xs text-muted-foreground tabular-nums">
+            {statusFilter ? `${filteredSources.length} ${t("common.of", "of")} ` : ""}{total} {t("knowledge.docCount", "document")}{total !== 1 ? "s" : ""}
+          </span>
+        </div>
       </div>
 
       {/* Table */}
@@ -142,30 +230,30 @@ export function KnowledgeTable({
               progress_activity
             </span>
           </div>
-        ) : sources.length === 0 ? (
+        ) : filteredSources.length === 0 ? (
           <EmptyState
             icon="cloud_upload"
-            title={search ? "No results found" : "No documents found"}
-            description={search ? `No documents matching "${search}"` : "Upload documents to start building your knowledge base."}
+            title={search ? t("common.noResults", "No results found") : t("knowledge.emptyTitle", "No documents found")}
+            description={search ? `${t("common.noResults", "No results found")}: "${search}"` : t("knowledge.emptyDesc", "Upload documents to start building your knowledge base.")}
           />
         ) : (
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">Document</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">Category</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">Visibility</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">Department</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">Pages</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">Wiki</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">Contributed By</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">Status</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">Created</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">{t("knowledge.colDocument", "Document")}</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">{t("knowledge.colCategory", "Category")}</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">{t("knowledge.colVisibility", "Visibility")}</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">{t("knowledge.colDepartment", "Department")}</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">{t("knowledge.colPages", "Pages")}</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">{t("knowledge.colWiki", "Wiki")}</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">{t("knowledge.colContributedBy", "Contributed By")}</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">{t("knowledge.colStatus", "Status")}</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">{t("common.created", "Created")}</TableHead>
                 <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground text-right w-[60px]"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {sources.map((source) => (
+              {filteredSources.map((source) => (
                 <TableRow key={source.id} className="group hover:bg-secondary/30 transition-colors">
                   {/* Document name + icon */}
                   <TableCell>
@@ -281,7 +369,7 @@ export function KnowledgeTable({
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem onClick={() => router.push(`/wiki/source/${source.id}`)}>
                           <span className="material-symbols-outlined mr-2" style={{ fontSize: 16 }}>visibility</span>
-                          View
+                          {t("common.view", "View")}
                         </DropdownMenuItem>
                         {source.status === "ready" && (
                           <DropdownMenuItem
@@ -293,20 +381,20 @@ export function KnowledgeTable({
                             }}
                           >
                             <span className="material-symbols-outlined mr-2" style={{ fontSize: 16 }}>cloud_download</span>
-                            Download
+                            {t("common.download", "Download")}
                           </DropdownMenuItem>
                         )}
                         <DropdownMenuSeparator />
                         <DropdownMenuItem onClick={() => setEditSource(source)}>
                           <span className="material-symbols-outlined mr-2" style={{ fontSize: 16 }}>edit</span>
-                          Edit
+                          {t("common.edit", "Edit")}
                         </DropdownMenuItem>
                         {source.status === "plan_ready" && (
                           <DropdownMenuItem onClick={() => setReviewPlanSource(source)}>
                             <span className="material-symbols-outlined mr-2 text-blue-500" style={{ fontSize: 16 }}>
                               fact_check
                             </span>
-                            Review Plan
+                            {t("knowledge.status.plan_ready", "Review Plan")}
                           </DropdownMenuItem>
                         )}
                         {source.status === "awaiting_approval" && (
@@ -314,7 +402,7 @@ export function KnowledgeTable({
                             <span className="material-symbols-outlined mr-2 text-orange-500" style={{ fontSize: 16 }}>
                               scale
                             </span>
-                            Review Size
+                            {t("knowledge.status.awaiting_approval", "Review Size")}
                           </DropdownMenuItem>
                         )}
                         {source.status === "error" && (
@@ -325,7 +413,7 @@ export function KnowledgeTable({
                             <span className={`material-symbols-outlined mr-2 ${retryingIds.has(source.id) ? "animate-spin" : ""}`} style={{ fontSize: 16 }}>
                               refresh
                             </span>
-                            {retryingIds.has(source.id) ? "Retrying..." : "Retry"}
+                            {retryingIds.has(source.id) ? t("common.retrying", "Retrying...") : t("common.retry", "Retry")}
                           </DropdownMenuItem>
                         )}
                         <DropdownMenuSeparator />
@@ -334,7 +422,7 @@ export function KnowledgeTable({
                           className="text-destructive"
                         >
                           <span className="material-symbols-outlined mr-2" style={{ fontSize: 16 }}>delete</span>
-                          Delete
+                          {t("common.delete", "Delete")}
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -350,7 +438,7 @@ export function KnowledgeTable({
       {totalPages > 1 && (
         <div className="flex items-center justify-between mt-3">
           <span className="text-xs text-muted-foreground">
-            Page {page} of {totalPages}
+            {t("common.page", "Page")} {page} {t("common.of", "of")} {totalPages}
           </span>
           <div className="flex items-center gap-1">
             <Button

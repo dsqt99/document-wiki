@@ -35,7 +35,7 @@ export default function LoginPage() {
         {/* Brand */}
         <div className="text-center mb-10">
           <h1 className="text-4xl font-bold tracking-tight text-foreground mb-2">
-            Document-Wiki
+            Document Wiki
           </h1>
           <p className="text-muted-foreground text-sm">
             Enterprise AI Knowledge Hub & MCP Server
@@ -104,7 +104,7 @@ export default function LoginPage() {
         </div>
 
         <p className="text-center text-xs text-muted-foreground mt-6">
-          Arkon v0.5 — On-Premise Deployment
+          Document Wiki v0.1 — On-Premise Deployment
         </p>
       </div>
     </div>

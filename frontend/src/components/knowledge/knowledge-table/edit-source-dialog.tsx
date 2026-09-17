@@ -17,6 +17,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Source, KnowledgeType, Department } from "./types";
+import { useI18n } from "@/lib/i18n";
 
 export function EditSourceDialog({
   source,
@@ -31,6 +32,7 @@ export function EditSourceDialog({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const { t } = useI18n();
   const [title, setTitle] = React.useState(source.title);
   const [typeId, setTypeId] = React.useState(source.knowledge_type_id || "");
   const [selectedDepts, setSelectedDepts] = React.useState<string[]>(source.department_ids || []);
@@ -111,12 +113,12 @@ export function EditSourceDialog({
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="text-xl">Edit Document</DialogTitle>
+          <DialogTitle>{t("knowledge.edit.title", "Edit Document")}</DialogTitle>
         </DialogHeader>
 
         <div className="flex flex-col gap-4 mt-2">
           <div className="flex flex-col gap-1.5">
-            <Label>Title</Label>
+            <Label>{t("common.name", "Title")}</Label>
             <Input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
@@ -125,23 +127,23 @@ export function EditSourceDialog({
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <Label>Knowledge Type</Label>
+            <Label>{t("knowledge.upload.typeLabel", "Knowledge Type")}</Label>
             <Select value={typeId} onValueChange={(v) => setTypeId(v ?? "")}>
               <SelectTrigger className="bg-background">
-                {typeId ? (() => { const t = types.find(x => x.id === typeId); return t ? (
+                {typeId ? (() => { const item = types.find(x => x.id === typeId); return item ? (
                   <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: t.color }} />
-                    <span>{t.name}</span>
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+                    <span>{item.name}</span>
                   </div>
-                ) : <SelectValue placeholder="No type" />; })() : <SelectValue placeholder="No type" />}
+                ) : <SelectValue placeholder={t("knowledge.upload.none", "No type")} />; })() : <SelectValue placeholder={t("knowledge.upload.none", "No type")} />}
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">No type</SelectItem>
-                {types.map((t) => (
-                  <SelectItem key={t.id} value={t.id}>
+                <SelectItem value="">{t("knowledge.upload.none", "No type")}</SelectItem>
+                {types.map((typeItem) => (
+                  <SelectItem key={typeItem.id} value={typeItem.id}>
                     <div className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: t.color }} />
-                      {t.name}
+                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: typeItem.color }} />
+                      {typeItem.name}
                     </div>
                   </SelectItem>
                 ))}
@@ -153,20 +155,20 @@ export function EditSourceDialog({
             <div className="rounded-lg border border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/30 px-3 py-2 text-xs text-amber-800 dark:text-amber-300 flex items-start gap-1.5">
               <span className="material-symbols-outlined shrink-0" style={{ fontSize: 14, marginTop: 1 }}>info</span>
               <span>
-                Tài liệu đang được xử lý. Bạn có thể đổi <strong>tên</strong> và <strong>loại tri thức</strong>, nhưng <strong>phòng ban</strong> và <strong>phạm vi</strong> chỉ đổi được sau khi xử lý xong (hoặc thất bại) — để tránh wiki page bị ghi nhầm phạm vi.
+                {t("knowledge.edit.inFlight", "Document is being processed. You can edit title and type, but departments and visibility can only be changed once finished.")}
               </span>
             </div>
           )}
 
           {/* Multi-department selection */}
           <div className="flex flex-col gap-1.5">
-            <Label className={inFlight ? "text-muted-foreground" : ""}>Departments</Label>
+            <Label className={inFlight ? "text-muted-foreground" : ""}>{t("knowledge.upload.departments", "Departments")}</Label>
             <p className="text-xs text-muted-foreground">
-              Select which departments can access this document. Leave empty for global access.
+              {t("knowledge.upload.deptHint", "Select which departments can access this document. Leave empty for global access.")}
             </p>
             <div className={`border rounded-lg p-2 max-h-40 overflow-y-auto bg-background ${inFlight ? "opacity-60" : ""}`}>
               {departments.length === 0 ? (
-                <span className="text-xs text-muted-foreground">No departments available</span>
+                <span className="text-xs text-muted-foreground">{t("dept.noDepts", "No departments available")}</span>
               ) : (
                 departments.map((d) => (
                   <label
@@ -211,7 +213,7 @@ export function EditSourceDialog({
 
           {/* Visibility / Scope */}
           <div className="flex flex-col gap-1.5">
-            <Label className={inFlight ? "text-muted-foreground" : ""}>Visibility</Label>
+            <Label className={inFlight ? "text-muted-foreground" : ""}>{t("knowledge.upload.visibility", "Visibility")}</Label>
             <Select value={scopeType} disabled={inFlight} onValueChange={(v) => {
               const val = v ?? "global";
               setScopeType(val);
@@ -222,20 +224,20 @@ export function EditSourceDialog({
                   <span className="material-symbols-outlined" style={{ fontSize: 14 }}>
                     {scopeType === "global" ? "public" : "folder_special"}
                   </span>
-                  <span className="capitalize">{scopeType === "project" ? "Workspace" : scopeType}</span>
+                  <span className="capitalize">{scopeType === "project" ? t("scope.project", "Workspace") : t("scope.global", "Global")}</span>
                 </div>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="global">
                   <div className="flex items-center gap-2">
                     <span className="material-symbols-outlined" style={{ fontSize: 14 }}>public</span>
-                    Global
+                    {t("scope.global", "Global")}
                   </div>
                 </SelectItem>
                 <SelectItem value="project">
                   <div className="flex items-center gap-2">
                     <span className="material-symbols-outlined" style={{ fontSize: 14 }}>folder_special</span>
-                    Workspace
+                    {t("scope.project", "Workspace")}
                   </div>
                 </SelectItem>
               </SelectContent>
@@ -243,14 +245,14 @@ export function EditSourceDialog({
             {scopeType === "global" && (
               <p className="text-xs text-amber-600 dark:text-amber-400 flex items-start gap-1.5 mt-0.5">
                 <span className="material-symbols-outlined shrink-0" style={{ fontSize: 13, marginTop: 1 }}>warning</span>
-                Document content will be compiled into the shared wiki and visible to all employees — including those without access to the original file. Only use Global if the content is not sensitive.
+                {t("knowledge.upload.globalNotice", "Document content will be compiled into the shared wiki and visible to all employees.")}
               </p>
             )}
           </div>
 
           {scopeType === "project" && (
             <div className="flex flex-col gap-1.5">
-              <Label className={inFlight ? "text-muted-foreground" : ""}>Target Workspace</Label>
+              <Label className={inFlight ? "text-muted-foreground" : ""}>{t("scope.project", "Target Workspace")}</Label>
               <Select value={scopeId} disabled={inFlight} onValueChange={(v) => setScopeId(v ?? "")}>
                 <SelectTrigger className="bg-background">
                   <span>{scopeId ? (projects.find(p => p.id === scopeId)?.name ?? "Select...") : "Select workspace..."}</span>
@@ -269,12 +271,12 @@ export function EditSourceDialog({
           {pendingConfirm && (
             <div className="rounded-lg border border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/30 p-3 flex flex-col gap-3">
               <p className="text-sm text-amber-800 dark:text-amber-300">
-                Đổi phòng ban sẽ chạy lại quá trình phân tích AI. Wiki pages cũ sẽ được cập nhật sang phòng ban mới. Tiếp tục?
+                {t("knowledge.edit.inFlight", "Changing department will rerun AI compilation. Continue?")}
               </p>
               <div className="flex justify-end gap-2">
-                <Button variant="outline" size="sm" onClick={() => setPendingConfirm(false)}>Huỷ</Button>
+                <Button variant="outline" size="sm" onClick={() => setPendingConfirm(false)}>{t("common.cancel", "Cancel")}</Button>
                 <Button size="sm" onClick={doSave} className="bg-amber-600 hover:bg-amber-700 text-white">
-                  Xác nhận
+                  {t("common.confirm", "Confirm")}
                 </Button>
               </div>
             </div>
@@ -287,7 +289,7 @@ export function EditSourceDialog({
           )}
 
           <div className="flex justify-end gap-2 mt-2">
-            <Button variant="outline" onClick={onClose}>Cancel</Button>
+            <Button variant="outline" onClick={onClose}>{t("common.cancel", "Cancel")}</Button>
             <Button
               disabled={saving || pendingConfirm}
               onClick={handleSave}
@@ -296,9 +298,9 @@ export function EditSourceDialog({
               {saving ? (
                <span className="flex items-center gap-2">
                  <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
-                 Saving...
+                 {t("common.loading", "Saving...")}
                </span>
-              ) : "Save"}
+              ) : t("common.save", "Save")}
             </Button>
           </div>
         </div>

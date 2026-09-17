@@ -3,6 +3,7 @@
 
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
+import { useI18n } from "@/lib/i18n";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,9 +12,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-
 export function Header() {
   const { user, logout } = useAuth();
+  const { t } = useI18n();
   const router = useRouter();
 
   const handleLogout = () => {
@@ -41,12 +42,12 @@ export function Header() {
             <DropdownMenuContent align="end" className="w-48">
               <DropdownMenuItem onClick={() => router.push("/profile")}>
                 <span className="material-symbols-outlined mr-2 text-base">person</span>
-                Profile
+                {t("user.profile", "Profile")}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={handleLogout} className="text-destructive">
                 <span className="material-symbols-outlined mr-2 text-base">logout</span>
-                Sign out
+                {t("user.signOut", "Sign out")}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

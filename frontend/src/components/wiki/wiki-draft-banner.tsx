@@ -7,6 +7,7 @@ import { WikiContent } from "./wiki-content";
 import { WikiDraftDiff } from "./wiki-draft-diff";
 import { WikiAiCheckPanel } from "./wiki-ai-check-panel";
 import { Button } from "@/components/ui/button";
+import { useI18n } from "@/lib/i18n";
 
 type Props = {
   drafts: DraftResponse[];
@@ -39,6 +40,7 @@ export function WikiDraftBanner({
   onResubmitDraft,
   onWithdrawn,
 }: Props) {
+  const { t } = useI18n();
   const [idx, setIdx] = React.useState(0);
   const [tab, setTab] = React.useState<BannerTab>("diff");
   const [actionMode, setActionMode] = React.useState<ReviewerAction | null>(null);
@@ -53,13 +55,39 @@ export function WikiDraftBanner({
 
   const baseDraft = drafts[idx];
   const draft = liveDraft && baseDraft && liveDraft.id === baseDraft.id ? liveDraft : baseDraft;
+  const draftId = draft?.id;
+  const aiRunning = draft ? (draft.ai_check_status === "pending" || draft.ai_check_status === "running") : false;
+
+  // Reset live snapshot + compare-with selection when the user pages to a
+  // different draft.
+  React.useEffect(() => {
+    setLiveDraft(null);
+    setCompareWithDraftId("");
+  }, [baseDraft?.id]);
+
+  // Poll the single draft while AI checks are still running.
+  React.useEffect(() => {
+    if (!draftId || !aiRunning) return;
+    const id = setInterval(async () => {
+      try {
+        const fresh = await api<DraftResponse>(`/api/wiki/drafts/${draftId}`);
+        setLiveDraft(fresh);
+        if (fresh.ai_check_status !== "pending" && fresh.ai_check_status !== "running") {
+          clearInterval(id);
+        }
+      } catch {
+        /* silent — next tick retries */
+      }
+    }, AI_POLL_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [draftId, aiRunning]);
+
   if (!draft) return null;
 
   const isCreate = draft.draft_kind === "create";
   const isNeedsRevision = draft.status === "needs_revision";
   const isWithdrawn = draft.status === "withdrawn";
   const hasConflict = draft.has_conflict;
-  const aiRunning = draft.ai_check_status === "pending" || draft.ai_check_status === "running";
   const isOwnDraft = !!currentUserId && draft.author_id === currentUserId;
 
   const handleWithdraw = async () => {
@@ -76,30 +104,6 @@ export function WikiDraftBanner({
       setBusy(false);
     }
   };
-
-  // Reset live snapshot + compare-with selection when the user pages to a
-  // different draft.
-  React.useEffect(() => {
-    setLiveDraft(null);
-    setCompareWithDraftId("");
-  }, [baseDraft?.id]);
-
-  // Poll the single draft while AI checks are still running.
-  React.useEffect(() => {
-    if (!draft.id || !aiRunning) return;
-    const id = setInterval(async () => {
-      try {
-        const fresh = await api<DraftResponse>(`/api/wiki/drafts/${draft.id}`);
-        setLiveDraft(fresh);
-        if (fresh.ai_check_status !== "pending" && fresh.ai_check_status !== "running") {
-          clearInterval(id);
-        }
-      } catch {
-        /* silent — next tick retries */
-      }
-    }, AI_POLL_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [draft.id, aiRunning]);
 
   const total = drafts.length;
 
@@ -194,20 +198,20 @@ export function WikiDraftBanner({
       };
 
   const headlineLabel = isNeedsRevision
-    ? `Waiting for ${authorLabel} to revise`
+    ? t("wiki.banner.waitingAuthor", `Waiting for ${authorLabel} to revise`).replace("{name}", authorLabel)
     : isWithdrawn
-    ? `Withdrawn by ${authorLabel}`
-    : `Pending draft by ${authorLabel}`;
+    ? t("wiki.banner.withdrawn", `Withdrawn by ${authorLabel}`).replace("{name}", authorLabel)
+    : t("wiki.banner.pendingDraft", `Pending draft by ${authorLabel}`).replace("{name}", authorLabel);
 
   const notePrompt =
     actionMode === "request_changes"
-      ? "Explain what the author should change before resubmitting…"
-      : "Tell the contributor why this draft was rejected…";
+      ? t("wiki.banner.requestChangesPrompt", "Explain what the author should change before resubmitting…")
+      : t("wiki.banner.rejectPrompt", "Tell the contributor why this draft was rejected…");
 
   const noteLabel =
     actionMode === "request_changes"
-      ? "Request changes — note to author (required)"
-      : "Rejection reason (required)";
+      ? t("wiki.banner.requestChangesLabel", "Request changes — note to author (required)")
+      : t("wiki.banner.rejectLabel", "Rejection reason (required)");
 
   return (
     <div className={`rounded-xl border ${palette.wrap} overflow-hidden shadow-sm`}>
@@ -264,12 +268,12 @@ export function WikiDraftBanner({
           )}
           {isNeedsRevision && draft.last_returned_note && (
             <p className={`text-xs ${palette.muted} mt-1`}>
-              <span className="font-medium">Reviewer asked:</span> {draft.last_returned_note}
+              <span className="font-medium">{t("wiki.banner.reviewerAsked", "Reviewer asked:")}</span> {draft.last_returned_note}
             </p>
           )}
           {draft.suggested_reviewers && draft.suggested_reviewers.length > 0 && (
             <p className={`text-xs ${palette.muted} mt-1`}>
-              <span className="font-medium">Suggested reviewers:</span>{" "}
+              <span className="font-medium">{t("wiki.banner.suggestedReviewers", "Suggested reviewers:")}</span>{" "}
               {draft.suggested_reviewers
                 .map((r) => `${r.name || r.email || "?"} (${r.score})`)
                 .join(", ")}
@@ -323,33 +327,34 @@ export function WikiDraftBanner({
         {(isCreate
           ? (["proposed"] as const)
           : (["diff", "proposed", "current"] as const)
-        ).map((t) => (
+        ).map((tKey) => (
           <button
-            key={t}
+            key={tKey}
             type="button"
-            onClick={() => setTab(t)}
+            onClick={() => setTab(tKey)}
             className={`px-3 py-1 rounded-md text-xs font-medium transition-colors capitalize ${
-              tab === t ? palette.chip : palette.chipHover
+              tab === tKey ? palette.chip : palette.chipHover
             }`}
           >
-            {t === "proposed" ? "Proposed" : t === "current" ? "Current page" : "Diff"}
+            {tKey === "proposed"
+              ? t("wiki.banner.tabProposed", "Proposed")
+              : tKey === "current"
+              ? t("wiki.banner.tabCurrent", "Current page")
+              : t("wiki.banner.tabDiff", "Diff")}
           </button>
         ))}
       </div>
 
-      {/* Cross-draft compare picker — only shown on the Diff tab when there
-          is more than one pending draft on the same page. Lets the reviewer
-          diff this draft against any sibling draft instead of the current
-          page, so concurrent contributions are easier to reconcile. */}
+      {/* Cross-draft compare picker */}
       {tab === "diff" && !isCreate && drafts.length > 1 && (
         <div className={`px-4 pt-2 text-[11px] ${palette.muted} flex items-center gap-2`}>
-          <span>Compare with:</span>
+          <span>{t("wiki.banner.compareWith", "Compare with:")}</span>
           <select
             value={compareWithDraftId}
             onChange={(e) => setCompareWithDraftId(e.target.value)}
             className="h-6 rounded border border-current/20 bg-white/60 dark:bg-black/20 px-1.5 text-[11px] focus:outline-none"
           >
-            <option value="">Current page</option>
+            <option value="">{t("wiki.banner.tabCurrent", "Current page")}</option>
             {drafts
               .filter((d) => d.id !== draft.id && d.draft_kind !== "create")
               .map((d) => (
@@ -379,7 +384,9 @@ export function WikiDraftBanner({
           draft.content_md.trim() ? (
             <WikiContent markdown={draft.content_md} />
           ) : (
-            <p className={`text-sm ${palette.muted} italic`}>Empty content.</p>
+            <p className={`text-sm ${palette.muted} italic`}>
+              {t("wiki.banner.emptyContent", "Empty content.")}
+            </p>
           )
         ) : (
           <div className="text-xs">
@@ -406,7 +413,7 @@ export function WikiDraftBanner({
             className={`w-full rounded-lg border ${palette.tabBorder} bg-white/70 dark:bg-black/20 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-current/20 resize-none placeholder:opacity-60`}
           />
           <p className={`text-[11px] ${palette.muted} mt-1`}>
-            {note.trim().length}/{MIN_NOTE_LENGTH} characters minimum
+            {note.trim().length}/{MIN_NOTE_LENGTH} {t("wiki.banner.minChars", "characters minimum")}
           </p>
         </div>
       ) : null}
@@ -426,7 +433,7 @@ export function WikiDraftBanner({
               disabled={busy}
               className={`border ${palette.tabBorder}`}
             >
-              Cancel
+              {t("common.cancel", "Cancel")}
             </Button>
             <Button
               size="sm"
@@ -442,7 +449,9 @@ export function WikiDraftBanner({
                   {actionMode === "reject" ? "cancel" : "edit_note"}
                 </span>
               )}
-              {actionMode === "reject" ? "Confirm Reject" : "Send back"}
+              {actionMode === "reject"
+                ? t("wiki.banner.confirmReject", "Confirm Reject")
+                : t("wiki.banner.sendBack", "Send back")}
             </Button>
           </>
         ) : isOwnDraft ? (
@@ -458,7 +467,7 @@ export function WikiDraftBanner({
                 className={`gap-1.5 ${palette.primaryBtn}`}
               >
                 <span className="material-symbols-outlined text-sm">edit</span>
-                Edit & resubmit
+                {t("wiki.banner.editResubmit", "Edit & resubmit")}
               </Button>
             )}
             {!isWithdrawn && (
@@ -474,20 +483,20 @@ export function WikiDraftBanner({
                 ) : (
                   <span className="material-symbols-outlined text-sm mr-1">remove_circle</span>
                 )}
-                Withdraw
+                {t("wiki.banner.withdraw", "Withdraw")}
               </Button>
             )}
             {isWithdrawn && (
               <p className={`text-xs ${palette.muted} italic`}>
-                You withdrew this draft.
+                {t("wiki.banner.withdrawnNotice", "You withdrew this draft.")}
               </p>
             )}
           </>
         ) : isNeedsRevision || isWithdrawn ? (
           <p className={`text-xs ${palette.muted} italic`}>
             {isNeedsRevision
-              ? "Waiting for the author to resubmit."
-              : "This draft is no longer in review."}
+              ? t("wiki.banner.waitingResubmit", "Waiting for the author to resubmit.")
+              : t("wiki.banner.noLongerReview", "This draft is no longer in review.")}
           </p>
         ) : (
           <>
@@ -499,7 +508,7 @@ export function WikiDraftBanner({
               className={`border ${palette.tabBorder} ${palette.text} ${palette.hover}`}
             >
               <span className="material-symbols-outlined text-sm mr-1">edit_note</span>
-              Request changes
+              {t("wiki.banner.requestChangesBtn", "Request changes")}
             </Button>
             <Button
               variant="outline"
@@ -509,7 +518,7 @@ export function WikiDraftBanner({
               className={`border ${palette.tabBorder} ${palette.text} ${palette.hover}`}
             >
               <span className="material-symbols-outlined text-sm mr-1">cancel</span>
-              Reject
+              {t("wiki.banner.rejectBtn", "Reject")}
             </Button>
             <Button
               size="sm"
@@ -522,7 +531,7 @@ export function WikiDraftBanner({
               ) : (
                 <span className="material-symbols-outlined text-sm">check_circle</span>
               )}
-              Approve
+              {t("wiki.banner.approveBtn", "Approve")}
             </Button>
           </>
         )}

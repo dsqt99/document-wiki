@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/shared/empty-state";
 import { DeptMembersDialog } from "@/components/departments/dept-members-dialog";
+import { useI18n } from "@/lib/i18n";
 
 type Department = {
   id: string;
@@ -21,10 +22,11 @@ type Props = {
 };
 
 export function DepartmentCards({ departments, loading, onEdit, onRefresh }: Props) {
+  const { t } = useI18n();
   const [scopeDept, setScopeDept] = React.useState<Department | null>(null);
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Delete this department and all its employees?")) return;
+    if (!confirm(t("dept.deleteConfirm", "Delete this department and all its employees?"))) return;
     await api(`/api/departments/${id}`, { method: "DELETE" });
     onRefresh();
   };
@@ -43,8 +45,8 @@ export function DepartmentCards({ departments, loading, onEdit, onRefresh }: Pro
     return (
       <EmptyState
         icon="business"
-        title="No departments"
-        description="Create your first department to organize employees"
+        title={t("dept.noDepts", "No departments")}
+        description={t("dept.noDeptsDesc", "Create your first department to organize employees")}
       />
     );
   }
@@ -68,7 +70,7 @@ export function DepartmentCards({ departments, loading, onEdit, onRefresh }: Pro
                   {dept.name}
                 </h3>
                 <p className="text-xs text-muted-foreground">
-                  {dept.employee_count} employee{dept.employee_count !== 1 ? "s" : ""}
+                  {dept.employee_count} {t("dept.employees", "employees")}
                 </p>
               </div>
             </div>
@@ -88,7 +90,7 @@ export function DepartmentCards({ departments, loading, onEdit, onRefresh }: Pro
               className="text-xs"
             >
               <span className="material-symbols-outlined text-sm mr-1">group</span>
-              Members
+              {t("dept.members", "Members")}
             </Button>
             <Button
               variant="ghost"
@@ -97,7 +99,7 @@ export function DepartmentCards({ departments, loading, onEdit, onRefresh }: Pro
               className="text-xs"
             >
               <span className="material-symbols-outlined text-sm mr-1">edit</span>
-              Edit
+              {t("common.edit", "Edit")}
             </Button>
             <Button
               variant="ghost"
@@ -106,7 +108,7 @@ export function DepartmentCards({ departments, loading, onEdit, onRefresh }: Pro
               className="text-xs text-destructive hover:text-destructive"
             >
               <span className="material-symbols-outlined text-sm mr-1">delete</span>
-              Delete
+              {t("common.delete", "Delete")}
             </Button>
           </div>
         </div>
