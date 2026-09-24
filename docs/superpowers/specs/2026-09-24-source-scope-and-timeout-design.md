@@ -1,7 +1,7 @@
-# Thiết Kế: Hệ Thống Phạm Vi Hiển Thị (Scope) Hỗ Trợ Phân Quyền Cán Bộ (User) & Tối Ưu Hóa Timeout
+# Thiết Kế: Hệ Thống Phạm Vi Hiển Thị (Toàn Hệ Thống / Phòng Ban / Workspace) & Triệt Tiêu Timeout Khi Chuyển Phạm Vi
 
-- **Ngày tạo:** 2026-09-24
-- **Trạng thái:** Proposed
+- **Ngày cập nhật:** 2026-09-24
+- **Trạng thái:** Approved
 
 ---
 
@@ -15,129 +15,89 @@
 ### 1.2. Mâu thuẫn và bất cập trong giao diện chọn phạm vi
 - Modal "Chỉnh sửa tài liệu" hiện chia làm 2 trường độc lập: **"Phòng ban"** (danh sách checkbox chọn nhiều phòng ban) và **"Phạm vi hiển thị"** (Dropdown gồm "Toàn Hệ Thống" và "Workspace").
 - Việc chia tách này gây mâu thuẫn: người dùng vừa chọn "Toàn hệ thống" vừa tick phòng ban "PC08", khiến logic pipeline ưu tiên phòng ban và tài liệu không còn mang tính toàn hệ thống như người dùng lầm tưởng.
-- Hệ thống chưa hỗ trợ chia sẻ riêng tư theo từng cán bộ cụ thể (**User/Employee**).
 - Khi tài liệu đang trong quá trình xử lý (`inFlight`), modal khóa cứng toàn bộ việc chọn phòng ban và phạm vi hiển thị.
 - Hộp thoại xác nhận biên soạn lại dùng sai key đa ngôn ngữ (`knowledge.edit.inFlight`) khiến người dùng thấy thông báo không đúng ngữ cảnh.
+- *Lưu ý kiến trúc:* Hệ thống `document-wiki` phục vụ tri thức cho chatbot, tài khoản nhân sự hỏi đáp được lưu ở database bên ngoài, nên hệ thống phạm vi chỉ cần tập trung tối ưu vào 3 cấp độ: **Toàn hệ thống (Global)**, **Phòng ban (Department)**, và **Workspace (Project)**.
 
 ---
 
 ## 2. Mục tiêu (Goals & Non-Goals)
 
 ### Mục tiêu (Goals)
-1. **Dứt điểm lỗi timeout:** Chuyển toàn bộ tác vụ dọn dẹp wiki cũ, xóa vector embeddings và tái tạo mục lục sang Background Worker (ARQ job). API `PATCH /api/sources/{id}` phản hồi ngay lập tức (`< 100ms`).
-2. **Gộp chung 1 trường "Phạm vi hiển thị":** Thay thế 2 mục riêng rẽ thành 1 trường đồng nhất với 4 chế độ:
-   - `Toàn hệ thống (Global)`: Mọi nhân sự đều có quyền xem.
-   - `Theo phòng ban (Department)`: Chọn 1 hoặc nhiều phòng ban được cấp quyền.
-   - `Theo Workspace (Project)`: Chọn 1 Workspace cụ thể.
-   - `Riêng tư theo Cán bộ (User)`: Chọn 1 hoặc nhiều cán bộ/user cụ thể được cấp quyền xem (cùng với Admin).
-3. **Mô hình dữ liệu hỗ trợ User Scope:** Tạo bảng quan hệ `source_users` và mở rộng `ScopeType` với giá trị `USER = "user"`.
-4. **Mở khóa linh hoạt:** Cho phép điều chỉnh phạm vi hiển thị bất cứ lúc nào, worker luôn áp dụng phạm vi mới nhất khi commit.
-5. **Khắc phục UI bug:** Sửa đúng nội dung thông báo xác nhận biên soạn lại và nâng timeout phía client.
+1. **Dứt điểm lỗi timeout:** Chuyển toàn bộ tác vụ dọn dẹp wiki cũ, xóa vector embeddings và tái tạo mục lục sang Background Worker (ARQ task `reassign_source_scope_task`). API `PATCH /api/sources/{id}` cập nhật DB và phản hồi ngay lập tức (`< 100ms`).
+2. **Gộp chung 1 trường "Phạm vi hiển thị" (3 chế độ):** Thay thế 2 mục riêng rẽ thành 1 trường đồng nhất với 3 chế độ rõ ràng:
+   - 🌐 `Toàn hệ thống (Global)`: Biên soạn vào wiki chung, mọi nhân sự đều có quyền truy cập.
+   - 🏢 `Theo phòng ban (Department)`: Hiển thị bảng chọn phòng ban (chọn 1 hoặc nhiều phòng ban được cấp quyền truy cập).
+   - 📁 `Theo Workspace (Project)`: Hiển thị dropdown chọn Workspace mục tiêu.
+3. **Mở khóa linh hoạt:** Cho phép điều chỉnh phạm vi hiển thị bất cứ lúc nào, worker luôn áp dụng phạm vi mới nhất khi commit.
+4. **Khắc phục UI bug:** Sửa đúng nội dung thông báo xác nhận biên soạn lại (`knowledge.edit.scopeChangeConfirm`) và nâng timeout phía client lên 60s.
 
 ### Ngoài phạm vi (Non-Goals)
-- Không thay đổi thuật toán trích xuất hay cấu trúc prompt của pipeline Map-Reduce-Pipeline (MRP).
-- Không can thiệp vào các quyền hệ thống khác (chỉ áp dụng cho quyền truy cập tài liệu và wiki).
+- Không tạo bảng `source_users` vì tài khoản người dùng hỏi đáp nằm ở hệ thống ngoài.
 
 ---
 
 ## 3. Kiến trúc Chi Tiết (Detailed Architecture)
 
-### 3.1. Mô hình dữ liệu (Database Schema)
+### 3.1. Chuẩn Hóa Scope Trong Dữ Liệu
+Trong `Source` và `WikiPage`:
+- `scope_type`:
+  - `"global"`: Không cần `scope_id`, không cần phòng ban.
+  - `"department"`: `scope_type = "department"`, liên kết với bảng `source_departments` (danh sách phòng ban được cấp quyền).
+  - `"project"`: `scope_type = "project"`, `scope_id = project_id`.
 
-#### Bảng `source_users`
-Tương tự bảng `source_departments`, lưu danh sách các user được cấp quyền truy cập tài liệu khi chọn chế độ `user`:
-```sql
-CREATE TABLE source_users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    source_id UUID NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
-    employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
-    created_at TIMESTAMPTZ DEFAULT now(),
-    CONSTRAINT uq_source_user UNIQUE (source_id, employee_id)
-);
-CREATE INDEX ix_source_users_source_id ON source_users(source_id);
-CREATE INDEX ix_source_users_employee_id ON source_users(employee_id);
-```
-
-#### Cập nhật `ScopeType`
-```python
-class ScopeType(str, PyEnum):
-    GLOBAL = "global"
-    DEPARTMENT = "department"
-    PROJECT = "project"
-    USER = "user"
-```
-
-#### Cập nhật Model `Source`
-- Bổ sung relationship `users`:
-  ```python
-  users: Mapped[list["SourceUser"]] = relationship(
-      back_populates="source", cascade="all, delete-orphan"
-  )
-  ```
+Khi lưu:
+- Nếu chọn `global`: xóa mọi liên kết `source_departments`, `scope_id = null`.
+- Nếu chọn `department`: lưu danh sách phòng ban vào `source_departments`, `scope_id = null`.
+- Nếu chọn `project`: xóa mọi liên kết `source_departments`, `scope_id = selected_project_id`.
 
 ---
 
-### 3.2. Background Worker hóa Thao Tác Chuyển Phạm Vi (Giải quyết Timeout)
+### 3.2. Background Worker Hóa Thao Tác Chuyển Phạm Vi (Giải quyết Timeout)
 
 #### Luồng xử lý khi người dùng đổi phạm vi trên tài liệu đã `ready`:
-1. `PATCH /api/sources/{source_id}` nhận payload mới:
-   - Cập nhật `scope_type`, `scope_id`, `department_ids`, `employee_ids`.
-   - Nếu phạm vi thay đổi:
-     - Ghi nhận trạng thái `source.status = "processing"`, `progress = 0`, `progress_message = "Đang chuyển đổi phạm vi hiển thị và dọn dẹp wiki cũ..."`.
-     - Đẩy job vào Redis queue:
-       ```python
-       await pool.enqueue_job("reassign_source_scope_task", str(source_id), old_scopes)
-       ```
-     - Commit DB và trả về HTTP 200 ngay lập tức cho client.
-2. Background Worker thực thi `reassign_source_scope_task`:
-   - Bước 1: Gọi `detach_source_from_wiki(db, source_id)` và `delete_page_cascade` ngầm trong worker.
-   - Bước 2: Tái tạo lại mục lục `regenerate_index` cho các scope cũ.
-   - Bước 3: Đẩy tiếp job `ingest_map_reduce_task` để biên soạn tài liệu vào phạm vi mới.
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as Người dùng
+    participant UI as Frontend Dialog
+    participant API as FastAPI Backend
+    participant Redis as Redis (ARQ)
+    participant Worker as Background Worker
+    participant DB as PostgreSQL / Milvus
 
-Nhờ vậy, request HTTP chỉ thực hiện 1 câu lệnh UPDATE đơn giản trong DB, hoàn tất chỉ trong khoảng **20ms - 50ms**, loại bỏ 100% rủi ro timeout.
+    User->>UI: Đổi phạm vi (VD: sang PC08) & bấm Xác nhận
+    UI->>API: PATCH /api/sources/{id} (scope_type, depts...)
+    API->>DB: Cập nhật scope_type, source_departments
+    API->>DB: Đặt status = "processing", message = "Đang chuyển đổi phạm vi..."
+    API->>Redis: Enqueue reassign_source_scope_task(source_id, old_scopes)
+    API-->>UI: 200 OK (< 100ms) - CẬP NHẬT GIAO DIỆN NGAY LẬP TỨC
+    Note over UI: Không bao giờ bị timeout!
+
+    Redis->>Worker: Thực thi reassign_source_scope_task
+    Worker->>DB: detach_source_from_wiki(source_id)
+    Worker->>DB: delete_page_cascade & xóa embeddings Milvus
+    Worker->>DB: regenerate_index cho các scope cũ
+    Worker->>Redis: Enqueue ingest_map_reduce_task để biên soạn vào scope mới
+```
+
+Request HTTP chỉ thực hiện lệnh UPDATE trong DB, hoàn tất chỉ trong khoảng **20ms - 50ms**, loại bỏ 100% rủi ro timeout.
 
 ---
 
-### 3.3. Phân quyền và Lọc tài liệu (Access Control & RBAC)
-
-Trong `app/routers/sources.py`, logic lọc danh sách tài liệu (`get_sources`, `search_sources`, `get_source`) được cập nhật:
-- **Admin** (`role == "admin"` hoặc có quyền `doc:edit:all`): Xem được toàn bộ tài liệu.
-- **Cán bộ thường**: Chỉ xem được tài liệu thỏa mãn một trong các điều kiện:
-  1. `scope_type == "global"`
-  2. `scope_type == "department"` VÀ `department_id IN (user.department_ids)`
-  3. `scope_type == "project"` VÀ `scope_id IN (user.project_ids)`
-  4. `scope_type == "user"` VÀ (`employee_id == user.id` HOẶC `contributed_by_employee_id == user.id`)
-
----
-
-### 3.4. Thiết Kế Giao Diện Frontend (UI/UX)
+### 3.3. Thiết Kế Giao Diện Frontend (UI/UX)
 
 #### Trong `edit-source-dialog.tsx`:
-1. **Trường "Phạm vi hiển thị":**
-   - Single Select gồm 4 options có icon nhận diện rõ ràng:
-     - 🌐 **Toàn hệ thống** (Tất cả nhân sự)
-     - 🏢 **Theo phòng ban** (Chỉ các phòng ban được chọn)
-     - 📁 **Theo Workspace** (Chỉ nhân sự trong Workspace)
-     - 👤 **Riêng tư theo Cán bộ** (Chỉ các cán bộ được chỉ định)
-2. **Khu vực chọn đối tượng động:**
-   - Khi chọn **Theo phòng ban**: Hiển thị bảng chọn checkbox các phòng ban (Department multi-select).
-   - Khi chọn **Theo Workspace**: Hiển thị dropdown chọn Workspace (Project single-select).
-   - Khi chọn **Riêng tư theo Cán bộ**: Hiển thị danh sách cán bộ nhân sự (Employee multi-select với ô tìm kiếm tên/email).
-3. **Mở khóa khi đang xử lý:** Bỏ `disabled={inFlight}` trên các trường phạm vi.
-4. **Sửa lỗi hiển thị Confirm Dialog:**
-   - Thay key `knowledge.edit.inFlight` bằng key đúng `knowledge.edit.scopeChangeConfirm`:
-     *"Thay đổi phạm vi hiển thị sẽ kích hoạt hệ thống biên soạn lại tri thức. Bạn có muốn tiếp tục?"*
-5. **Timeout Client:** Trong `frontend/src/lib/api.ts`, tăng `REQUEST_TIMEOUT_MS = 60_000` (60s) để đảm bảo độ tin cậy kết nối mạng.
-
----
-
-## 4. Kế hoạch Kiểm Thử (Testing Plan)
-
-1. **Unit & API Test:**
-   - Test cập nhật `PATCH /api/sources/{id}` với `scope_type="user"` và danh sách `employee_ids`.
-   - Kiểm tra API phản hồi nhanh `< 100ms` khi chuyển phạm vi trên tài liệu lớn.
-   - Test phân quyền: user A không thể truy cập tài liệu gán cho user B.
-2. **Worker Integration Test:**
-   - Kiểm tra worker tháo gỡ thành công các trang wiki cũ và vector embeddings khi chạy ngầm.
-3. **E2E UI Test:**
-   - Thao tác chuyển đổi giữa 4 chế độ phạm vi trên modal, kiểm tra dữ liệu lưu chuẩn xác và thông báo hiển thị đúng tiếng Việt.
+1. **Trường "Phạm vi hiển thị" (Unified Scope Selector):**
+   - Dropdown gồm 3 tùy chọn:
+     - 🌐 **Toàn hệ thống (Global)** — Biên soạn vào wiki chung, hiển thị cho toàn bộ cán bộ.
+     - 🏢 **Theo phòng ban (Department)** — Giới hạn truy cập cho các phòng ban được chỉ định.
+     - 📁 **Theo Workspace (Project)** — Giới hạn trong phạm vi dự án / Workspace cụ thể.
+2. **Khu vực lựa chọn phụ thuộc ngữ cảnh:**
+   - Khi chọn **Theo phòng ban**: Mở danh sách checkbox các phòng ban với tag hiển thị đã chọn.
+   - Khi chọn **Theo Workspace**: Mở danh sách chọn Workspace.
+   - Khi chọn **Toàn hệ thống**: Hiển thị thông báo màu xanh/vàng thân thiện về việc tài liệu được tích hợp toàn hệ thống.
+3. **Mở khóa khi đang xử lý:** Không khóa `disabled={inFlight}` trên trường phạm vi hiển thị.
+4. **Hộp thoại xác nhận:**
+   - Hiển thị thông báo tiếng Việt chính xác: *"Việc thay đổi phạm vi hiển thị sẽ kích hoạt biên soạn lại tri thức bằng AI. Bạn có muốn tiếp tục?"*
+5. **Timeout Client:** Trong `frontend/src/lib/api.ts`, tăng `REQUEST_TIMEOUT_MS = 60_000` (60s).
