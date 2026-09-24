@@ -36,58 +36,21 @@ export function EditSourceDialog({
   const [title, setTitle] = React.useState(source.title);
   const [typeId, setTypeId] = React.useState(source.knowledge_type_id || "");
 
-  // Determine initial scope mode: 'project', 'department', or 'global'
+  // Determine initial scope mode: 'department' or 'global'
   const initialMode = React.useMemo(() => {
-    if (source.scope_type === "project") return "project";
     if (source.scope_type === "department" || (source.department_ids && source.department_ids.length > 0)) {
       return "department";
     }
     return "global";
   }, [source.scope_type, source.department_ids]);
 
-  const [scopeMode, setScopeMode] = React.useState<"global" | "department" | "project">(initialMode);
+  const [scopeMode, setScopeMode] = React.useState<"global" | "department">(initialMode);
   const [selectedDepts, setSelectedDepts] = React.useState<string[]>(source.department_ids || []);
   const originalDepts = React.useRef<string[]>(source.department_ids || []);
 
-  const [scopeId, setScopeId] = React.useState(source.scope_id || "");
-  const [projects, setProjects] = React.useState<{ id: string; name: string }[]>([]);
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState("");
   const [pendingConfirm, setPendingConfirm] = React.useState(false);
-
-  // New workspace creation state
-  const [showNewProjectForm, setShowNewProjectForm] = React.useState(false);
-  const [newProjectName, setNewProjectName] = React.useState("");
-  const [newProjectDesc, setNewProjectDesc] = React.useState("");
-  const [creatingProject, setCreatingProject] = React.useState(false);
-
-  const handleCreateProject = async () => {
-    if (!newProjectName.trim()) return;
-    setCreatingProject(true);
-    setError("");
-    try {
-      const created = await api<{ id: string; name: string }>("/api/projects", {
-        method: "POST",
-        body: { name: newProjectName.trim(), description: newProjectDesc.trim() || undefined },
-      });
-      setProjects((prev) => [...prev, created]);
-      setScopeId(created.id);
-      setShowNewProjectForm(false);
-      setNewProjectName("");
-      setNewProjectDesc("");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Không thể tạo không gian làm việc");
-    } finally {
-      setCreatingProject(false);
-    }
-  };
-
-  // Fetch projects for workspace scope picker
-  React.useEffect(() => {
-    api<{ id: string; name: string }[]>("/api/projects")
-      .then((data) => setProjects(Array.isArray(data) ? data : []))
-      .catch(() => setProjects([]));
-  }, []);
 
   const toggleDept = (deptId: string) => {
     setSelectedDepts((prev) =>
@@ -102,19 +65,12 @@ export function EditSourceDialog({
       const cur = new Set(selectedDepts);
       return orig.size !== cur.size || selectedDepts.some((d) => !orig.has(d));
     }
-    if (scopeMode === "project") {
-      return (scopeId || "") !== (source.scope_id || "");
-    }
     return false;
   };
 
   const doSave = async () => {
     if (scopeMode === "department" && selectedDepts.length === 0) {
       setError(t("dept.selectAtLeastOne", "Vui lòng chọn ít nhất một phòng ban"));
-      return;
-    }
-    if (scopeMode === "project" && !scopeId) {
-      setError(t("scope.selectWorkspace", "Vui lòng chọn không gian làm việc (Workspace)"));
       return;
     }
 
@@ -126,7 +82,7 @@ export function EditSourceDialog({
         title: title || undefined,
         knowledge_type_id: typeId || null,
         scope_type: scopeMode,
-        scope_id: scopeMode === "project" ? (scopeId || null) : null,
+        scope_id: null,
         department_ids: scopeMode === "department" ? selectedDepts : [],
       };
 
@@ -207,29 +163,22 @@ export function EditSourceDialog({
             <Select
               value={scopeMode}
               onValueChange={(val) => {
-                const mode = (val || "global") as "global" | "department" | "project";
+                const mode = (val || "global") as "global" | "department";
                 setScopeMode(mode);
                 if (mode === "global") {
                   setSelectedDepts([]);
-                  setScopeId("");
-                } else if (mode === "project") {
-                  setSelectedDepts([]);
-                } else if (mode === "department") {
-                  setScopeId("");
                 }
               }}
             >
               <SelectTrigger className="bg-background font-medium">
                 <div className="flex items-center gap-2">
                   <span className="material-symbols-outlined text-base text-primary">
-                    {scopeMode === "global" ? "public" : scopeMode === "department" ? "apartment" : "folder_special"}
+                    {scopeMode === "global" ? "public" : "apartment"}
                   </span>
                   <span>
                     {scopeMode === "global"
                       ? t("knowledge.scope.global", "Toàn hệ thống")
-                      : scopeMode === "department"
-                      ? t("knowledge.scope.department", "Theo phòng ban")
-                      : t("knowledge.scope.project", "Theo Workspace")}
+                      : t("knowledge.scope.department", "Theo phòng ban")}
                   </span>
                 </div>
               </SelectTrigger>
@@ -249,15 +198,6 @@ export function EditSourceDialog({
                     <div>
                       <div className="font-medium">{t("knowledge.scope.department", "Theo phòng ban")}</div>
                       <div className="text-xs text-muted-foreground">Giới hạn trong các phòng ban được chọn</div>
-                    </div>
-                  </div>
-                </SelectItem>
-                <SelectItem value="project">
-                  <div className="flex items-center gap-2">
-                    <span className="material-symbols-outlined text-base">folder_special</span>
-                    <div>
-                      <div className="font-medium">{t("knowledge.scope.project", "Theo Workspace")}</div>
-                      <div className="text-xs text-muted-foreground">Giới hạn trong không gian làm việc / dự án</div>
                     </div>
                   </div>
                 </SelectItem>
@@ -325,112 +265,7 @@ export function EditSourceDialog({
             </div>
           )}
 
-          {/* Conditional Sub-selector: Project / Workspace */}
-          {scopeMode === "project" && (
-            <div className="flex flex-col gap-2.5 bg-muted/30 p-3 rounded-lg border">
-              <div className="flex items-center justify-between">
-                <Label className="text-xs font-medium">{t("scope.project", "Chọn Không gian làm việc (Workspace)")}</Label>
-                {!showNewProjectForm && (
-                  <button
-                    type="button"
-                    onClick={() => setShowNewProjectForm(true)}
-                    className="text-xs text-primary font-medium hover:underline flex items-center gap-1 cursor-pointer"
-                  >
-                    <span className="material-symbols-outlined text-sm">add_circle</span>
-                    + Tạo không gian mới
-                  </button>
-                )}
-              </div>
-
-              {!showNewProjectForm ? (
-                <>
-                  {projects.length === 0 ? (
-                    <div className="p-3 text-center border border-dashed rounded-lg bg-background flex flex-col items-center gap-2">
-                      <span className="material-symbols-outlined text-muted-foreground text-2xl">folder_off</span>
-                      <p className="text-xs text-muted-foreground">Chưa có Không gian làm việc nào trong hệ thống.</p>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setShowNewProjectForm(true)}
-                        className="text-xs h-7 gap-1"
-                      >
-                        <span className="material-symbols-outlined text-sm">add</span>
-                        Tạo không gian làm việc đầu tiên
-                      </Button>
-                    </div>
-                  ) : (
-                    <Select value={scopeId} onValueChange={(v) => setScopeId(v ?? "")}>
-                      <SelectTrigger className="bg-background">
-                        <span>{scopeId ? (projects.find(p => p.id === scopeId)?.name ?? "Chọn workspace...") : "Chọn workspace..."}</span>
-                      </SelectTrigger>
-                      <SelectContent>
-                        {projects.map((p) => (
-                          <SelectItem key={p.id} value={p.id}>
-                            {p.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                </>
-              ) : (
-                <div className="flex flex-col gap-2 p-2.5 rounded-lg border bg-background">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold">Tạo Không gian làm việc mới</span>
-                    <button
-                      type="button"
-                      onClick={() => setShowNewProjectForm(false)}
-                      className="text-muted-foreground hover:text-foreground text-xs font-bold"
-                    >
-                      ×
-                    </button>
-                  </div>
-                  <Input
-                    placeholder="Tên không gian làm việc (VD: Ban Pháp chế, Dự án X...)"
-                    value={newProjectName}
-                    onChange={(e) => setNewProjectName(e.target.value)}
-                    className="text-xs h-8"
-                  />
-                  <Input
-                    placeholder="Mô tả ngắn (tùy chọn)"
-                    value={newProjectDesc}
-                    onChange={(e) => setNewProjectDesc(e.target.value)}
-                    className="text-xs h-8"
-                  />
-                  <div className="flex justify-end gap-1.5 mt-1">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setShowNewProjectForm(false)}
-                      className="h-7 text-xs"
-                    >
-                      Hủy
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      disabled={!newProjectName.trim() || creatingProject}
-                      onClick={handleCreateProject}
-                      className="h-7 text-xs bg-primary text-primary-foreground gap-1"
-                    >
-                      {creatingProject ? (
-                        <>
-                          <span className="material-symbols-outlined animate-spin text-xs">progress_activity</span>
-                          Đang tạo...
-                        </>
-                      ) : (
-                        "Tạo & Chọn ngay"
-                      )}
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Scope change confirmation dialog */}
+          {/* Scope change confirmation notice */}
           {pendingConfirm && (
             <div className="rounded-lg border border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/30 p-3 flex flex-col gap-2.5">
               <div className="flex items-start gap-2">

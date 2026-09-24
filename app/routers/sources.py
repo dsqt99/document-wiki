@@ -792,7 +792,7 @@ async def update_source(
 
     if body.scope_type is not None:
         source.scope_type = body.scope_type
-        source.scope_id = body.scope_id if body.scope_type == "project" else None
+        source.scope_id = None
 
     # Handle department assignments
     new_dept_ids = old_dept_ids
@@ -810,8 +810,8 @@ async def update_source(
         )
         for did in body.department_ids:
             db.add(SourceDepartment(source_id=source_id, department_id=did))
-    elif body.scope_type in ("global", "project"):
-        # If explicitly switched to global or project without specifying depts, clear department links
+    elif body.scope_type == "global":
+        # If explicitly switched to global without specifying depts, clear department links
         new_dept_ids = set()
         await db.execute(
             sql_delete(SourceDepartment).where(SourceDepartment.source_id == source_id)

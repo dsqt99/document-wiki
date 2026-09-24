@@ -200,7 +200,6 @@ from app.routers import (  # noqa: E402
     notes,
     notifications,
     oauth,
-    projects,
     rbac,
 
     skill_contributions,
@@ -215,7 +214,6 @@ from app.routers import (  # noqa: E402
 app.include_router(oauth.wellknown_router)
 app.include_router(oauth.router, prefix="/oauth", tags=["oauth"])
 app.include_router(auth.router, prefix="/api", tags=["auth"])
-app.include_router(projects.router, prefix="/api", tags=["projects"])
 app.include_router(sources.router, prefix="/api", tags=["sources"])
 app.include_router(notes.router, prefix="/api", tags=["notes"])
 app.include_router(wiki_branches.router, prefix="/api", tags=["wiki-branches"])

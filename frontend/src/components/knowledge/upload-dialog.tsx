@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
-import { api, apiUpload } from "@/lib/api";
+import { useState, useRef, useCallback } from "react";
+import { apiUpload } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -40,16 +40,6 @@ type Props = {
 };
 
 const ACCEPTED_EXTENSIONS = ["pdf", "docx", "xlsx", "xls", "csv", "txt", "md", "pptx"];
-const ACCEPTED_MIMES = [
-  "application/pdf",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  "application/vnd.ms-excel",
-  "text/plain",
-  "text/csv",
-  "text/markdown",
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-];
 const ACCEPT_STRING = ACCEPTED_EXTENSIONS.map((e) => `.${e}`).join(",");
 
 function getFileExtension(name: string): string {
@@ -102,9 +92,7 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
   const [files, setFiles] = useState<File[]>([]);
   const [typeId, setTypeId] = useState("");
   const [selectedDepts, setSelectedDepts] = useState<string[]>([]);
-  const [scopeType, setScopeType] = useState("global");
-  const [scopeId, setScopeId] = useState("");
-  const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
+  const [scopeType, setScopeType] = useState<"global" | "department">("global");
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<string>("");
   const [error, setError] = useState("");
@@ -117,13 +105,6 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
       prev.includes(deptId) ? prev.filter((d) => d !== deptId) : [...prev, deptId]
     );
   };
-
-  useEffect(() => {
-    if (!open) return;
-    api<{ id: string; name: string }[]>("/api/projects")
-      .then((data) => setProjects(Array.isArray(data) ? data : []))
-      .catch(() => setProjects([]));
-  }, [open]);
 
   const addFiles = useCallback((incoming: File[]) => {
     if (!incoming.length) return;
@@ -195,6 +176,11 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
 
   const handleUpload = async () => {
     if (files.length === 0) return;
+    if (scopeType === "department" && selectedDepts.length === 0) {
+      setError(t("dept.selectAtLeastOne", "Vui lòng chọn ít nhất một phòng ban"));
+      return;
+    }
+
     setUploading(true);
     setError("");
     let successCount = 0;
@@ -209,13 +195,10 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
         formData.append("file", f);
         if (typeId) formData.append("knowledge_type_id", typeId);
 
-        if (selectedDepts.length > 0) {
+        if (scopeType === "department" && selectedDepts.length > 0) {
           formData.append("department_ids", selectedDepts.join(","));
         }
         formData.append("scope_type", scopeType);
-        if (scopeType !== "global" && scopeId) {
-          formData.append("scope_id", scopeId);
-        }
 
         await apiUpload("/api/sources/upload", formData);
         successCount++;
@@ -234,7 +217,6 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
       setTypeId("");
       setSelectedDepts([]);
       setScopeType("global");
-      setScopeId("");
     } else {
       if (successCount > 0) {
         onUploaded();
@@ -252,10 +234,10 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
         {/* Fixed Header */}
         <DialogHeader className="px-6 pt-5 pb-3 border-b border-border/60 shrink-0 pr-12">
           <DialogTitle className="text-xl font-heading font-semibold text-foreground">
-            {t("knowledge.upload.title", "Upload Documents")}
+            {t("knowledge.upload.title", "Tải lên tài liệu")}
           </DialogTitle>
           <p className="text-xs text-muted-foreground mt-0.5">
-            {t("knowledge.upload.subtitle", "Upload one or multiple files to your knowledge base")}
+            {t("knowledge.upload.subtitle", "Tải lên một hoặc nhiều tài liệu vào cơ sở tri thức")}
           </p>
         </DialogHeader>
 
@@ -277,7 +259,7 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
 
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
-              <Label className="text-sm font-medium">{t("knowledge.upload.files", "Files")}</Label>
+              <Label className="text-sm font-medium">{t("knowledge.upload.files", "Tập tin")}</Label>
               {files.length > 0 && (
                 <span className="text-xs text-muted-foreground">
                   {files.length} file{files.length > 1 ? "s" : ""} · {formatFileSize(totalBytes)}
@@ -315,13 +297,13 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
                 <div className="text-center">
                   <p className={`text-sm font-medium ${isDragInvalid ? "text-destructive" : "text-foreground"}`}>
                     {isDragInvalid
-                      ? t("knowledge.upload.dropzoneInvalid", "Unsupported file format!")
+                      ? t("knowledge.upload.dropzoneInvalid", "Định dạng file không được hỗ trợ!")
                       : dragOver
-                      ? t("knowledge.upload.dropzoneActive", "Drop files here")
-                      : t("knowledge.upload.dropzone", "Drag & drop files here or click to browse")}
+                      ? t("knowledge.upload.dropzoneActive", "Thả tài liệu vào đây")
+                      : t("knowledge.upload.dropzone", "Kéo thả tài liệu vào đây hoặc nhấp để duyệt")}
                   </p>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    {t("knowledge.upload.hint", "Accepted: PDF, DOCX, XLSX, CSV, TXT, MD, PPTX (max 50 MB)")}
+                    {t("knowledge.upload.hint", "Chấp nhận: PDF, DOCX, XLSX, CSV, TXT, MD, PPTX (tối đa 50 MB)")}
                   </p>
                 </div>
               </div>
@@ -355,7 +337,7 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
                             type="button"
                             onClick={() => removeFile(idx)}
                             className="p-1 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-                            title="Remove file"
+                            title="Xóa tài liệu"
                           >
                             <span className="material-symbols-outlined" style={{ fontSize: 16 }}>close</span>
                           </button>
@@ -375,14 +357,14 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
                       className="text-xs h-8 gap-1.5"
                     >
                       <span className="material-symbols-outlined" style={{ fontSize: 15 }}>add</span>
-                      {t("knowledge.upload.addMore", "Add more files")}
+                      {t("knowledge.upload.addMore", "Thêm tài liệu")}
                     </Button>
                     <button
                       type="button"
                       onClick={() => setFiles([])}
                       className="text-xs text-muted-foreground hover:text-destructive transition-colors"
                     >
-                      {t("knowledge.upload.clearAll", "Clear all")}
+                      {t("knowledge.upload.clearAll", "Xóa tất cả")}
                     </button>
                   </div>
                 )}
@@ -399,7 +381,7 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
 
           {/* Knowledge Type */}
           <div className="flex flex-col gap-1.5">
-            <Label className="text-xs font-medium">{t("knowledge.upload.typeLabel", "Knowledge Type")}</Label>
+            <Label className="text-xs font-medium">{t("knowledge.upload.typeLabel", "Phân loại tri thức")}</Label>
             <Select value={typeId} onValueChange={(v) => setTypeId(v ?? "")}>
               <SelectTrigger className="bg-background w-full h-9 text-xs">
                 {typeId ? (() => {
@@ -409,11 +391,11 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
                       <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }} />
                       <span>{item.name}</span>
                     </div>
-                  ) : <SelectValue placeholder={t("knowledge.upload.typePlaceholder", "Select type (optional)")} />;
-                })() : <SelectValue placeholder={t("knowledge.upload.typePlaceholder", "Select type (optional)")} />}
+                  ) : <SelectValue placeholder={t("knowledge.upload.typePlaceholder", "Chọn phân loại (tùy chọn)")} />;
+                })() : <SelectValue placeholder={t("knowledge.upload.typePlaceholder", "Chọn phân loại (tùy chọn)")} />}
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">{t("knowledge.upload.none", "None")}</SelectItem>
+                <SelectItem value="">{t("knowledge.upload.none", "Không chọn")}</SelectItem>
                 {types.map((typeItem) => (
                   <SelectItem key={typeItem.id} value={typeItem.id}>
                     <div className="flex items-center gap-2">
@@ -426,108 +408,110 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
             </Select>
           </div>
 
-          {/* Departments */}
-          <div className="flex flex-col gap-1.5">
-            <div className="flex items-center justify-between">
-              <Label className="text-xs font-medium">{t("knowledge.upload.departments", "Departments")}</Label>
-              <span className="text-[11px] text-muted-foreground">{t("knowledge.upload.deptHint", "Leave empty for global access")}</span>
-            </div>
-            <div className="border rounded-lg p-2 max-h-32 overflow-y-auto bg-background divide-y divide-border/40">
-              {departments.length === 0 ? (
-                <span className="text-xs text-muted-foreground px-1">{t("dept.noDepts", "No departments available")}</span>
-              ) : (
-                departments.map((d) => (
-                  <label
-                    key={d.id}
-                    className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted/50 cursor-pointer text-xs"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedDepts.includes(d.id)}
-                      onChange={() => toggleDept(d.id)}
-                      className="rounded border-border"
-                    />
-                    <span>{d.name}</span>
-                  </label>
-                ))
-              )}
-            </div>
-            {selectedDepts.length > 0 && (
-              <div className="flex flex-wrap gap-1 mt-0.5">
-                {selectedDepts.map((id) => {
-                  const name = departments.find((d) => d.id === id)?.name ?? id;
-                  return (
-                    <span
-                      key={id}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-primary/10 text-primary"
-                    >
-                      {name}
-                      <button type="button" onClick={() => toggleDept(id)} className="hover:text-destructive">×</button>
-                    </span>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          {/* Visibility / Scope Selector */}
+          <div className="flex flex-col gap-1.5 pt-1 border-t border-border/40">
+            <Label className="text-xs font-medium flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-sm">visibility</span>
+              {t("knowledge.upload.visibility", "Phạm vi hiển thị")}
+            </Label>
+            <p className="text-[11px] text-muted-foreground">
+              {t("knowledge.edit.scopeHint", "Chọn phạm vi hiển thị và quyền truy cập của tài liệu.")}
+            </p>
 
-          {/* Visibility / Scope */}
-          <div className="flex flex-col gap-1.5">
-            <Label className="text-xs font-medium">{t("knowledge.upload.visibility", "Visibility")}</Label>
             <Select
               value={scopeType}
-              onValueChange={(v) => {
-                const val = v ?? "global";
-                setScopeType(val);
-                if (val === "global") setScopeId("");
+              onValueChange={(val) => {
+                const mode = (val || "global") as "global" | "department";
+                setScopeType(mode);
+                if (mode === "global") {
+                  setSelectedDepts([]);
+                }
               }}
             >
               <SelectTrigger className="bg-background w-full h-9 text-xs">
                 <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined" style={{ fontSize: 14 }}>
-                    {scopeType === "global" ? "public" : "folder_special"}
+                  <span className="material-symbols-outlined text-primary" style={{ fontSize: 15 }}>
+                    {scopeType === "global" ? "public" : "apartment"}
                   </span>
-                  <span className="capitalize">{scopeType === "project" ? t("scope.project", "Workspace") : t("scope.global", "Global")}</span>
+                  <span className="font-medium">
+                    {scopeType === "global"
+                      ? t("knowledge.scope.global", "Toàn hệ thống")
+                      : t("knowledge.scope.department", "Theo phòng ban")}
+                  </span>
                 </div>
               </SelectTrigger>
               <SelectContent className="min-w-[220px]">
                 <SelectItem value="global">
                   <div className="flex items-center gap-2 text-xs">
                     <span className="material-symbols-outlined" style={{ fontSize: 14 }}>public</span>
-                    {t("scope.global", "Global")}
+                    <div>
+                      <div className="font-medium">{t("knowledge.scope.global", "Toàn hệ thống")}</div>
+                      <div className="text-[10px] text-muted-foreground">Hiển thị cho tất cả cán bộ trong hệ thống</div>
+                    </div>
                   </div>
                 </SelectItem>
-                <SelectItem value="project">
+                <SelectItem value="department">
                   <div className="flex items-center gap-2 text-xs">
-                    <span className="material-symbols-outlined" style={{ fontSize: 14 }}>folder_special</span>
-                    {t("scope.project", "Workspace")}
+                    <span className="material-symbols-outlined" style={{ fontSize: 14 }}>apartment</span>
+                    <div>
+                      <div className="font-medium">{t("knowledge.scope.department", "Theo phòng ban")}</div>
+                      <div className="text-[10px] text-muted-foreground">Giới hạn trong các phòng ban được chọn</div>
+                    </div>
                   </div>
                 </SelectItem>
               </SelectContent>
             </Select>
 
-            {scopeType === "project" && (
-              <div className="flex flex-col gap-1 mt-1">
-                <Label className="text-xs font-medium">{t("scope.project", "Workspace")}</Label>
-                <Select value={scopeId} onValueChange={(v) => setScopeId(v ?? "")}>
-                  <SelectTrigger className="bg-background h-9 text-xs">
-                    <span>{scopeId ? (projects.find((p) => p.id === scopeId)?.name ?? "Select...") : "Select workspace..."}</span>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {projects.map((p) => (
-                      <SelectItem key={p.id} value={p.id} className="text-xs">
-                        {p.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+            {scopeType === "global" && (
+              <p className="text-[11px] text-blue-700 dark:text-blue-300 bg-blue-50/60 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900 rounded-lg p-2.5 flex items-start gap-1.5 mt-0.5">
+                <span className="material-symbols-outlined shrink-0 text-blue-600 dark:text-blue-400" style={{ fontSize: 14, marginTop: 1 }}>public</span>
+                <span>{t("knowledge.upload.globalNotice", "Nội dung tài liệu sẽ được biên soạn vào wiki chung và hiển thị cho tất cả nhân sự.")}</span>
+              </p>
             )}
 
-            {scopeType === "global" && (
-              <p className="text-[11px] text-amber-600 dark:text-amber-400 flex items-start gap-1.5 mt-0.5">
-                <span className="material-symbols-outlined shrink-0" style={{ fontSize: 13, marginTop: 1 }}>warning</span>
-                {t("knowledge.upload.globalNotice", "Document content will be compiled into the shared wiki and visible to all employees.")}
-              </p>
+            {scopeType === "department" && (
+              <div className="flex flex-col gap-1.5 bg-muted/30 p-2.5 rounded-lg border mt-1">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-medium">{t("knowledge.upload.departments", "Chọn phòng ban được truy cập:")}</Label>
+                  <span className="text-[11px] text-muted-foreground">Đã chọn {selectedDepts.length}</span>
+                </div>
+                <div className="border rounded-lg p-2 max-h-32 overflow-y-auto bg-background divide-y divide-border/40">
+                  {departments.length === 0 ? (
+                    <span className="text-xs text-muted-foreground px-1">{t("dept.noDepts", "Chưa có phòng ban")}</span>
+                  ) : (
+                    departments.map((d) => (
+                      <label
+                        key={d.id}
+                        className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted/50 cursor-pointer text-xs"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedDepts.includes(d.id)}
+                          onChange={() => toggleDept(d.id)}
+                          className="rounded border-border"
+                        />
+                        <span>{d.name}</span>
+                      </label>
+                    ))
+                  )}
+                </div>
+                {selectedDepts.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-0.5">
+                    {selectedDepts.map((id) => {
+                      const name = departments.find((d) => d.id === id)?.name ?? id;
+                      return (
+                        <span
+                          key={id}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-primary/10 text-primary border border-primary/20"
+                        >
+                          {name}
+                          <button type="button" onClick={() => toggleDept(id)} className="hover:text-destructive font-bold ml-0.5">×</button>
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -538,9 +522,9 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
             {uploading ? (
               <span className="text-primary font-medium">{uploadProgress}</span>
             ) : files.length > 0 ? (
-              `${files.length} ${t("knowledge.upload.files", "files")}`
+              `${files.length} ${t("knowledge.upload.files", "tập tin")}`
             ) : (
-              t("knowledge.upload.noFiles", "No files selected")
+              t("knowledge.upload.noFiles", "Chưa chọn tài liệu")
             )}
           </div>
           <div className="flex items-center gap-2">
@@ -551,7 +535,7 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
               disabled={uploading}
               className="text-xs h-8"
             >
-              {t("common.cancel", "Cancel")}
+              {t("common.cancel", "Hủy")}
             </Button>
             <Button
               size="sm"
@@ -562,10 +546,10 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
               {uploading ? (
                 <>
                   <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
-                  <span>{t("knowledge.upload.uploading", "Uploading...")}</span>
+                  <span>{t("knowledge.upload.uploading", "Đang tải lên...")}</span>
                 </>
               ) : (
-                `${t("knowledge.upload.startBtn", "Upload")} ${files.length > 1 ? `(${files.length})` : ""}`
+                `${t("knowledge.upload.startBtn", "Tải lên")} ${files.length > 1 ? `(${files.length})` : ""}`
               )}
             </Button>
           </div>
