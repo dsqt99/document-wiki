@@ -364,7 +364,7 @@ class OpenAIVision(VisionProvider):
                         {"type": "text", "text": prompt},
                         {
                             "type": "image_url",
-                            "image_url": {"url": data_url, "detail": "low"},
+                            "image_url": {"url": data_url, "detail": "auto"},
                         },
                     ],
                 }

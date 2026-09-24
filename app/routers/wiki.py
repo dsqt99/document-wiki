@@ -193,6 +193,7 @@ def _build_wiki_scope_filter(user: Employee):
 async def list_wiki_pages(
     page_type: Optional[str] = Query(None),
     knowledge_type_slug: Optional[str] = Query(None),
+    source_id: Optional[uuid.UUID] = Query(None, description="Filter pages belonging to a specific source"),
     scope_type: Optional[str] = Query(None, description="Filter to a specific scope: global, department, or project"),
     scope_id: Optional[str] = Query(None, description="UUID of the scope (required for department/project)"),
     limit: Optional[int] = Query(None, ge=1, le=50000),
@@ -249,6 +250,8 @@ async def list_wiki_pages(
         stmt = stmt.where(WikiPage.page_type == page_type_str)
     if kt_str:
         stmt = stmt.where(WikiPage.knowledge_type_slugs.any(kt_str))  # type: ignore[arg-type]
+    if source_id:
+        stmt = stmt.where(WikiPage.source_ids.contains([source_id]))
 
     if limit_val is not None:
         stmt = stmt.limit(limit_val)

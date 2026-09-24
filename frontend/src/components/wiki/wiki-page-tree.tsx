@@ -19,6 +19,7 @@ import {
   computeSourceStats,
   WikiSourceItem,
 } from "@/lib/wiki-store";
+import { parseSourceLegalMeta } from "@/components/knowledge/knowledge-table/utils";
 
 // Scope type ordering for grouped view: global → department → project.
 const SCOPE_TYPE_ORDER: Record<string, number> = {
@@ -649,41 +650,53 @@ export function WikiPageTree({
             return (
               <div key={group.key} className="mb-1">
                 {/* Document folder header */}
-                <div
-                  onClick={() => toggleDocument(group.id)}
-                  className={cn(
-                    "flex items-center gap-1.5 px-2.5 py-1.5 mx-1 rounded-lg transition-colors cursor-pointer select-none text-xs",
-                    hasActivePage
-                      ? "bg-primary/10 text-primary font-medium"
-                      : "hover:bg-accent/40 text-foreground"
-                  )}
-                  title={`Bấm để ${isExpanded ? "thu gọn" : "mở rộng"} (${group.total} trang)`}
-                >
-                  <button
-                    type="button"
-                    className="p-0.5 text-muted-foreground hover:text-foreground transition-colors shrink-0"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleDocument(group.id);
-                    }}
-                  >
-                    <span className="material-symbols-outlined text-xs">
-                      {isExpanded ? "expand_more" : "chevron_right"}
-                    </span>
-                  </button>
-                  <span
-                    className="material-symbols-outlined text-primary/80 shrink-0"
-                    style={{ fontSize: 15 }}
-                  >
-                    {group.id === "other" ? "folder" : "description"}
-                  </span>
-                  <span className="flex-1 truncate font-medium text-[11px]" title={group.title}>
-                    {group.title}
-                  </span>
-                  <span className="text-[10px] text-muted-foreground tabular-nums bg-muted px-1.5 py-0.5 rounded-full shrink-0">
-                    {group.total}
-                  </span>
-                </div>
+                {(() => {
+                  const legalMeta = group.source ? parseSourceLegalMeta(group.source) : null;
+                  return (
+                    <div
+                      onClick={() => toggleDocument(group.id)}
+                      className={cn(
+                        "flex items-center gap-1.5 px-2.5 py-1.5 mx-1 rounded-lg transition-colors cursor-pointer select-none text-xs",
+                        hasActivePage
+                          ? "bg-primary/10 text-primary font-medium"
+                          : "hover:bg-accent/40 text-foreground"
+                      )}
+                      title={group.title}
+                    >
+                      <button
+                        type="button"
+                        className="p-0.5 text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleDocument(group.id);
+                        }}
+                      >
+                        <span className="material-symbols-outlined text-xs">
+                          {isExpanded ? "expand_more" : "chevron_right"}
+                        </span>
+                      </button>
+                      <span
+                        className="material-symbols-outlined shrink-0"
+                        style={{ fontSize: 16, color: legalMeta?.badgeColor || "inherit" }}
+                      >
+                        {group.id === "other" ? "folder" : legalMeta?.icon || "description"}
+                      </span>
+                      <div className="flex-1 min-w-0 flex items-center gap-1">
+                        {legalMeta?.docNumber && (
+                          <span className="text-[10px] font-mono font-semibold px-1 rounded bg-muted text-foreground/80 shrink-0">
+                            {legalMeta.docNumber}
+                          </span>
+                        )}
+                        <span className="truncate font-medium text-[11px]" title={group.title}>
+                          {group.title}
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-muted-foreground tabular-nums bg-muted px-1.5 py-0.5 rounded-full shrink-0">
+                        {group.total}
+                      </span>
+                    </div>
+                  );
+                })()}
 
                 {/* Document articles list */}
                 {isExpanded && (

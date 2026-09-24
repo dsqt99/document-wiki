@@ -143,7 +143,7 @@ async def ingest_file_task(ctx: dict, source_id: str):
                         vision_provider = await registry.get_vision()
                     except Exception:
                         pass  # OCR fallback unavailable — continue without it
-                    pages_data = await _extract_text_from_file(file_data, file_name, vision_provider=vision_provider)
+                    pages_data = await _extract_text_from_file(file_data, file_name, vision_provider=vision_provider, tracker=tracker)
 
                     if not pages_data or not any((p.get("content") or "").strip() for p in pages_data):
                         source.status = "error"
@@ -233,8 +233,10 @@ async def ingest_file_task(ctx: dict, source_id: str):
 
                 except BaseException as e:
                     logger.error(f"Pre-processing failed for {source_id}: {e}")
-                    error_msg = str(e)[:500]
-                    progress_msg = f"Error: {str(e)[:200]}"
+                    err_type = type(e).__name__
+                    err_msg = str(e).strip() or err_type
+                    error_msg = f"{err_type}: {err_msg}" if err_msg != err_type else err_type
+                    progress_msg = f"Error: {error_msg[:200]}"
 
                     async def _mark_error_file() -> None:
                         from app.database import async_session_factory as _sf

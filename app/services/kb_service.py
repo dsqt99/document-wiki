@@ -9,6 +9,7 @@ Provider-agnostic: uses ProviderRegistry to resolve embedding/LLM/vision
 providers from app_config at runtime.
 """
 
+import asyncio
 import uuid
 from typing import Optional
 
@@ -214,6 +215,7 @@ async def _extract_text_from_file(
     file_data: bytes,
     file_name: str,
     vision_provider=None,
+    tracker=None,
 ) -> list[dict]:
     """Extract text from a binary file, returning per-page records.
 
@@ -247,24 +249,38 @@ async def _extract_text_from_file(
                 "table, reproduce it as a markdown table. If there is no text "
                 "at all, respond with an empty string."
             )
+            total_empty = len(empty_pages)
             logger.info(
-                f"OCR processing: {len(empty_pages)}/{len(pages_data)} empty pages in '{file_name}'. "
+                f"OCR processing: {total_empty}/{len(pages_data)} empty pages in '{file_name}'. "
                 f"Dedicated OCR configured: {ocr_service.is_configured}, Vision provider available: {bool(vision_provider)}"
             )
 
+            # Pre-render page images (alpha=False, JPEG quality 85 for speed & low network bandwidth)
+            page_images: list[tuple[int, int, bytes]] = []
             for idx, page_num in empty_pages:
                 try:
                     page = doc[idx]
-                    # Render at 2x for better OCR quality
-                    pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
-                    img_bytes = pix.tobytes("png")
+                    pix = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
+                    img_bytes = pix.tobytes("jpg", jpg_quality=85)
+                    page_images.append((idx, page_num, img_bytes))
+                except Exception as render_err:
+                    logger.warning(f"Failed to render page {page_num} of '{file_name}': {render_err}")
+
+            # Process OCR with concurrency (5 concurrent requests to avoid rate limits while speeding up 5x)
+            sem = asyncio.Semaphore(5)
+            completed_count = 0
+            progress_lock = asyncio.Lock()
+
+            async def _process_page_ocr(idx: int, page_num: int, img_bytes: bytes) -> None:
+                nonlocal completed_count
+                async with sem:
                     ocr_text: Optional[str] = None
 
                     # Step 1: Try dedicated OCR model (GLM-OCR) first
                     if ocr_service.is_configured:
                         try:
                             ocr_text = await ocr_service.ocr_image(
-                                img_bytes, mime_type="image/png", prompt=ocr_prompt,
+                                img_bytes, mime_type="image/jpeg", prompt=ocr_prompt,
                             )
                             if ocr_text and ocr_text.strip():
                                 logger.info(f"GLM-OCR page {page_num}: {len(ocr_text)} chars")
@@ -274,10 +290,10 @@ async def _extract_text_from_file(
 
                     # Step 2: Fallback to Vision Provider if dedicated OCR didn't produce text
                     if (not ocr_text or not ocr_text.strip()) and vision_provider:
-                        logger.info(f"Fallback to vision provider for page {page_num} of '{file_name}'")
+                        logger.info(f"Vision OCR processing page {page_num}/{len(pages_data)} of '{file_name}'")
                         try:
                             ocr_text = await vision_provider.analyze_image(
-                                img_bytes, mime_type="image/png", prompt=ocr_prompt,
+                                img_bytes, mime_type="image/jpeg", prompt=ocr_prompt,
                             )
                             if ocr_text and ocr_text.strip():
                                 logger.debug(f"Vision provider OCR page {page_num}: {len(ocr_text)} chars")
@@ -286,8 +302,23 @@ async def _extract_text_from_file(
 
                     if ocr_text and ocr_text.strip():
                         pages_data[idx]["content"] = ocr_text.strip()
-                except Exception as e:
-                    logger.warning(f"OCR failed completely for page {page_num} of '{file_name}': {e}")
+
+                    async with progress_lock:
+                        completed_count += 1
+                        if tracker:
+                            try:
+                                prog = 15 + int(10 * completed_count / total_empty)
+                                await tracker.update(
+                                    prog,
+                                    f"Vision OCR: {completed_count}/{total_empty} trang...",
+                                )
+                            except Exception:
+                                pass
+
+            await asyncio.gather(
+                *[_process_page_ocr(idx, pnum, img_b) for idx, pnum, img_b in page_images],
+                return_exceptions=True,
+            )
 
         doc.close()
         return pages_data

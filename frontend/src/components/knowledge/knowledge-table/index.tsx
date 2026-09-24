@@ -25,12 +25,14 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { ScopeBadge } from "@/components/shared/scope-badge";
 
 import { KnowledgeType, Department, Source } from "./types";
-import { fileIcons, getFileExt } from "./utils";
+import { fileIcons, getFileExt, parseSourceLegalMeta, LegalCategory } from "./utils";
 import { StatusDot } from "./status-dot";
 import { EditSourceDialog } from "./edit-source-dialog";
 import { PlanReviewDialog } from "./plan-review-dialog";
 import { ExtractionReviewDialog } from "./extraction-review-dialog";
+import { SourceArticlesDrawer } from "./source-articles-drawer";
 import { useI18n } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 
 type Props = {
   sources: Source[];
@@ -75,7 +77,18 @@ export function KnowledgeTable({
   const [retryingIds, setRetryingIds] = React.useState<Set<string>>(new Set());
   const [searchInput, setSearchInput] = React.useState(search);
   const [statusFilter, setStatusFilter] = React.useState<string | null>(null);
+  const [legalCategoryFilter, setLegalCategoryFilter] = React.useState<LegalCategory>("all");
+  const [expandedSourceIds, setExpandedSourceIds] = React.useState<Set<string>>(new Set());
   const router = useRouter();
+
+  const toggleExpand = (id: string) => {
+    setExpandedSourceIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const handleDelete = async (id: string) => {
     if (!confirm(t("knowledge.deleteConfirm", "Delete this document? This cannot be undone."))) return;
@@ -106,15 +119,46 @@ export function KnowledgeTable({
     onSearch(searchInput);
   };
 
-  const filteredSources = statusFilter
-    ? sources.filter((s) => s.status === statusFilter)
-    : sources;
+  const categoryCounts = React.useMemo(() => {
+    const counts: Record<LegalCategory, number> = {
+      all: sources.length,
+      luat: 0,
+      nghi_dinh: 0,
+      thong_tu: 0,
+      vbhn: 0,
+      quyet_dinh: 0,
+      other: 0,
+      khac: 0,
+    };
+    for (const s of sources) {
+      const meta = parseSourceLegalMeta(s);
+      counts[meta.category] = (counts[meta.category] || 0) + 1;
+    }
+    return counts;
+  }, [sources]);
 
-  const hasActiveFilters = selectedType || selectedDepartment || statusFilter;
+  const filteredSources = React.useMemo(() => {
+    let list = sources;
+    if (statusFilter) {
+      list = list.filter((s) => s.status === statusFilter);
+    }
+    if (legalCategoryFilter !== "all") {
+      list = list.filter((s) => {
+        const meta = parseSourceLegalMeta(s);
+        return meta.category === legalCategoryFilter;
+      });
+    }
+    return list;
+  }, [sources, statusFilter, legalCategoryFilter]);
+
+  const hasActiveFilters = Boolean(
+    selectedType || selectedDepartment || statusFilter || legalCategoryFilter !== "all" || searchInput
+  );
   const clearAllFilters = () => {
     onSelectType(null);
     onSelectDepartment(null);
     setStatusFilter(null);
+    setLegalCategoryFilter("all");
     if (searchInput) { setSearchInput(""); onSearch(""); }
   };
 
@@ -131,6 +175,51 @@ export function KnowledgeTable({
           {actionError}
         </div>
       )}
+
+      {/* Legal Category Pills Bar */}
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+        {(
+          [
+            { id: "all", label: "Tất cả", icon: "library_books" },
+            { id: "luat", label: "Luật", icon: "gavel" },
+            { id: "nghi_dinh", label: "Nghị định", icon: "policy" },
+            { id: "thong_tu", label: "Thông tư", icon: "description" },
+            { id: "vbhn", label: "Văn bản hợp nhất", icon: "integration_instructions" },
+            { id: "quyet_dinh", label: "Quyết định", icon: "verified" },
+            { id: "khac", label: "Khác", icon: "folder" },
+          ] as const
+        ).map((tab) => {
+          const count = categoryCounts[tab.id] ?? 0;
+          if (tab.id !== "all" && count === 0) return null;
+          const active = legalCategoryFilter === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setLegalCategoryFilter(tab.id)}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all cursor-pointer shrink-0 shadow-2xs",
+                active
+                  ? "bg-primary text-primary-foreground border-primary font-semibold shadow-xs"
+                  : "bg-card border-border text-muted-foreground hover:text-foreground hover:bg-secondary/70"
+              )}
+            >
+              <span className="material-symbols-outlined text-[15px]">{tab.icon}</span>
+              <span>{tab.label}</span>
+              <span
+                className={cn(
+                  "px-1.5 py-0.2 rounded-full text-[10px] tabular-nums font-semibold",
+                  active
+                    ? "bg-primary-foreground/20 text-primary-foreground"
+                    : "bg-muted text-muted-foreground"
+                )}
+              >
+                {count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
 
       {/* Inline Filter Bar */}
       <div className="flex flex-wrap items-center gap-2 mb-1">
@@ -217,7 +306,7 @@ export function KnowledgeTable({
         {/* Spacer + Count */}
         <div className="ml-auto shrink-0">
           <span className="text-xs text-muted-foreground tabular-nums">
-            {statusFilter ? `${filteredSources.length} ${t("common.of", "of")} ` : ""}{total} {t("knowledge.docCount", "document")}{total !== 1 ? "s" : ""}
+            {statusFilter || legalCategoryFilter !== "all" ? `${filteredSources.length} ${t("common.of", "of")} ` : ""}{total} {t("knowledge.docCount", "document")}{total !== 1 ? "s" : ""}
           </span>
         </div>
       </div>
@@ -240,195 +329,283 @@ export function KnowledgeTable({
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">{t("knowledge.colDocument", "Document")}</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">{t("knowledge.colCategory", "Category")}</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">{t("knowledge.colVisibility", "Visibility")}</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">{t("knowledge.colDepartment", "Department")}</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">{t("knowledge.colPages", "Pages")}</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">{t("knowledge.colWiki", "Wiki")}</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">{t("knowledge.colContributedBy", "Contributed By")}</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">{t("knowledge.colStatus", "Status")}</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">{t("common.created", "Created")}</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground text-right w-[60px]"></TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground min-w-[340px]">
+                  Văn bản quy phạm pháp luật
+                </TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground w-[160px]">
+                  Phân loại & Phạm vi
+                </TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground w-[80px]">
+                  Số trang
+                </TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground w-[170px]">
+                  Điều khoản Wiki
+                </TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground w-[110px]">
+                  Trạng thái
+                </TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground w-[100px]">
+                  Ngày tải
+                </TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground text-right w-[50px]"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredSources.map((source) => (
-                <TableRow key={source.id} className="group hover:bg-secondary/30 transition-colors">
-                  {/* Document name + icon */}
-                  <TableCell>
-                    <div className="flex items-center gap-2.5">
-                      <span className="material-symbols-outlined text-muted-foreground" style={{ fontSize: 18 }}>
-                        {fileIcons[getFileExt(source)] || (source.source_type === "url" ? "link" : "description")}
-                      </span>
-                      <div className="min-w-0">
-                        <Link href={`/wiki/source/${source.id}`} className="text-sm font-medium text-foreground truncate max-w-[280px] hover:text-primary hover:underline transition-colors">{source.title}</Link>
-                        {source.file_name && source.file_name !== source.title && (
-                          <p className="text-[10px] text-muted-foreground truncate max-w-[280px]">{source.file_name}</p>
-                        )}
-                      </div>
-                    </div>
-                  </TableCell>
+              {filteredSources.map((source) => {
+                const meta = parseSourceLegalMeta(source);
+                const isExpanded = expandedSourceIds.has(source.id);
+                const hasArticles = (source.wiki_page_count ?? 0) > 0;
 
-                  {/* Category (Knowledge Type) */}
-                  <TableCell>
-                    <div className="flex flex-wrap items-center gap-1">
-                      {source.knowledge_type_name ? (
-                        <Badge
-                          variant="outline"
-                          className="text-[10px] font-medium h-5 px-2"
-                          style={{
-                            borderColor: source.knowledge_type_color,
-                            color: source.knowledge_type_color,
-                          }}
-                        >
-                          {source.knowledge_type_name}
-                        </Badge>
-                      ) : (
-                        <span className="text-xs text-muted-foreground/50">—</span>
-                      )}
-                      {source.preserve_verbatim && (
-                        <Badge
-                          variant="secondary"
-                          className="text-[10px] font-medium h-5 px-2"
-                          title="Keep verbatim — skip wiki generation"
-                        >
-                          Verbatim
-                        </Badge>
-                      )}
-                    </div>
-                  </TableCell>
-
-                  {/* Visibility */}
-                  <TableCell>
-                    <ScopeBadge scopeType={source.scope_type} scopeId={source.scope_id} />
-                  </TableCell>
-
-                  {/* Department(s) */}
-                  <TableCell>
-                    {source.department_names && source.department_names.length > 0 ? (
-                      <div className="flex flex-wrap gap-1">
-                        {source.department_names.map((name, i) => (
-                          <span key={i} className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-secondary text-secondary-foreground">
-                            {name}
-                          </span>
-                        ))}
-                      </div>
-                    ) : (
-                      <span className="text-xs text-muted-foreground/50 italic">Global</span>
-                    )}
-                  </TableCell>
-
-                  {/* Page count */}
-                  <TableCell>
-                    <span className="text-xs text-muted-foreground tabular-nums">
-                      {source.page_count ?? "—"}
-                    </span>
-                  </TableCell>
-
-                  {/* Wiki page count */}
-                  <TableCell>
-                    {(source.wiki_page_count ?? 0) > 0 ? (
-                      <span className="text-xs text-foreground tabular-nums">
-                        {source.wiki_page_count}
-                      </span>
-                    ) : (
-                      <span className="text-xs text-muted-foreground/50">—</span>
-                    )}
-                  </TableCell>
-
-                  {/* Contributed by */}
-                  <TableCell>
-                    {source.contributed_by_name ? (
-                      <span className="text-xs text-muted-foreground">{source.contributed_by_name}</span>
-                    ) : (
-                      <span className="text-xs text-muted-foreground/50">—</span>
-                    )}
-                  </TableCell>
-
-                  {/* Status */}
-                  <TableCell>
-                    <StatusDot source={source} />
-                  </TableCell>
-
-                  {/* Created date */}
-                  <TableCell>
-                    <span className="text-xs text-muted-foreground tabular-nums">
-                      {new Date(source.created_at).toLocaleDateString("en-US", {
-                        month: "short", day: "numeric", year: "numeric",
-                      })}
-                    </span>
-                  </TableCell>
-
-                  {/* Actions */}
-                  <TableCell className="text-right">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-accent text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">
-                        <span className="material-symbols-outlined text-base">more_vert</span>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => router.push(`/wiki/source/${source.id}`)}>
-                          <span className="material-symbols-outlined mr-2" style={{ fontSize: 16 }}>visibility</span>
-                          {t("common.view", "View")}
-                        </DropdownMenuItem>
-                        {source.status === "ready" && (
-                          <DropdownMenuItem
-                            onClick={async () => {
-                              try {
-                                const detail = await api<{ download_url?: string }>(`/api/sources/${source.id}`);
-                                if (detail.download_url) window.open(detail.download_url, "_blank");
-                              } catch {}
-                            }}
-                          >
-                            <span className="material-symbols-outlined mr-2" style={{ fontSize: 16 }}>cloud_download</span>
-                            {t("common.download", "Download")}
-                          </DropdownMenuItem>
-                        )}
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem onClick={() => setEditSource(source)}>
-                          <span className="material-symbols-outlined mr-2" style={{ fontSize: 16 }}>edit</span>
-                          {t("common.edit", "Edit")}
-                        </DropdownMenuItem>
-                        {source.status === "plan_ready" && (
-                          <DropdownMenuItem onClick={() => setReviewPlanSource(source)}>
-                            <span className="material-symbols-outlined mr-2 text-blue-500" style={{ fontSize: 16 }}>
-                              fact_check
+                return (
+                  <React.Fragment key={source.id}>
+                    <TableRow className={cn(
+                      "group transition-colors",
+                      isExpanded ? "bg-accent/40" : "hover:bg-secondary/30"
+                    )}>
+                      {/* Document Details Column */}
+                      <TableCell className="py-3">
+                        <div className="flex items-start gap-3">
+                          {/* Legal Icon Badge */}
+                          <div className="pt-0.5 shrink-0">
+                            <span
+                              className={cn(
+                                "inline-flex items-center justify-center w-8 h-8 rounded-lg shadow-2xs border",
+                                meta.badgeBg,
+                                meta.badgeBorder
+                              )}
+                            >
+                              <span className="material-symbols-outlined text-lg" style={{ color: meta.badgeColor }}>
+                                {fileIcons[getFileExt(source)] || (source.source_type === "url" ? "link" : "gavel")}
+                              </span>
                             </span>
-                            {t("knowledge.status.plan_ready", "Review Plan")}
-                          </DropdownMenuItem>
+                          </div>
+
+                          <div className="min-w-0 flex-1 space-y-1">
+                            {/* Badges line: Category & Doc Number */}
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span
+                                className={cn(
+                                  "text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md border",
+                                  meta.badgeBg,
+                                  meta.badgeBorder
+                                )}
+                                style={{ color: meta.badgeColor }}
+                              >
+                                {meta.badgeLabel}
+                              </span>
+                              {meta.docNumber && (
+                                <span className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded-md bg-muted/80 text-foreground border border-border/80">
+                                  Số: {meta.docNumber}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Main Title: Full view, comfortable line-clamp */}
+                            <Link
+                              href={`/wiki/source/${source.id}`}
+                              className="block text-sm font-semibold text-foreground hover:text-primary transition-colors leading-snug line-clamp-2"
+                              title={source.title}
+                            >
+                              {source.title}
+                            </Link>
+
+                            {/* Subtitle: Authority, date, file name */}
+                            <div className="flex items-center gap-2.5 text-[11px] text-muted-foreground flex-wrap pt-0.5">
+                              {meta.issuingAuthority && (
+                                <span className="flex items-center gap-1 font-medium text-foreground/80">
+                                  <span className="material-symbols-outlined text-[13px] text-primary/70">account_balance</span>
+                                  {meta.issuingAuthority}
+                                </span>
+                              )}
+                              {meta.docDate && (
+                                <span className="flex items-center gap-1">
+                                  <span className="material-symbols-outlined text-[13px]">calendar_today</span>
+                                  {meta.docDate}
+                                </span>
+                              )}
+                              {source.file_name && source.file_name !== source.title && (
+                                <span className="truncate max-w-[200px] text-muted-foreground/70" title={source.file_name}>
+                                  ({source.file_name})
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </TableCell>
+
+                      {/* Category & Scope */}
+                      <TableCell className="py-3">
+                        <div className="flex flex-col gap-1.5">
+                          <div className="flex flex-wrap items-center gap-1">
+                            {source.knowledge_type_name ? (
+                              <Badge
+                                variant="outline"
+                                className="text-[10px] font-medium h-5 px-2"
+                                style={{
+                                  borderColor: source.knowledge_type_color,
+                                  color: source.knowledge_type_color,
+                                }}
+                              >
+                                {source.knowledge_type_name}
+                              </Badge>
+                            ) : null}
+                            {source.preserve_verbatim && (
+                              <Badge
+                                variant="secondary"
+                                className="text-[10px] font-medium h-5 px-1.5"
+                                title="Giữ nguyên văn bản"
+                              >
+                                Verbatim
+                              </Badge>
+                            )}
+                          </div>
+                          <ScopeBadge scopeType={source.scope_type} scopeId={source.scope_id} />
+                        </div>
+                      </TableCell>
+
+                      {/* Page count */}
+                      <TableCell className="py-3">
+                        <span className="text-xs text-muted-foreground tabular-nums font-medium">
+                          {source.page_count ? `${source.page_count} trang` : "—"}
+                        </span>
+                      </TableCell>
+
+                      {/* Wiki Articles & Accordion Trigger */}
+                      <TableCell className="py-3">
+                        {hasArticles ? (
+                          <div className="flex flex-col gap-1 items-start">
+                            <button
+                              type="button"
+                              onClick={() => toggleExpand(source.id)}
+                              className={cn(
+                                "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer shadow-2xs",
+                                isExpanded
+                                  ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                                  : "bg-primary/10 text-primary border-primary/30 hover:bg-primary/20"
+                              )}
+                              title="Bấm để xem nhanh các Điều trong văn bản"
+                            >
+                              <span className="material-symbols-outlined text-[15px]">
+                                {isExpanded ? "unfold_less" : "menu_book"}
+                              </span>
+                              <span className="tabular-nums">{source.wiki_page_count}</span> Điều
+                              <span className="material-symbols-outlined text-xs ml-0.5">
+                                {isExpanded ? "expand_less" : "expand_more"}
+                              </span>
+                            </button>
+
+                            <Link
+                              href={`/wiki/source/${source.id}`}
+                              className="text-[11px] text-muted-foreground hover:text-primary transition-colors flex items-center gap-0.5 pl-0.5"
+                            >
+                              Mục lục chi tiết
+                              <span className="material-symbols-outlined text-[12px]">arrow_forward</span>
+                            </Link>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground/50 italic">—</span>
                         )}
-                        {source.status === "awaiting_approval" && (
-                          <DropdownMenuItem onClick={() => setReviewExtractionSource(source)}>
-                            <span className="material-symbols-outlined mr-2 text-orange-500" style={{ fontSize: 16 }}>
-                              scale
-                            </span>
-                            {t("knowledge.status.awaiting_approval", "Review Size")}
-                          </DropdownMenuItem>
-                        )}
-                        {source.status === "error" && (
-                          <DropdownMenuItem
-                            onClick={() => handleRetry(source.id)}
-                            disabled={retryingIds.has(source.id)}
-                          >
-                            <span className={`material-symbols-outlined mr-2 ${retryingIds.has(source.id) ? "animate-spin" : ""}`} style={{ fontSize: 16 }}>
-                              refresh
-                            </span>
-                            {retryingIds.has(source.id) ? t("common.retrying", "Retrying...") : t("common.retry", "Retry")}
-                          </DropdownMenuItem>
-                        )}
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          onClick={() => handleDelete(source.id)}
-                          className="text-destructive"
-                        >
-                          <span className="material-symbols-outlined mr-2" style={{ fontSize: 16 }}>delete</span>
-                          {t("common.delete", "Delete")}
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
-              ))}
+                      </TableCell>
+
+                      {/* Status */}
+                      <TableCell className="py-3">
+                        <StatusDot source={source} />
+                      </TableCell>
+
+                      {/* Created date */}
+                      <TableCell className="py-3">
+                        <span className="text-xs text-muted-foreground tabular-nums">
+                          {new Date(source.created_at).toLocaleDateString("vi-VN", {
+                            day: "2-digit",
+                            month: "2-digit",
+                            year: "numeric",
+                          })}
+                        </span>
+                      </TableCell>
+
+                      {/* Actions */}
+                      <TableCell className="text-right py-3">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-accent text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">
+                            <span className="material-symbols-outlined text-base">more_vert</span>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => router.push(`/wiki/source/${source.id}`)}>
+                              <span className="material-symbols-outlined mr-2" style={{ fontSize: 16 }}>visibility</span>
+                              {t("common.view", "View")}
+                            </DropdownMenuItem>
+                            {source.status === "ready" && (
+                              <DropdownMenuItem
+                                onClick={async () => {
+                                  try {
+                                    const detail = await api<{ download_url?: string }>(`/api/sources/${source.id}`);
+                                    if (detail.download_url) window.open(detail.download_url, "_blank");
+                                  } catch {}
+                                }}
+                              >
+                                <span className="material-symbols-outlined mr-2" style={{ fontSize: 16 }}>cloud_download</span>
+                                {t("common.download", "Download")}
+                              </DropdownMenuItem>
+                            )}
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={() => setEditSource(source)}>
+                              <span className="material-symbols-outlined mr-2" style={{ fontSize: 16 }}>edit</span>
+                              {t("common.edit", "Edit")}
+                            </DropdownMenuItem>
+                            {source.status === "plan_ready" && (
+                              <DropdownMenuItem onClick={() => setReviewPlanSource(source)}>
+                                <span className="material-symbols-outlined mr-2 text-blue-500" style={{ fontSize: 16 }}>
+                                  fact_check
+                                </span>
+                                {t("knowledge.status.plan_ready", "Review Plan")}
+                              </DropdownMenuItem>
+                            )}
+                            {source.status === "awaiting_approval" && (
+                              <DropdownMenuItem onClick={() => setReviewExtractionSource(source)}>
+                                <span className="material-symbols-outlined mr-2 text-orange-500" style={{ fontSize: 16 }}>
+                                  scale
+                                </span>
+                                {t("knowledge.status.awaiting_approval", "Review Size")}
+                              </DropdownMenuItem>
+                            )}
+                            {source.status === "error" && (
+                              <DropdownMenuItem
+                                onClick={() => handleRetry(source.id)}
+                                disabled={retryingIds.has(source.id)}
+                              >
+                                <span className={`material-symbols-outlined mr-2 ${retryingIds.has(source.id) ? "animate-spin" : ""}`} style={{ fontSize: 16 }}>
+                                  refresh
+                                </span>
+                                {retryingIds.has(source.id) ? t("common.retrying", "Retrying...") : t("common.retry", "Retry")}
+                              </DropdownMenuItem>
+                            )}
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={() => handleDelete(source.id)}
+                              className="text-destructive"
+                            >
+                              <span className="material-symbols-outlined mr-2" style={{ fontSize: 16 }}>delete</span>
+                              {t("common.delete", "Delete")}
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+
+                    {/* Inline Expanded Articles Drawer */}
+                    {isExpanded && (
+                      <TableRow className="bg-muted/15 border-b border-border/80">
+                        <TableCell colSpan={7} className="p-0">
+                          <SourceArticlesDrawer
+                            source={source}
+                            onClose={() => toggleExpand(source.id)}
+                          />
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </React.Fragment>
+                );
+              })}
             </TableBody>
           </Table>
         )}

@@ -17,6 +17,10 @@ import { WikiScopeSwitcher } from "@/components/wiki/wiki-scope-switcher";
 import { WikiCreatePageDialog } from "@/components/wiki/wiki-create-page-dialog";
 import { EmptyState } from "@/components/shared/empty-state";
 import { useAuth } from "@/lib/auth";
+import { cn } from "@/lib/utils";
+import { WikiSourceItem, computeSourceStats } from "@/lib/wiki-store";
+import { parseSourceLegalMeta, LegalCategory } from "@/components/knowledge/knowledge-table/utils";
+import { SourceArticlesDrawer } from "@/components/knowledge/knowledge-table/source-articles-drawer";
 
 const WORKSPACE_ROLE_LEVEL: Record<string, number> = {
   viewer: 0,
@@ -40,6 +44,7 @@ export default function WikiIndexPage() {
 
   const [indexMd, setIndexMd] = React.useState<string | null>(null);
   const [allPages, setAllPages] = React.useState<WikiPageSummary[]>([]);
+  const [sources, setSources] = React.useState<WikiSourceItem[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [searchOpen, setSearchOpen] = React.useState(false);
   const [createOpen, setCreateOpen] = React.useState(false);
@@ -47,9 +52,12 @@ export default function WikiIndexPage() {
   const [activeTab, setActiveTab] = React.useState<string>("all");
   const [scopes, setScopes] = React.useState<WikiScope[]>([]);
 
-  // `?new=1&title=<gap topic>` deep-link from the knowledge-gaps tab in
-  // dashboard — auto-open the create dialog pre-filled with the
-  // gap's normalized topic.
+  // View mode: library (Tủ sách) vs pages (Tất cả trang) vs index (Mục lục tổng hợp)
+  const [viewMode, setViewMode] = React.useState<"library" | "pages" | "index">("library");
+  const [libraryCategoryFilter, setLibraryCategoryFilter] = React.useState<LegalCategory>("all");
+  const [librarySearch, setLibrarySearch] = React.useState("");
+  const [selectedDrawerSource, setSelectedDrawerSource] = React.useState<WikiSourceItem | null>(null);
+
   React.useEffect(() => {
     if (searchParams.get("new") === "1") {
       setPrefillTitle(searchParams.get("title") || "");
@@ -57,8 +65,6 @@ export default function WikiIndexPage() {
     }
   }, [searchParams]);
 
-  // Derive selected scope from URL params; fall back to the matching entry in
-  // `scopes` once it loads so we can show the proper display name.
   const selectedScope: WikiScope = React.useMemo(() => {
     if (urlScopeType && urlScopeType !== "global") {
       const match = scopes.find(
@@ -70,16 +76,12 @@ export default function WikiIndexPage() {
     return { scope_type: "global", scope_id: null, name: "Global" };
   }, [urlScopeType, urlScopeId, scopes]);
 
-  // Fetch available scopes once so we can resolve the display name for the URL
-  // scope. The switcher fetches its own copy — caching could optimise this but
-  // /api/wiki/my-scopes is tiny.
   React.useEffect(() => {
     api<WikiScope[]>("/api/wiki/my-scopes")
       .then((s) => setScopes(Array.isArray(s) ? s : []))
       .catch(() => setScopes([]));
   }, []);
 
-  // Refetch index + pages whenever the selected scope changes
   React.useEffect(() => {
     setLoading(true);
     const qs = selectedScope.scope_id
@@ -88,17 +90,20 @@ export default function WikiIndexPage() {
     Promise.all([
       api<{ content_md: string }>(`/api/wiki/index?${qs}`),
       api<WikiPageSummary[]>(`/api/wiki/pages?${qs}`),
+      api<{ items: WikiSourceItem[] }>("/api/sources?status=ready&page_size=1000"),
     ])
-      .then(([idx, pages]) => {
+      .then(([idx, pages, srcData]) => {
         setIndexMd(idx.content_md || null);
         const filtered = Array.isArray(pages)
           ? pages.filter((p) => p.page_type !== "index" && p.page_type !== "log")
           : [];
         setAllPages(filtered);
+        setSources(srcData?.items || []);
       })
       .catch(() => {
         setIndexMd(null);
         setAllPages([]);
+        setSources([]);
       })
       .finally(() => setLoading(false));
   }, [selectedScope.scope_type, selectedScope.scope_id]);
@@ -114,9 +119,6 @@ export default function WikiIndexPage() {
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  // Permission helper: which create flow (if any) is available for the given
-  // scope. Used to gate the header button and to surface per-scope `+`
-  // buttons inside the page tree.
   const isAdmin = user?.role === "admin";
   const getCreateModeForScope = React.useCallback(
     (scope: { scope_type: string; scope_id: string | null }): "direct" | "propose" | null => {
@@ -139,7 +141,6 @@ export default function WikiIndexPage() {
         }
         return null;
       }
-      // global
       if (isAdmin || hasPermission("wiki:write:all")) return "direct";
       if (hasPermission("wiki:write:own_dept")) return "propose";
       return null;
@@ -148,8 +149,6 @@ export default function WikiIndexPage() {
   );
   const createMode = getCreateModeForScope(selectedScope);
 
-  // Scope the dialog opens against. The header button uses the currently
-  // selected scope; the tree's `+` button overrides this on click.
   const [dialogScope, setDialogScope] = React.useState<WikiScope | null>(null);
   const dialogTargetScope: WikiScope = dialogScope ?? selectedScope;
   const dialogMode = getCreateModeForScope(dialogTargetScope);
@@ -163,19 +162,67 @@ export default function WikiIndexPage() {
   }, [allPages]);
   const lastUpdated = allPages[0]?.updated_at;
 
-  // Filter by tab
+  const sourceStats = React.useMemo(() => {
+    return computeSourceStats(allPages, sources);
+  }, [allPages, sources]);
+
+  const sourceArticleCountMap = React.useMemo(() => {
+    const map = new Map<string, number>();
+    for (const s of sourceStats.sources) {
+      map.set(s.id, s.count);
+    }
+    return map;
+  }, [sourceStats]);
+
+  const categoryCounts = React.useMemo(() => {
+    const counts: Record<LegalCategory, number> = {
+      all: sources.length,
+      luat: 0,
+      nghi_dinh: 0,
+      thong_tu: 0,
+      vbhn: 0,
+      quyet_dinh: 0,
+      other: 0,
+      khac: 0,
+    };
+    for (const s of sources) {
+      const meta = parseSourceLegalMeta(s);
+      counts[meta.category] = (counts[meta.category] || 0) + 1;
+    }
+    return counts;
+  }, [sources]);
+
+  const filteredLibrarySources = React.useMemo(() => {
+    let list = sources;
+    if (libraryCategoryFilter !== "all") {
+      list = list.filter((s) => {
+        const meta = parseSourceLegalMeta(s);
+        return meta.category === libraryCategoryFilter;
+      });
+    }
+    if (librarySearch.trim()) {
+      const q = librarySearch.trim().toLowerCase();
+      list = list.filter((s) => {
+        const meta = parseSourceLegalMeta(s);
+        const text = `${s.title || ""} ${s.file_name || ""} ${meta.docNumber || ""} ${meta.authority || ""}`.toLowerCase();
+        return text.includes(q);
+      });
+    }
+    return list;
+  }, [sources, libraryCategoryFilter, librarySearch]);
+
   const displayPages = React.useMemo(() => {
     const list = activeTab === "all"
       ? allPages
       : allPages.filter((p) => p.page_type === activeTab);
-    return list.slice(0, 24);
+    return list.slice(0, 36);
   }, [allPages, activeTab]);
 
   return (
     <>
       <PageHeader
         title="Knowledge Wiki"
-        description="Compiled knowledge from your organization's documents."
+        description="Tra cứu và tổng hợp tri thức chuẩn hóa từ các văn bản quy phạm pháp luật."
         action={
           <div className="flex items-center gap-2">
             <WikiScopeSwitcher current={selectedScope} />
@@ -194,7 +241,7 @@ export default function WikiIndexPage() {
               <Button
                 variant="outline"
                 onClick={() => {
-                  setDialogScope(null); // header button = current scope
+                  setDialogScope(null);
                   setCreateOpen(true);
                 }}
                 className="gap-2"
@@ -260,131 +307,388 @@ export default function WikiIndexPage() {
           }}
         />
 
-        {/* Content */}
+        {/* Content Area */}
         <div className="flex-1 overflow-y-auto min-w-0">
           <WikiTopFilterBar pages={allPages} />
+
           <div className="px-8 py-6">
             {loading ? (
-            <div className="flex items-center justify-center h-32">
-              <span className="material-symbols-outlined text-3xl text-muted-foreground animate-spin">
-                progress_activity
-              </span>
-            </div>
-          ) : indexMd ? (
-            <>
-              {/* Stats bar */}
-              {totalPages > 0 && (
-                <div className="flex flex-wrap items-center gap-3 mb-8">
-                  <div className="flex items-center gap-2 bg-card border border-border rounded-xl px-4 py-2.5 shadow-sahara">
-                    <span className="material-symbols-outlined text-base text-primary">article</span>
-                    <span className="text-sm font-semibold text-foreground">{totalPages}</span>
-                    <span className="text-xs text-muted-foreground">Pages</span>
+              <div className="flex items-center justify-center h-48">
+                <span className="material-symbols-outlined text-3xl text-muted-foreground animate-spin">
+                  progress_activity
+                </span>
+              </div>
+            ) : (
+              <>
+                {/* Stats Bar */}
+                {totalPages > 0 && (
+                  <div className="flex flex-wrap items-center gap-3 mb-6">
+                    <div className="flex items-center gap-2 bg-card border border-border rounded-xl px-4 py-2.5 shadow-sahara">
+                      <span className="material-symbols-outlined text-base text-primary">local_library</span>
+                      <span className="text-sm font-bold text-foreground">{sources.length}</span>
+                      <span className="text-xs text-muted-foreground">Văn bản</span>
+                    </div>
+
+                    <div className="flex items-center gap-2 bg-card border border-border rounded-xl px-4 py-2.5 shadow-sahara">
+                      <span className="material-symbols-outlined text-base text-primary">article</span>
+                      <span className="text-sm font-bold text-foreground">{totalPages}</span>
+                      <span className="text-xs text-muted-foreground">Trang Wiki</span>
+                    </div>
+
+                    <div className="flex items-center gap-2 bg-card border border-border rounded-xl px-3 py-2.5 shadow-sahara">
+                      <span className="material-symbols-outlined text-base text-emerald-500">gavel</span>
+                      <span className="text-xs font-semibold text-foreground">{sourceStats.articlesCount}</span>
+                      <span className="text-xs text-muted-foreground">Điều khoản</span>
+                    </div>
+
+                    {lastUpdated && (
+                      <div className="flex items-center gap-2 bg-card border border-border rounded-xl px-4 py-2.5 shadow-sahara ml-auto">
+                        <span className="material-symbols-outlined text-base text-muted-foreground">schedule</span>
+                        <span className="text-xs text-muted-foreground">
+                          Cập nhật {new Date(lastUpdated).toLocaleDateString("vi-VN")}
+                        </span>
+                      </div>
+                    )}
                   </div>
-                  {Object.entries(typeCounts).sort((a, b) => b[1] - a[1]).map(([type, count]) => (
-                    <div
-                      key={type}
-                      className="flex items-center gap-1.5 bg-card border border-border rounded-xl px-3 py-2.5 shadow-sahara"
+                )}
+
+                {/* View Mode Switcher Tabs */}
+                <div className="flex items-center gap-2 border-b border-border mb-6">
+                  <button
+                    onClick={() => setViewMode("library")}
+                    className={cn(
+                      "flex items-center gap-2 px-4 py-3 text-xs font-semibold border-b-2 transition-all cursor-pointer",
+                      viewMode === "library"
+                        ? "border-primary text-primary"
+                        : "border-transparent text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    <span className="material-symbols-outlined text-[17px]">local_library</span>
+                    <span>Tủ sách Văn bản pháp luật</span>
+                    <span className={cn(
+                      "px-1.5 py-0.2 rounded-full text-[10px] font-bold tabular-nums",
+                      viewMode === "library" ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"
+                    )}>
+                      {sources.length}
+                    </span>
+                  </button>
+
+                  <button
+                    onClick={() => setViewMode("pages")}
+                    className={cn(
+                      "flex items-center gap-2 px-4 py-3 text-xs font-semibold border-b-2 transition-all cursor-pointer",
+                      viewMode === "pages"
+                        ? "border-primary text-primary"
+                        : "border-transparent text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    <span className="material-symbols-outlined text-[17px]">format_list_bulleted</span>
+                    <span>Tất cả trang Wiki</span>
+                    <span className={cn(
+                      "px-1.5 py-0.2 rounded-full text-[10px] font-bold tabular-nums",
+                      viewMode === "pages" ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"
+                    )}>
+                      {totalPages}
+                    </span>
+                  </button>
+
+                  {indexMd && (
+                    <button
+                      onClick={() => setViewMode("index")}
+                      className={cn(
+                        "flex items-center gap-2 px-4 py-3 text-xs font-semibold border-b-2 transition-all cursor-pointer",
+                        viewMode === "index"
+                          ? "border-primary text-primary"
+                          : "border-transparent text-muted-foreground hover:text-foreground"
+                      )}
                     >
-                      <WikiTypeBadge type={type} />
-                      <span className="text-xs text-muted-foreground tabular-nums">{count}</span>
-                    </div>
-                  ))}
-                  {lastUpdated && (
-                    <div className="flex items-center gap-2 bg-card border border-border rounded-xl px-4 py-2.5 shadow-sahara ml-auto">
-                      <span className="material-symbols-outlined text-base text-muted-foreground">schedule</span>
-                      <span className="text-xs text-muted-foreground">
-                        Updated {new Date(lastUpdated).toLocaleDateString("en-US", {
-                          month: "short",
-                          day: "numeric",
-                        })}
-                      </span>
-                    </div>
+                      <span className="material-symbols-outlined text-[17px]">menu_book</span>
+                      <span>Mục lục tổng hợp (Markdown)</span>
+                    </button>
                   )}
                 </div>
-              )}
 
-              <WikiContent markdown={indexMd} />
+                {/* VIEW 1: TỦ SÁCH VĂN BẢN (LIBRARY) */}
+                {viewMode === "library" && (
+                  <div className="space-y-5">
+                    {/* Filters & Search Bar */}
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      {/* Legal Category Filter Pills */}
+                      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+                        {(
+                          [
+                            { id: "all", label: "Tất cả", icon: "library_books" },
+                            { id: "luat", label: "Luật", icon: "gavel" },
+                            { id: "nghi_dinh", label: "Nghị định", icon: "policy" },
+                            { id: "thong_tu", label: "Thông tư", icon: "description" },
+                            { id: "vbhn", label: "Văn bản hợp nhất", icon: "integration_instructions" },
+                            { id: "quyet_dinh", label: "Quyết định", icon: "verified" },
+                          ] as const
+                        ).map((tab) => {
+                          const count = categoryCounts[tab.id] ?? 0;
+                          if (tab.id !== "all" && count === 0) return null;
+                          const active = libraryCategoryFilter === tab.id;
+                          return (
+                            <button
+                              key={tab.id}
+                              type="button"
+                              onClick={() => setLibraryCategoryFilter(tab.id)}
+                              className={cn(
+                                "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all cursor-pointer shrink-0 shadow-2xs",
+                                active
+                                  ? "bg-primary text-primary-foreground border-primary font-semibold shadow-xs"
+                                  : "bg-card border-border text-muted-foreground hover:text-foreground hover:bg-secondary/70"
+                              )}
+                            >
+                              <span className="material-symbols-outlined text-[14px]">{tab.icon}</span>
+                              <span>{tab.label}</span>
+                              <span
+                                className={cn(
+                                  "px-1.5 py-0.2 rounded-full text-[10px] tabular-nums font-semibold",
+                                  active
+                                    ? "bg-primary-foreground/20 text-primary-foreground"
+                                    : "bg-muted text-muted-foreground"
+                                )}
+                              >
+                                {count}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
 
-              {/* Pages grid */}
-              {allPages.length > 0 && (
-                <div className="mt-12">
-                  {/* Type tabs */}
-                  <div className="flex items-center gap-1 mb-5 border-b border-border">
-                    {TYPE_TABS.map((tab) => {
-                      const count = tab === "all"
-                        ? totalPages
-                        : typeCounts[tab] ?? 0;
-                      if (tab !== "all" && count === 0) return null;
-                      return (
-                        <button
-                          key={tab}
-                          onClick={() => setActiveTab(tab)}
-                          className={`px-3 py-2 text-xs font-medium capitalize border-b-2 transition-colors ${
-                            activeTab === tab
-                              ? "border-primary text-primary"
-                              : "border-transparent text-muted-foreground hover:text-foreground"
-                          }`}
-                        >
-                          {tab === "all" ? "All" : wikiTypeGroupLabel(tab)}
-                          <span className="ml-1.5 tabular-nums text-muted-foreground">
-                            {count}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                    {displayPages.map((page) => {
-                      const cardHref =
-                        page.scope_type && page.scope_type !== "global" && page.scope_id
-                          ? `/wiki/${page.slug}?scopeType=${page.scope_type}&scopeId=${page.scope_id}`
-                          : `/wiki/${page.slug}`;
-                      return (
-                      <Link
-                        key={`${page.slug}-${page.scope_type ?? "global"}-${page.scope_id ?? "none"}`}
-                        href={cardHref}
-                        className="group block bg-card border border-border rounded-xl p-4 hover:border-primary/40 hover:shadow-sahara transition-all"
-                      >
-                        <div className="flex items-start justify-between gap-2 mb-2">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <WikiTypeBadge type={page.page_type} />
-                            {page.scope_type && page.scope_type !== "global" && (
-                              <ScopeBadge scopeType={page.scope_type} scopeId={page.scope_id} />
-                            )}
-                          </div>
-                          <span className="text-xs text-muted-foreground shrink-0">
-                            v{page.version}
-                          </span>
-                        </div>
-                        <h3 className="font-heading text-base font-normal text-foreground group-hover:text-primary transition-colors mb-1">
-                          {page.title}
-                        </h3>
-                        {page.summary && (
-                          <p className="text-xs text-muted-foreground line-clamp-2">
-                            {page.summary}
-                          </p>
+                      {/* Search in Library */}
+                      <div className="relative min-w-[240px] max-w-[320px]">
+                        <span className="material-symbols-outlined text-sm text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2">
+                          search
+                        </span>
+                        <input
+                          type="text"
+                          value={librarySearch}
+                          onChange={(e) => setLibrarySearch(e.target.value)}
+                          placeholder="Tìm theo số hiệu, tên văn bản..."
+                          className="h-8 w-full pl-9 pr-8 text-xs rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 placeholder:text-muted-foreground/60"
+                        />
+                        {librarySearch && (
+                          <button
+                            onClick={() => setLibrarySearch("")}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                          >
+                            <span className="material-symbols-outlined text-xs">close</span>
+                          </button>
                         )}
-                        <p className="text-xs text-muted-foreground mt-3">
-                          {new Date(page.updated_at).toLocaleDateString()}
-                        </p>
-                      </Link>
-                      );
-                    })}
+                      </div>
+                    </div>
+
+                    {/* Cards Grid */}
+                    {filteredLibrarySources.length === 0 ? (
+                      <EmptyState
+                        icon="search_off"
+                        title="Không tìm thấy văn bản phù hợp"
+                        description={librarySearch ? `Không có kết quả khớp với "${librarySearch}"` : "Chưa có văn bản nào trong nhóm này."}
+                      />
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                        {filteredLibrarySources.map((source) => {
+                          const meta = parseSourceLegalMeta(source);
+                          const artCount = sourceArticleCountMap.get(source.id) || 0;
+
+                          return (
+                            <div
+                              key={source.id}
+                              className="group bg-card border border-border rounded-xl p-5 hover:border-primary/50 hover:shadow-sahara transition-all flex flex-col justify-between"
+                            >
+                              <div>
+                                {/* Header: Badge & Doc Number & Article Count */}
+                                <div className="flex items-center justify-between gap-2 mb-3">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span
+                                      className={cn(
+                                        "text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md border",
+                                        meta.badgeBg,
+                                        meta.badgeBorder
+                                      )}
+                                      style={{ color: meta.badgeColor }}
+                                    >
+                                      {meta.badgeLabel}
+                                    </span>
+                                    {meta.docNumber && (
+                                      <span className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded-md bg-muted/80 text-foreground border border-border/80">
+                                        Số: {meta.docNumber}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary bg-primary/10 px-2 py-0.5 rounded-full border border-primary/20 shrink-0">
+                                    <span className="material-symbols-outlined text-[13px]">menu_book</span>
+                                    {artCount} Điều
+                                  </span>
+                                </div>
+
+                                {/* Title */}
+                                <Link
+                                  href={`/wiki/source/${source.id}`}
+                                  className="font-heading text-sm font-semibold text-foreground group-hover:text-primary transition-colors line-clamp-2 mb-2 leading-snug block"
+                                  title={source.title}
+                                >
+                                  {source.title}
+                                </Link>
+
+                                {/* Metadata */}
+                                <div className="flex items-center gap-2.5 text-xs text-muted-foreground flex-wrap mb-4">
+                                  {meta.issuingAuthority && (
+                                    <span className="flex items-center gap-1 font-medium text-foreground/80">
+                                      <span className="material-symbols-outlined text-[13px] text-primary/70">account_balance</span>
+                                      {meta.issuingAuthority}
+                                    </span>
+                                  )}
+                                  {meta.docDate && (
+                                    <span className="flex items-center gap-1">
+                                      <span className="material-symbols-outlined text-[13px]">calendar_today</span>
+                                      {meta.docDate}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Actions Footer */}
+                              <div className="flex items-center gap-2 pt-3 border-t border-border/60">
+                                <Link
+                                  href={`/wiki/source/${source.id}`}
+                                  className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                                >
+                                  <span className="material-symbols-outlined text-sm">visibility</span>
+                                  Tổng quan
+                                </Link>
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedDrawerSource(source)}
+                                  className="inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold border border-border bg-background hover:bg-accent text-foreground transition-colors cursor-pointer"
+                                  title="Xem danh sách các Điều trong văn bản"
+                                >
+                                  <span className="material-symbols-outlined text-sm">format_list_bulleted</span>
+                                  Tra cứu Điều
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
-                </div>
-              )}
-            </>
-          ) : (
-            <EmptyState
-              icon="auto_stories"
-              title="Wiki is empty"
-              description="Upload and compile documents to start building your knowledge wiki."
-            />
-          )}
+                )}
+
+                {/* VIEW 2: TẤT CẢ TRANG WIKI (PAGES GRID) */}
+                {viewMode === "pages" && (
+                  <div>
+                    {/* Type tabs */}
+                    <div className="flex items-center gap-1 mb-5 border-b border-border">
+                      {TYPE_TABS.map((tab) => {
+                        const count = tab === "all"
+                          ? totalPages
+                          : typeCounts[tab] ?? 0;
+                        if (tab !== "all" && count === 0) return null;
+                        return (
+                          <button
+                            key={tab}
+                            onClick={() => setActiveTab(tab)}
+                            className={`px-3 py-2 text-xs font-medium capitalize border-b-2 transition-colors cursor-pointer ${
+                              activeTab === tab
+                                ? "border-primary text-primary"
+                                : "border-transparent text-muted-foreground hover:text-foreground"
+                            }`}
+                          >
+                            {tab === "all" ? "All" : wikiTypeGroupLabel(tab)}
+                            <span className="ml-1.5 tabular-nums text-muted-foreground">
+                              {count}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                      {displayPages.map((page) => {
+                        const cardHref =
+                          page.scope_type && page.scope_type !== "global" && page.scope_id
+                            ? `/wiki/${page.slug}?scopeType=${page.scope_type}&scopeId=${page.scope_id}`
+                            : `/wiki/${page.slug}`;
+                        return (
+                          <Link
+                            key={`${page.slug}-${page.scope_type ?? "global"}-${page.scope_id ?? "none"}`}
+                            href={cardHref}
+                            className="group block bg-card border border-border rounded-xl p-4 hover:border-primary/40 hover:shadow-sahara transition-all"
+                          >
+                            <div className="flex items-start justify-between gap-2 mb-2">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <WikiTypeBadge type={page.page_type} />
+                                {page.scope_type && page.scope_type !== "global" && (
+                                  <ScopeBadge scopeType={page.scope_type} scopeId={page.scope_id} />
+                                )}
+                              </div>
+                              <span className="text-xs text-muted-foreground shrink-0">
+                                v{page.version}
+                              </span>
+                            </div>
+                            <h3 className="font-heading text-sm font-semibold text-foreground group-hover:text-primary transition-colors mb-1">
+                              {page.title}
+                            </h3>
+                            {page.summary && (
+                              <p className="text-xs text-muted-foreground line-clamp-2">
+                                {page.summary}
+                              </p>
+                            )}
+                            <p className="text-xs text-muted-foreground mt-3">
+                              {new Date(page.updated_at).toLocaleDateString("vi-VN")}
+                            </p>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* VIEW 3: MỤC LỤC TỔNG HỢP (MARKDOWN INDEX) */}
+                {viewMode === "index" && indexMd && (
+                  <div className="bg-card border border-border rounded-2xl p-6 shadow-sahara">
+                    <WikiContent markdown={indexMd} />
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </div>
       </div>
+
+      {/* Modal Drawer to Browse Articles of Selected Document */}
+      {selectedDrawerSource && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+          <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="px-6 py-4 border-b border-border flex items-center justify-between gap-3 bg-muted/20">
+              <div className="min-w-0">
+                <span className="text-xs font-bold text-primary uppercase tracking-wider block mb-1">
+                  Tra cứu danh sách Điều
+                </span>
+                <h2 className="text-sm font-semibold text-foreground truncate" title={selectedDrawerSource.title}>
+                  {selectedDrawerSource.title}
+                </h2>
+              </div>
+              <button
+                onClick={() => setSelectedDrawerSource(null)}
+                className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-lg">close</span>
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4">
+              <SourceArticlesDrawer
+                source={selectedDrawerSource}
+                onClose={() => setSelectedDrawerSource(null)}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       <WikiSearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
       {dialogMode && (
