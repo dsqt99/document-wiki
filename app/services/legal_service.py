@@ -106,7 +106,7 @@ def split_legal_text_by_articles(full_text: str, doc_title: str) -> dict[str, An
 
 
 async def is_legal_source(session: AsyncSession, source: Source) -> bool:
-    """Check if the source is associated with KnowledgeType 'Luật'."""
+    """Check if the source is associated with KnowledgeType 'Luật' / 'Legal'."""
     if not source.knowledge_type_id:
         return False
 
@@ -116,7 +116,13 @@ async def is_legal_source(session: AsyncSession, source: Source) -> bool:
 
     slug = (kt.slug or "").lower().strip()
     name = (kt.name or "").lower().strip()
-    return slug in ("lut", "luat") or "luật" in name or "luat" in name
+    return (
+        slug in ("lut", "luat", "legal")
+        or "luật" in name
+        or "luat" in name
+        or "legal" in name
+        or "pháp lý" in name
+    )
 
 
 async def finalize_legal_source(session: AsyncSession, source: Source, tracker: Any) -> dict:
@@ -156,7 +162,7 @@ async def finalize_legal_source(session: AsyncSession, source: Source, tracker: 
     scope_id = source.scope_id
 
     # Get knowledge type slug
-    kt_slug = "lut"
+    kt_slug = "legal"
     if source.knowledge_type_id:
         kt = await session.get(KnowledgeType, source.knowledge_type_id)
         if kt and kt.slug:

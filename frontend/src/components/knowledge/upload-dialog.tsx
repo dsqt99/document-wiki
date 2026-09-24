@@ -90,7 +90,9 @@ function formatFileSize(bytes: number): string {
 export function UploadDialog({ open, onOpenChange, types, departments, onUploaded }: Props) {
   const { t } = useI18n();
   const [files, setFiles] = useState<File[]>([]);
-  const [typeId, setTypeId] = useState("");
+  const [selectedTypeId, setSelectedTypeId] = useState<string | null>(null);
+  const defaultTypeId = types.find((t) => t.slug === "general")?.id || "";
+  const typeId = selectedTypeId !== null ? selectedTypeId : defaultTypeId;
   const [selectedDepts, setSelectedDepts] = useState<string[]>([]);
   const [scopeType, setScopeType] = useState<"global" | "department">("global");
   const [uploading, setUploading] = useState(false);
@@ -214,7 +216,7 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
       onUploaded();
       onOpenChange(false);
       setFiles([]);
-      setTypeId("");
+      setSelectedTypeId(null);
       setSelectedDepts([]);
       setScopeType("global");
     } else {
@@ -382,7 +384,7 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
           {/* Knowledge Type */}
           <div className="flex flex-col gap-1.5">
             <Label className="text-xs font-medium">{t("knowledge.upload.typeLabel", "Phân loại tri thức")}</Label>
-            <Select value={typeId} onValueChange={(v) => setTypeId(v ?? "")}>
+            <Select value={typeId} onValueChange={(v) => setSelectedTypeId(v ?? "")}>
               <SelectTrigger className="bg-background w-full h-9 text-xs">
                 {typeId ? (() => {
                   const item = types.find((x) => x.id === typeId);

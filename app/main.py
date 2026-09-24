@@ -74,6 +74,13 @@ async def lifespan(app: FastAPI):
         # Seed default admin if no admin exists yet
         await seed_default_admin()
 
+        # Seed default knowledge types (idempotent — no-op if already present)
+        try:
+            from app.scripts.seed_knowledge_types import seed_default_knowledge_types
+            await seed_default_knowledge_types()
+        except Exception as e:
+            logger.warning(f"Could not seed default knowledge types: {e}")
+
         # Seed built-in skills (idempotent — no-op if already up to date)
         try:
             from app.scripts.seed_skills import seed_builtin_skills
