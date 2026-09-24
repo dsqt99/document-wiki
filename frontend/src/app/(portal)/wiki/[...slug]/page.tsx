@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { WikiPageDetail, DraftResponse } from "@/types/wiki";
 import { WikiPageTree } from "@/components/wiki/wiki-page-tree";
+import { WikiTopFilterBar } from "@/components/wiki/wiki-top-filter-bar";
 import { WikiContent } from "@/components/wiki/wiki-content";
 import { WikiSidebarRight } from "@/components/wiki/wiki-backlinks";
 import { WikiEditor } from "@/components/wiki/wiki-editor";
@@ -26,6 +27,12 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
+import {
+  getCachedPageDetail,
+  setCachedPageDetail,
+  getCachedSourceData,
+  setCachedSourceData,
+} from "@/lib/wiki-store";
 
 const WORKSPACE_ROLE_LEVEL: Record<string, number> = {
   viewer: 0,
@@ -45,13 +52,48 @@ export default function WikiPageViewer() {
   const { user, hasPermission } = useAuth();
 
   const slugParts = Array.isArray(params.slug) ? params.slug : [params.slug ?? ""];
-  const fullSlug = slugParts.join("/");
-  const isSourceView = slugParts[0] === "source" && slugParts.length === 2;
-  const sourceId = isSourceView ? slugParts[1] : null;
+  const initialSlug = slugParts.join("/");
+  const [currentSlug, setCurrentSlug] = React.useState(initialSlug);
+  const [prevInitialSlug, setPrevInitialSlug] = React.useState(initialSlug);
+  if (initialSlug !== prevInitialSlug) {
+    setPrevInitialSlug(initialSlug);
+    setCurrentSlug(initialSlug);
+  }
+  const fullSlug = currentSlug;
+
   const scopeType = searchParams.get("scopeType") || undefined;
   const scopeId = searchParams.get("scopeId") || undefined;
   const isScoped = !!scopeType && scopeType !== "global";
   const isProjectScoped = false;
+
+  const scopeLinkSuffix = isScoped
+    ? `?scopeType=${scopeType}&scopeId=${scopeId}`
+    : "";
+
+  // Support browser back/forward buttons smoothly
+  React.useEffect(() => {
+    const onPopState = () => {
+      const match = window.location.pathname.match(/^\/wiki\/(.+)$/);
+      if (match) {
+        setCurrentSlug(decodeURIComponent(match[1]));
+      }
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  const handlePageSelect = React.useCallback(
+    (newSlug: string) => {
+      if (newSlug === currentSlug) return;
+      setCurrentSlug(newSlug);
+      window.history.pushState(null, "", `/wiki/${newSlug}${scopeLinkSuffix}`);
+    },
+    [currentSlug, scopeLinkSuffix]
+  );
+
+  const currentSlugParts = currentSlug.split("/");
+  const isSourceView = currentSlugParts[0] === "source" && currentSlugParts.length === 2;
+  const sourceId = isSourceView ? currentSlugParts[1] : null;
 
   // Where "back" navigates. Projects keep their dedicated workspace page;
   // department-scoped pages return to the wiki landing with the scope preserved
@@ -61,12 +103,6 @@ export default function WikiPageViewer() {
     : isScoped
       ? `/wiki?scope_type=${scopeType}&scope_id=${scopeId}`
       : "/wiki";
-
-  // Suffix appended to in-page wiki links (backlinks, outlinks, [[wikilinks]])
-  // so navigation between related pages keeps the current scope context.
-  const scopeLinkSuffix = isScoped
-    ? `?scopeType=${scopeType}&scopeId=${scopeId}`
-    : "";
 
   // Look up the display name for the current page's scope so the scope
   // switcher trigger reads e.g. "Phòng Nhân sự" rather than just "department".
@@ -224,35 +260,58 @@ export default function WikiPageViewer() {
   });
 
   // ---------------------------------------------------------------------------
-  // Load page
+  // Load page (with memory cache for instant transitions)
   // ---------------------------------------------------------------------------
   React.useEffect(() => {
-    if (!fullSlug) return;
-    setLoading(true);
-    setNotFound(false);
-    setPage(null);
-    setSourceData(null);
-    setMode("view");
+    if (!currentSlug) return;
 
     if (isSourceView && sourceId) {
-      api<any>(`/api/sources/${sourceId}`)
-        .then((data) => {
-          setSourceData(data);
-          // Provision a dummy page to satisfy the breadcrumbs and right sidebar metadata layout
+      const cachedSrc = getCachedSourceData(sourceId);
+      if (cachedSrc) {
+        queueMicrotask(() => {
+          setSourceData(cachedSrc);
           setPage({
-            slug: fullSlug,
-            title: data.title || data.file_name || "Tài liệu",
+            slug: currentSlug,
+            title: ((cachedSrc.title || cachedSrc.file_name) as string) || "Tài liệu",
             page_type: "source",
             status: "evergreen",
             summary: "",
             knowledge_type_slugs: [],
             source_ids: [sourceId],
             version: 1,
-            updated_at: data.updated_at || new Date().toISOString(),
+            updated_at: (cachedSrc.updated_at as string) || new Date().toISOString(),
             content_md: "",
             backlinks: [],
             outlinks: [],
           });
+          setLoading(false);
+        });
+      } else {
+        queueMicrotask(() => {
+          setPage(null);
+          setSourceData(null);
+        });
+      }
+
+      api<Record<string, unknown>>(`/api/sources/${sourceId}`)
+        .then((data) => {
+          setSourceData(data);
+          setCachedSourceData(sourceId, data);
+          setPage({
+            slug: currentSlug,
+            title: ((data.title || data.file_name) as string) || "Tài liệu",
+            page_type: "source",
+            status: "evergreen",
+            summary: "",
+            knowledge_type_slugs: [],
+            source_ids: [sourceId],
+            version: 1,
+            updated_at: (data.updated_at as string) || new Date().toISOString(),
+            content_md: "",
+            backlinks: [],
+            outlinks: [],
+          });
+          setNotFound(false);
         })
         .catch((err) => {
           if (err?.status === 404 || err?.message?.includes("404")) {
@@ -262,8 +321,25 @@ export default function WikiPageViewer() {
         .finally(() => setLoading(false));
     } else {
       const scopeParams = isScoped ? `?scope_type=${scopeType}&scope_id=${scopeId}` : "";
-      api<WikiPageDetail>(`/api/wiki/pages/${encodeURIComponent(fullSlug)}${scopeParams}`)
-        .then((data) => setPage(data))
+      const cacheKey = `${currentSlug}:${scopeType || "global"}:${scopeId || "none"}`;
+      const cached = getCachedPageDetail(cacheKey);
+      if (cached) {
+        queueMicrotask(() => {
+          setPage(cached);
+          setLoading(false);
+        });
+      } else {
+        queueMicrotask(() => {
+          setPage(null);
+        });
+      }
+
+      api<WikiPageDetail>(`/api/wiki/pages/${encodeURIComponent(currentSlug)}${scopeParams}`)
+        .then((data) => {
+          setPage(data);
+          setCachedPageDetail(cacheKey, data);
+          setNotFound(false);
+        })
         .catch((err) => {
           if (err?.status === 404 || err?.message?.includes("404")) {
             setNotFound(true);
@@ -271,20 +347,20 @@ export default function WikiPageViewer() {
         })
         .finally(() => setLoading(false));
     }
-  }, [fullSlug, scopeType, scopeId, isScoped, isSourceView, sourceId]);
+  }, [currentSlug, scopeType, scopeId, isScoped, isSourceView, sourceId]);
 
   // Load parallel citations (sources metadata) for page references
   React.useEffect(() => {
     if (page && !isSourceView && page.source_ids && page.source_ids.length > 0) {
       Promise.all(
         page.source_ids.map((id) =>
-          api<any>(`/api/sources/${id}`).catch(() => null)
+          api<Record<string, unknown>>(`/api/sources/${id}`).catch(() => null)
         )
       ).then((res) => {
         setCitations(res.filter(Boolean));
       });
     } else {
-      setCitations([]);
+      queueMicrotask(() => setCitations([]));
     }
   }, [page, isSourceView]);
 
@@ -474,7 +550,8 @@ export default function WikiPageViewer() {
             filter pagesUrl by scope so the sidebar is identical across all
             wiki pages; the active page's scope bucket auto-expands. */}
         <WikiPageTree
-          activeSlug={fullSlug}
+          activeSlug={currentSlug}
+          onPageSelect={handlePageSelect}
           groupByScope
           activeScope={{
             scope_type: scopeType ?? "global",
@@ -500,6 +577,7 @@ export default function WikiPageViewer() {
 
         {/* Center: Content */}
         <div className="flex-1 overflow-y-auto min-w-0">
+          <WikiTopFilterBar onSelectPage={handlePageSelect} />
           {loading ? (
             <div className="px-4 py-8">
               <div className="flex items-center gap-2 mb-4">
@@ -815,7 +893,7 @@ export default function WikiPageViewer() {
                 </div>
               ) : (
                 <div className="space-y-6">
-                  <WikiContent markdown={contentWithFootnotes} linkSuffix={scopeLinkSuffix} />
+                  <WikiContent markdown={contentWithFootnotes} linkSuffix={scopeLinkSuffix} onWikiLinkClick={handlePageSelect} />
 
                   {/* References card deck section at bottom of concept pages */}
                   {citations.length > 0 && (
@@ -841,6 +919,12 @@ export default function WikiPageViewer() {
                             <div className="flex gap-2 mt-4 pt-3 border-t">
                               <Link
                                 href={`/wiki/source/${c.id}${scopeLinkSuffix}`}
+                                onClick={(e) => {
+                                  if (!e.ctrlKey && !e.metaKey && !e.shiftKey && e.button === 0) {
+                                    e.preventDefault();
+                                    handlePageSelect(`source/${c.id}`);
+                                  }
+                                }}
                                 className="inline-flex items-center gap-1 text-xs text-primary font-medium hover:underline"
                               >
                                 <span className="material-symbols-outlined text-xs">visibility</span>
@@ -872,12 +956,12 @@ export default function WikiPageViewer() {
         {/* Right: Sidebar (hidden on < lg, only in view mode) */}
         {page && mode === "view" && (
           <div className="hidden lg:block h-full">
-            <WikiSidebarRight slug={fullSlug} page={page} linkSuffix={scopeLinkSuffix} />
+            <WikiSidebarRight slug={currentSlug} page={page} linkSuffix={scopeLinkSuffix} onSelectPage={handlePageSelect} />
           </div>
         )}
       </div>
 
-      <WikiSearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
+      <WikiSearchDialog open={searchOpen} onOpenChange={setSearchOpen} onSelectPage={handlePageSelect} />
       {dialogMode && (
         <WikiCreatePageDialog
           open={createOpen}

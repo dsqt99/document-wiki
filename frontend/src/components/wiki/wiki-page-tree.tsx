@@ -6,16 +6,19 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { WikiPageSummary } from "@/types/wiki";
-import { wikiTypeIcon, wikiTypeColor, wikiTypeGroupLabel } from "./wiki-type-badge";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-} from "@/components/ui/dropdown-menu";
 import { useI18n } from "@/lib/i18n";
-
-const GROUP_ORDER = ["entity", "concept", "topic", "source"];
+import {
+  wikiStore,
+  useWikiStore,
+  getCachedPages,
+  setCachedPages,
+  removeCachedPage,
+  getCachedSources,
+  setCachedSources,
+  getDocForPage,
+  computeSourceStats,
+  WikiSourceItem,
+} from "@/lib/wiki-store";
 
 // Scope type ordering for grouped view: global → department → project.
 const SCOPE_TYPE_ORDER: Record<string, number> = {
@@ -95,33 +98,68 @@ export function WikiPageTree({
 }) {
   const pathname = usePathname();
   const { t } = useI18n();
-  const [pages, setPages] = React.useState<WikiPageSummary[]>([]);
-  const [loading, setLoading] = React.useState(true);
-  const [search, setSearch] = React.useState("");
+
+  const effectivePagesUrl = pagesUrl || "/api/wiki/pages";
+  const initialPages = React.useMemo(() => getCachedPages(effectivePagesUrl), [effectivePagesUrl]);
+  const [pages, setPages] = React.useState<WikiPageSummary[]>(initialPages || []);
+  const [loading, setLoading] = React.useState(!initialPages || initialPages.length === 0);
+
+  const initialSources = React.useMemo(() => getCachedSources(), []);
+  const [sources, setSources] = React.useState<WikiSourceItem[]>(initialSources || []);
+  const [sourcesLoading, setSourcesLoading] = React.useState(!initialSources);
+
   const [collapsed, setCollapsed] = React.useState(false);
 
-  // Filters & grouping states
-  const [selectedSourceId, setSelectedSourceId] = React.useState<string | null>(null);
-  const [categoryFilter, setCategoryFilter] = React.useState<"all" | "articles" | "overview">("all");
-  const [groupByDocument, setGroupByDocument] = React.useState<boolean>(true);
-  const [expandedDocuments, setExpandedDocuments] = React.useState<Set<string>>(new Set());
+  // Global Wiki Store subscription
+  const {
+    selectedSourceId,
+    categoryFilter,
+    groupByDocument,
+    search,
+    expandedDocuments,
+    expandedScopes,
+    setGroupByDocument,
+    setSearch,
+    setExpandedDocuments,
+    setExpandedScopes,
+    resetFilters,
+  } = useWikiStore();
 
   // Two-stage delete
   const [armedSlug, setArmedSlug] = React.useState<string | null>(null);
   const [deletingSlug, setDeletingSlug] = React.useState<string | null>(null);
 
   // Sources section
-  const [sources, setSources] = React.useState<{ id: string; title: string; file_name?: string; status: string; source_type?: string }[]>([]);
-  const [sourcesLoading, setSourcesLoading] = React.useState(true);
   const [sourcesCollapsed, setSourcesCollapsed] = React.useState(false);
 
   const debouncedSearch = useDebounce(search, 150);
 
+  const treeScrollRef = React.useRef<HTMLDivElement>(null);
+
+  // Restore scroll position on mount
+  React.useEffect(() => {
+    if (treeScrollRef.current && wikiStore.sidebarScrollTop > 0) {
+      treeScrollRef.current.scrollTop = wikiStore.sidebarScrollTop;
+    }
+  }, []);
+
+  const handleTreeScroll = React.useCallback(() => {
+    if (treeScrollRef.current) {
+      wikiStore.sidebarScrollTop = treeScrollRef.current.scrollTop;
+    }
+  }, []);
+
   const loadPages = React.useCallback(() => {
     const url = pagesUrl || "/api/wiki/pages";
     api<WikiPageSummary[]>(url)
-      .then((data) => setPages(Array.isArray(data) ? data : []))
-      .catch(() => setPages([]))
+      .then((data) => {
+        const list = Array.isArray(data) ? data : [];
+        setPages(list);
+        setCachedPages(url, list);
+      })
+      .catch(() => {
+        if (!getCachedPages(url)) setPages([]);
+      })
       .finally(() => setLoading(false));
   }, [pagesUrl]);
 
@@ -130,11 +168,17 @@ export function WikiPageTree({
   }, [loadPages]);
 
   React.useEffect(() => {
-    api<{ items: { id: string; title: string; file_name?: string; status: string; source_type?: string }[] }>("/api/sources?status=ready&page_size=1000")
-      .then((data) => setSources(data.items || []))
-      .catch(() => setSources([]))
+    api<{ items: WikiSourceItem[] }>("/api/sources?status=ready&page_size=1000")
+      .then((data) => {
+        const items = data.items || [];
+        setSources(items);
+        setCachedSources(items);
+      })
+      .catch(() => {
+        if (!initialSources) setSources([]);
+      })
       .finally(() => setSourcesLoading(false));
-  }, []);
+  }, [initialSources]);
 
   const handleDelete = async (page: WikiPageSummary) => {
     const slug = page.slug;
@@ -152,6 +196,7 @@ export function WikiPageTree({
       await api(`/api/wiki/pages/${encodeURIComponent(slug)}${scopeQs}`, {
         method: "DELETE",
       });
+      removeCachedPage(slug);
       loadPages();
       onDeleted?.();
     } catch (err) {
@@ -176,27 +221,7 @@ export function WikiPageTree({
 
   /** Maps a page to its corresponding source document (if any) */
   const getDocInfoForPage = React.useCallback(
-    (p: WikiPageSummary) => {
-      if (sources.length === 0) return null;
-      // 1. Check explicit source_ids
-      if (p.source_ids && p.source_ids.length > 0) {
-        for (const sid of p.source_ids) {
-          const src = sources.find((s) => s.id === sid);
-          if (src) return src;
-        }
-      }
-      // 2. Check title suffix: " - [Doc Title]"
-      for (const src of sources) {
-        const srcTitle = src.title || src.file_name;
-        if (srcTitle && p.title.endsWith(` - ${srcTitle}`)) {
-          return src;
-        }
-        if (srcTitle && (p.title === srcTitle || p.slug === src.id)) {
-          return src;
-        }
-      }
-      return null;
-    },
+    (p: WikiPageSummary) => getDocForPage(p, sources),
     [sources]
   );
 
@@ -280,51 +305,16 @@ export function WikiPageTree({
 
   /** Document statistics for dropdown selector and category tabs */
   const sourceStats = React.useMemo(() => {
-    const counts = new Map<string, number>();
-    let otherCount = 0;
-    let articlesCount = 0;
-    let overviewsCount = 0;
+    return computeSourceStats(pages, sources);
+  }, [pages, sources]);
 
-    for (const p of pages) {
-      if (p.page_type === "index" || p.page_type === "log" || p.page_type === "hot") continue;
-      if (p.title.startsWith("Điều ")) {
-        articlesCount++;
-      } else {
-        overviewsCount++;
-      }
-
-      const doc = getDocInfoForPage(p);
-      if (doc) {
-        counts.set(doc.id, (counts.get(doc.id) || 0) + 1);
-      } else {
-        otherCount++;
-      }
-    }
-
-    return {
-      sources: sources.map((s) => ({
-        id: s.id,
-        title: s.title || s.file_name || "Untitled",
-        count: counts.get(s.id) || 0,
-      })),
-      otherCount,
-      articlesCount,
-      overviewsCount,
-    };
-  }, [pages, sources, getDocInfoForPage]);
-
-  const totalCount = React.useMemo(
-    () => pages.filter((p) => p.page_type !== "index" && p.page_type !== "log" && p.page_type !== "hot").length,
-    [pages]
-  );
+  const totalCount = sourceStats.totalCount;
 
   const isFiltered = Boolean(debouncedSearch.trim() || selectedSourceId || categoryFilter !== "all");
 
   const resetAllFilters = React.useCallback(() => {
-    setSearch("");
-    setSelectedSourceId(null);
-    setCategoryFilter("all");
-  }, []);
+    resetFilters();
+  }, [resetFilters]);
 
   const selectedDoc = React.useMemo(() => {
     if (!selectedSourceId) return null;
@@ -343,9 +333,16 @@ export function WikiPageTree({
     if (activePage) {
       const doc = getDocInfoForPage(activePage);
       const docKey = doc ? doc.id : "other";
-      setExpandedDocuments((prev) => new Set([...prev, docKey]));
+      queueMicrotask(() => {
+        setExpandedDocuments((prev) => {
+          if (prev.has(docKey)) return prev;
+          const next = new Set(prev);
+          next.add(docKey);
+          return next;
+        });
+      });
     }
-  }, [currentSlug, pages, getDocInfoForPage]);
+  }, [currentSlug, pages, getDocInfoForPage, setExpandedDocuments]);
 
   // Toggle expand/collapse for a document folder
   const toggleDocument = (docId: string) => {
@@ -475,8 +472,8 @@ export function WikiPageTree({
     });
   }, [filtered]);
 
-  // Expanded state for scope-level headers in groupByScope mode
-  const [expandedScopes, setExpandedScopes] = React.useState<Set<string>>(new Set(["global"]));
+  // Expanded scopes are managed by useWikiStore()
+
   const activeScopeKey = React.useMemo(() => {
     if (!activeScope) return null;
     return activeScope.scope_id ? `${activeScope.scope_type}:${activeScope.scope_id}` : activeScope.scope_type;
@@ -484,17 +481,22 @@ export function WikiPageTree({
 
   React.useEffect(() => {
     if (!groupByScope || scopeGrouped.length === 0) return;
-    const scopesToExpand = new Set<string>(["global"]);
-    if (activeScopeKey) scopesToExpand.add(activeScopeKey);
-    if (activeSlug) {
-      for (const b of scopeGrouped) {
-        if (b.pages.some((p) => p.slug === activeSlug)) {
-          scopesToExpand.add(b.key);
+    queueMicrotask(() => {
+      setExpandedScopes((prev) => {
+        const next = new Set(prev);
+        next.add("global");
+        if (activeScopeKey) next.add(activeScopeKey);
+        if (activeSlug) {
+          for (const b of scopeGrouped) {
+            if (b.pages.some((p) => p.slug === activeSlug)) {
+              next.add(b.key);
+            }
+          }
         }
-      }
-    }
-    setExpandedScopes(scopesToExpand);
-  }, [groupByScope, scopeGrouped, activeScopeKey, activeSlug]);
+        return next;
+      });
+    });
+  }, [groupByScope, scopeGrouped, activeScopeKey, activeSlug, setExpandedScopes]);
 
   const toggleScope = (key: string) => {
     setExpandedScopes((prev) => {
@@ -504,6 +506,15 @@ export function WikiPageTree({
       return next;
     });
   };
+
+  // Auto-scroll active item into view
+  React.useEffect(() => {
+    if (!currentSlug || !treeScrollRef.current) return;
+    const activeEl = treeScrollRef.current.querySelector(`[data-slug="${currentSlug}"]`);
+    if (activeEl) {
+      activeEl.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [currentSlug]);
 
   // Renders one leaf row (page link + delete button)
   const renderPageItem = (page: WikiPageSummary, cleanTitle?: string) => {
@@ -541,49 +552,32 @@ export function WikiPageTree({
           isActive ? "bg-primary/10" : "hover:bg-accent/50",
         )}
       >
-        {onPageSelect ? (
-          <button
-            onClick={() => onPageSelect(page.slug)}
-            className={cn(
-              "flex-1 flex items-center gap-2 px-2.5 py-1.5 text-xs min-w-0 transition-all text-left",
-              isActive ? "text-primary font-medium" : "text-muted-foreground hover:text-foreground",
-            )}
-            title={page.summary || page.title}
-          >
-            {isOverview ? (
-              <span className="material-symbols-outlined text-xs text-primary/80 shrink-0" style={{ fontSize: 13 }}>
-                menu_book
-              </span>
-            ) : (
-              <span
-                className={cn("w-1.5 h-1.5 rounded-full shrink-0 border", statusColors[page.status || "seed"])}
-                title={`Status: ${statusText[page.status || "seed"]}`}
-              />
-            )}
-            <span className="truncate">{displayTitle}</span>
-          </button>
-        ) : (
-          <Link
-            href={`/wiki/${page.slug}${linkSuffix}`}
-            className={cn(
-              "flex-1 flex items-center gap-2 px-2.5 py-1.5 text-xs min-w-0 transition-all",
-              isActive ? "text-primary font-medium" : "text-muted-foreground hover:text-foreground",
-            )}
-            title={page.summary || page.title}
-          >
-            {isOverview ? (
-              <span className="material-symbols-outlined text-xs text-primary/80 shrink-0" style={{ fontSize: 13 }}>
-                menu_book
-              </span>
-            ) : (
-              <span
-                className={cn("w-1.5 h-1.5 rounded-full shrink-0 border", statusColors[page.status || "seed"])}
-                title={`Status: ${statusText[page.status || "seed"]}`}
-              />
-            )}
-            <span className="truncate">{displayTitle}</span>
-          </Link>
-        )}
+        <Link
+          href={`/wiki/${page.slug}${linkSuffix}`}
+          onClick={(e) => {
+            if (onPageSelect && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.button === 0) {
+              e.preventDefault();
+              onPageSelect(page.slug);
+            }
+          }}
+          className={cn(
+            "flex-1 flex items-center gap-2 px-2.5 py-1.5 text-xs min-w-0 transition-all",
+            isActive ? "text-primary font-medium" : "text-muted-foreground hover:text-foreground",
+          )}
+          title={page.summary || page.title}
+        >
+          {isOverview ? (
+            <span className="material-symbols-outlined text-xs text-primary/80 shrink-0" style={{ fontSize: 13 }}>
+              menu_book
+            </span>
+          ) : (
+            <span
+              className={cn("w-1.5 h-1.5 rounded-full shrink-0 border", statusColors[page.status || "seed"])}
+              title={`Status: ${statusText[page.status || "seed"]}`}
+            />
+          )}
+          <span className="truncate">{displayTitle}</span>
+        </Link>
 
         {isDeleting ? (
           <span className="material-symbols-outlined text-xs text-destructive animate-pulse mr-1.5">
@@ -823,205 +817,36 @@ export function WikiPageTree({
             )}
           </div>
 
-          {/* Quick Category Segmented Tabs */}
-          <div className="grid grid-cols-3 p-0.5 bg-muted/60 rounded-lg text-xs select-none">
-            <button
-              type="button"
-              onClick={() => setCategoryFilter("all")}
-              className={cn(
-                "py-1 px-1 text-[11px] rounded-md transition-all text-center truncate cursor-pointer",
-                categoryFilter === "all"
-                  ? "bg-background text-foreground font-semibold shadow-xs"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              {t("wiki.all")}
-            </button>
-            <button
-              type="button"
-              onClick={() => setCategoryFilter("articles")}
-              className={cn(
-                "py-1 px-1 text-[11px] rounded-md transition-all text-center truncate flex items-center justify-center gap-0.5 cursor-pointer",
-                categoryFilter === "articles"
-                  ? "bg-background text-foreground font-semibold shadow-xs"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-              title={`${t("wiki.articles")} (${sourceStats.articlesCount})`}
-            >
-              <span>{t("wiki.articles")}</span>
-              <span className="text-[10px] opacity-60 tabular-nums">({sourceStats.articlesCount})</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setCategoryFilter("overview")}
-              className={cn(
-                "py-1 px-1 text-[11px] rounded-md transition-all text-center truncate flex items-center justify-center gap-0.5 cursor-pointer",
-                categoryFilter === "overview"
-                  ? "bg-background text-foreground font-semibold shadow-xs"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-              title={`${t("wiki.overview")} (${sourceStats.overviewsCount})`}
-            >
-              <span>{t("wiki.overview")}</span>
-              <span className="text-[10px] opacity-60 tabular-nums">({sourceStats.overviewsCount})</span>
-            </button>
-          </div>
-
-          {/* Document filter (when sources exist) */}
-          {sources.length > 0 && (
-            <div>
-              {selectedDoc ? (
-                /* Active Document Filter Chip */
-                <div className="flex items-center justify-between gap-1.5 px-2 h-7 rounded-md bg-primary/10 border border-primary/25 text-primary text-[11px] font-medium transition-all">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger className="flex items-center gap-1.5 truncate min-w-0 flex-1 text-left cursor-pointer hover:opacity-85 outline-none">
-                      <span className="material-symbols-outlined shrink-0 text-primary" style={{ fontSize: 14 }}>
-                        {selectedDoc.id === "other" ? "folder_open" : "description"}
-                      </span>
-                      <span className="truncate" title={selectedDoc.title}>
-                        {selectedDoc.title}
-                      </span>
-                      <span className="material-symbols-outlined text-xs text-primary/70 shrink-0">
-                        expand_more
-                      </span>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="w-(--anchor-width) min-w-[240px] max-h-[300px] overflow-y-auto">
-                      <DropdownMenuItem
-                        onClick={() => setSelectedSourceId(null)}
-                        className="flex items-center gap-2 text-xs cursor-pointer"
-                      >
-                        <span className="material-symbols-outlined text-primary shrink-0" style={{ fontSize: 14 }}>
-                          folder
-                        </span>
-                        <span className="flex-1 truncate">Tất cả văn bản</span>
-                        <span className="text-[10px] text-muted-foreground tabular-nums">({totalCount})</span>
-                      </DropdownMenuItem>
-                      {sourceStats.sources.map((s) => {
-                        const isSel = selectedSourceId === s.id;
-                        return (
-                          <DropdownMenuItem
-                            key={s.id}
-                            onClick={() => setSelectedSourceId(s.id)}
-                            className={cn("flex items-center gap-2 text-xs cursor-pointer", isSel && "bg-accent/70 font-medium")}
-                          >
-                            <span className="material-symbols-outlined text-muted-foreground shrink-0" style={{ fontSize: 14 }}>
-                              description
-                            </span>
-                            <span className="flex-1 truncate" title={s.title}>
-                              {s.title}
-                            </span>
-                            <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">
-                              ({s.count})
-                            </span>
-                            {isSel && (
-                              <span className="material-symbols-outlined text-primary ml-1 shrink-0" style={{ fontSize: 14 }}>
-                                check
-                              </span>
-                            )}
-                          </DropdownMenuItem>
-                        );
-                      })}
-                      {sourceStats.otherCount > 0 && (
-                        <DropdownMenuItem
-                          onClick={() => setSelectedSourceId("other")}
-                          className={cn("flex items-center gap-2 text-xs cursor-pointer", selectedSourceId === "other" && "bg-accent/70 font-medium")}
-                        >
-                          <span className="material-symbols-outlined text-muted-foreground shrink-0" style={{ fontSize: 14 }}>
-                            folder_open
-                          </span>
-                          <span className="flex-1 truncate">Khác / Chưa phân loại</span>
-                          <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">
-                            ({sourceStats.otherCount})
-                          </span>
-                          {selectedSourceId === "other" && (
-                            <span className="material-symbols-outlined text-primary ml-1 shrink-0" style={{ fontSize: 14 }}>
-                              check
-                            </span>
-                          )}
-                        </DropdownMenuItem>
-                      )}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedSourceId(null)}
-                    className="p-0.5 rounded hover:bg-primary/20 text-primary/80 hover:text-primary transition-colors shrink-0 cursor-pointer"
-                    title="Bỏ lọc văn bản này (Hiển thị tất cả)"
-                  >
-                    <span className="material-symbols-outlined shrink-0" style={{ fontSize: 14 }}>
-                      close
-                    </span>
-                  </button>
-                </div>
-              ) : (
-                /* Neutral Document Selector */
-                <DropdownMenu>
-                  <DropdownMenuTrigger className="w-full flex items-center justify-between gap-1.5 px-2.5 h-7 rounded-md bg-background/50 hover:bg-accent/60 border border-border/70 text-[11px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer select-none text-left min-w-0 outline-none">
-                    <div className="flex items-center gap-1.5 truncate min-w-0">
-                      <span className="material-symbols-outlined text-primary/70 shrink-0" style={{ fontSize: 14 }}>
-                        folder
-                      </span>
-                      <span className="truncate">Tất cả văn bản</span>
-                      <span className="text-[10px] opacity-60 tabular-nums shrink-0">({totalCount})</span>
-                    </div>
-                    <span className="material-symbols-outlined text-xs text-muted-foreground shrink-0">
-                      expand_more
-                    </span>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="w-(--anchor-width) min-w-[240px] max-h-[300px] overflow-y-auto">
-                    <DropdownMenuItem
-                      onClick={() => setSelectedSourceId(null)}
-                      className="flex items-center gap-2 text-xs cursor-pointer bg-accent/70 font-medium"
-                    >
-                      <span className="material-symbols-outlined text-primary shrink-0" style={{ fontSize: 14 }}>
-                        folder
-                      </span>
-                      <span className="flex-1 truncate">Tất cả văn bản</span>
-                      <span className="text-[10px] text-muted-foreground tabular-nums">({totalCount})</span>
-                      <span className="material-symbols-outlined text-primary ml-1 shrink-0" style={{ fontSize: 14 }}>
-                        check
-                      </span>
-                    </DropdownMenuItem>
-                    {sourceStats.sources.map((s) => (
-                      <DropdownMenuItem
-                        key={s.id}
-                        onClick={() => setSelectedSourceId(s.id)}
-                        className="flex items-center gap-2 text-xs cursor-pointer"
-                      >
-                        <span className="material-symbols-outlined text-muted-foreground shrink-0" style={{ fontSize: 14 }}>
-                          description
-                        </span>
-                        <span className="flex-1 truncate" title={s.title}>
-                          {s.title}
-                        </span>
-                        <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">
-                          ({s.count})
-                        </span>
-                      </DropdownMenuItem>
-                    ))}
-                    {sourceStats.otherCount > 0 && (
-                      <DropdownMenuItem
-                        onClick={() => setSelectedSourceId("other")}
-                        className="flex items-center gap-2 text-xs cursor-pointer"
-                      >
-                        <span className="material-symbols-outlined text-muted-foreground shrink-0" style={{ fontSize: 14 }}>
-                          folder_open
-                        </span>
-                        <span className="flex-1 truncate">Khác / Chưa phân loại</span>
-                        <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">
-                          ({sourceStats.otherCount})
-                        </span>
-                      </DropdownMenuItem>
-                    )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
+          {/* Active Filter Indicator Chip (syncs with page-top filter bar) */}
+          {isFiltered && (
+            <div className="flex items-center justify-between gap-1.5 px-2 py-1 rounded-md bg-primary/10 border border-primary/20 text-primary text-[11px] transition-all">
+              <div className="flex items-center gap-1.5 truncate min-w-0">
+                <span className="material-symbols-outlined shrink-0 text-primary" style={{ fontSize: 13 }}>
+                  {selectedDoc ? "description" : "filter_alt"}
+                </span>
+                <span
+                  className="truncate font-medium"
+                  title={selectedDoc ? selectedDoc.title : categoryFilter === "articles" ? "Điều luật / Bài viết" : "Tổng quan"}
+                >
+                  {selectedDoc ? selectedDoc.title : categoryFilter === "articles" ? "Điều luật / Bài viết" : "Tổng quan"}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={resetAllFilters}
+                className="p-0.5 rounded hover:bg-primary/20 text-primary/80 hover:text-primary transition-colors shrink-0 cursor-pointer"
+                title="Bỏ lọc (Hiển thị tất cả)"
+              >
+                <span className="material-symbols-outlined shrink-0" style={{ fontSize: 13 }}>
+                  close
+                </span>
+              </button>
             </div>
           )}
         </div>
 
         {/* Tree List */}
-        <div className="flex-1 overflow-y-auto py-2">
+        <div ref={treeScrollRef} onScroll={handleTreeScroll} className="flex-1 overflow-y-auto py-2">
           {loading ? (
             <div className="px-3 space-y-2 mt-1">
               {Array.from({ length: 6 }).map((_, i) => (
@@ -1188,31 +1013,20 @@ export function WikiPageTree({
                     >
                       <Link
                         href={`/wiki/source/${src.id}`}
-                        className="flex-1 flex items-center gap-2 min-w-0"
+                        onClick={(e) => {
+                          if (onPageSelect && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.button === 0) {
+                            e.preventDefault();
+                            onPageSelect(`source/${src.id}`);
+                          }
+                        }}
+                        className="flex-1 flex items-center gap-2 min-w-0 py-0.5"
                         title={src.title || src.file_name}
                       >
-                        <span className="material-symbols-outlined shrink-0" style={{ fontSize: 14 }}>
+                        <span className="material-symbols-outlined shrink-0 text-muted-foreground" style={{ fontSize: 14 }}>
                           {src.source_type === "url" ? "link" : "description"}
                         </span>
                         <span className="truncate">{src.title || src.file_name || "Untitled"}</span>
                       </Link>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedSourceId(selectedSourceId === src.id ? null : src.id);
-                        }}
-                        className={cn(
-                          "p-1 rounded transition-colors shrink-0",
-                          isFiltered
-                            ? "text-primary bg-primary/20"
-                            : "opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground hover:bg-accent"
-                        )}
-                        title={isFiltered ? "Hủy lọc tài liệu này" : "Lọc bài viết theo tài liệu này"}
-                      >
-                        <span className="material-symbols-outlined text-[13px]">
-                          filter_alt
-                        </span>
-                      </button>
                     </div>
                   );
                 })}

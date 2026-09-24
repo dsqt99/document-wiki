@@ -8,6 +8,7 @@ import { WikiPageSummary, WikiScope } from "@/types/wiki";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { WikiPageTree } from "@/components/wiki/wiki-page-tree";
+import { WikiTopFilterBar } from "@/components/wiki/wiki-top-filter-bar";
 import { WikiContent } from "@/components/wiki/wiki-content";
 import { WikiTypeBadge, wikiTypeGroupLabel } from "@/components/wiki/wiki-type-badge";
 import { ScopeBadge } from "@/components/shared/scope-badge";
@@ -260,8 +261,10 @@ export default function WikiIndexPage() {
         />
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto px-8 py-6">
-          {loading ? (
+        <div className="flex-1 overflow-y-auto min-w-0">
+          <WikiTopFilterBar pages={allPages} />
+          <div className="px-8 py-6">
+            {loading ? (
             <div className="flex items-center justify-center h-32">
               <span className="material-symbols-outlined text-3xl text-muted-foreground animate-spin">
                 progress_activity
@@ -379,6 +382,7 @@ export default function WikiIndexPage() {
               description="Upload and compile documents to start building your knowledge wiki."
             />
           )}
+          </div>
         </div>
       </div>
 

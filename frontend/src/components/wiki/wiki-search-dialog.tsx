@@ -8,6 +8,8 @@ import { WikiPageSummary } from "@/types/wiki";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { wikiTypeIcon, wikiTypeColor, wikiTypeGroupLabel } from "./wiki-type-badge";
 
+import { getCachedPages, setCachedPages } from "@/lib/wiki-store";
+
 const GROUP_ORDER = ["entity", "concept", "topic", "source"];
 
 function useDebounce<T>(value: T, delay: number): T {
@@ -22,13 +24,16 @@ function useDebounce<T>(value: T, delay: number): T {
 export function WikiSearchDialog({
   open,
   onOpenChange,
+  onSelectPage,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  onSelectPage?: (slug: string) => void;
 }) {
   const { t } = useI18n();
   const router = useRouter();
-  const [pages, setPages] = React.useState<WikiPageSummary[]>([]);
+  const initialPages = React.useMemo(() => getCachedPages("/api/wiki/pages") || [], []);
+  const [pages, setPages] = React.useState<WikiPageSummary[]>(initialPages);
   const [query, setQuery] = React.useState("");
   const inputRef = React.useRef<HTMLInputElement>(null);
   const debouncedQuery = useDebounce(query, 120);
@@ -36,7 +41,11 @@ export function WikiSearchDialog({
   React.useEffect(() => {
     if (!open) return;
     api<WikiPageSummary[]>("/api/wiki/pages")
-      .then((d) => setPages(Array.isArray(d) ? d : []))
+      .then((d) => {
+        const list = Array.isArray(d) ? d : [];
+        setPages(list);
+        setCachedPages("/api/wiki/pages", list);
+      })
       .catch(() => setPages([]));
   }, [open]);
 
@@ -44,7 +53,7 @@ export function WikiSearchDialog({
     if (open) {
       setTimeout(() => inputRef.current?.focus(), 50);
     } else {
-      setQuery("");
+      queueMicrotask(() => setQuery(""));
     }
   }, [open]);
 
@@ -71,7 +80,11 @@ export function WikiSearchDialog({
   }, [filtered]);
 
   const navigate = (slug: string) => {
-    router.push(`/wiki/${slug}`);
+    if (onSelectPage) {
+      onSelectPage(slug);
+    } else {
+      router.push(`/wiki/${slug}`);
+    }
     onOpenChange(false);
   };
 

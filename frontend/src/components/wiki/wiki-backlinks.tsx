@@ -14,21 +14,30 @@ type Props = {
   /** Suffix appended to /wiki/<slug> links (e.g. "?scopeType=...&scopeId=...")
    *  so backlinks/outlinks preserve the current scope context. */
   linkSuffix?: string;
+  onSelectPage?: (slug: string) => void;
 };
 
 function LinkItem({
   slug,
   direction,
   linkSuffix = "",
+  onSelectPage,
 }: {
   slug: string;
   direction: "back" | "forward";
   linkSuffix?: string;
+  onSelectPage?: (slug: string) => void;
 }) {
   const label = slug.split("/").pop() ?? slug;
   return (
     <Link
       href={`/wiki/${slug}${linkSuffix}`}
+      onClick={(e) => {
+        if (onSelectPage && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.button === 0) {
+          e.preventDefault();
+          onSelectPage(slug);
+        }
+      }}
       className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors group"
     >
       <span className="material-symbols-outlined text-xs text-muted-foreground group-hover:text-primary transition-colors">
@@ -74,7 +83,7 @@ function Section({
   );
 }
 
-export function WikiSidebarRight({ slug, page, linkSuffix = "" }: Props) {
+export function WikiSidebarRight({ slug, page, linkSuffix = "", onSelectPage }: Props) {
   const [graphData, setGraphData] = React.useState<WikiGraphData | null>(null);
 
   React.useEffect(() => {
@@ -139,14 +148,12 @@ export function WikiSidebarRight({ slug, page, linkSuffix = "" }: Props) {
             </div>
           )}
 
-          {/* Source documents */}
-          {page.source_ids.length > 0 && (
+          {/* Source origin link (if page was generated from a source document) */}
+          {page.source_ids && page.source_ids.length > 0 && (
             <div>
-              <p className="text-xs text-muted-foreground/60 mb-1.5">
-                Source Documents ({page.source_ids.length})
-              </p>
+              <p className="text-muted-foreground/60 text-xs mb-1">Origin Document</p>
               <Link
-                href="/knowledge"
+                href={`/sources`}
                 className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors"
               >
                 <span className="material-symbols-outlined text-xs">open_in_new</span>
@@ -163,12 +170,12 @@ export function WikiSidebarRight({ slug, page, linkSuffix = "" }: Props) {
           <>
             <Section title="Backlinks" icon="arrow_back" count={page.backlinks.length}>
               {page.backlinks.map((s) => (
-                <LinkItem key={s} slug={s} direction="back" linkSuffix={linkSuffix} />
+                <LinkItem key={s} slug={s} direction="back" linkSuffix={linkSuffix} onSelectPage={onSelectPage} />
               ))}
             </Section>
             <Section title="Outlinks" icon="arrow_forward" count={page.outlinks.length}>
               {page.outlinks.map((s) => (
-                <LinkItem key={s} slug={s} direction="forward" linkSuffix={linkSuffix} />
+                <LinkItem key={s} slug={s} direction="forward" linkSuffix={linkSuffix} onSelectPage={onSelectPage} />
               ))}
             </Section>
           </>
