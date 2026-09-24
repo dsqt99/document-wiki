@@ -35,27 +35,25 @@ export function EditSourceDialog({
   const { t } = useI18n();
   const [title, setTitle] = React.useState(source.title);
   const [typeId, setTypeId] = React.useState(source.knowledge_type_id || "");
+
+  // Determine initial scope mode: 'project', 'department', or 'global'
+  const initialMode = React.useMemo(() => {
+    if (source.scope_type === "project") return "project";
+    if (source.scope_type === "department" || (source.department_ids && source.department_ids.length > 0)) {
+      return "department";
+    }
+    return "global";
+  }, [source.scope_type, source.department_ids]);
+
+  const [scopeMode, setScopeMode] = React.useState<"global" | "department" | "project">(initialMode);
   const [selectedDepts, setSelectedDepts] = React.useState<string[]>(source.department_ids || []);
   const originalDepts = React.useRef<string[]>(source.department_ids || []);
 
-  React.useEffect(() => {
-    setSelectedDepts(source.department_ids || []);
-    originalDepts.current = source.department_ids || [];
-  }, [source.id]);
-  const [scopeType, setScopeType] = React.useState(source.scope_type || "global");
   const [scopeId, setScopeId] = React.useState(source.scope_id || "");
   const [projects, setProjects] = React.useState<{ id: string; name: string }[]>([]);
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState("");
   const [pendingConfirm, setPendingConfirm] = React.useState(false);
-
-  // Scope and departments decide where wiki pages get committed; the worker
-  // reads them at commit time. Allowing edits mid-pipeline could land pages
-  // in the wrong scope (visibility leak). Backend enforces this too — UI just
-  // makes it obvious so users don't get a 409 on save.
-  const inFlight = ["pending", "processing", "awaiting_approval", "plan_ready"].includes(
-    source.status,
-  );
 
   // Fetch projects for workspace scope picker
   React.useEffect(() => {
@@ -70,28 +68,41 @@ export function EditSourceDialog({
     );
   };
 
-  const deptChanged = () => {
-    const orig = new Set(originalDepts.current);
-    const cur = new Set(selectedDepts);
-    return orig.size !== cur.size || selectedDepts.some((d) => !orig.has(d));
+  const scopeChanged = () => {
+    if (scopeMode !== initialMode) return true;
+    if (scopeMode === "department") {
+      const orig = new Set(originalDepts.current);
+      const cur = new Set(selectedDepts);
+      return orig.size !== cur.size || selectedDepts.some((d) => !orig.has(d));
+    }
+    if (scopeMode === "project") {
+      return (scopeId || "") !== (source.scope_id || "");
+    }
+    return false;
   };
 
   const doSave = async () => {
+    if (scopeMode === "department" && selectedDepts.length === 0) {
+      setError(t("dept.selectAtLeastOne", "Vui lòng chọn ít nhất một phòng ban"));
+      return;
+    }
+    if (scopeMode === "project" && !scopeId) {
+      setError(t("scope.selectWorkspace", "Vui lòng chọn không gian làm việc (Workspace)"));
+      return;
+    }
+
     setSaving(true);
     setError("");
     setPendingConfirm(false);
     try {
-      // While in-flight, only send cosmetic fields. Backend rejects any
-      // scope/dept payload in those statuses, even if the value is unchanged.
       const body: Record<string, unknown> = {
         title: title || undefined,
         knowledge_type_id: typeId || null,
+        scope_type: scopeMode,
+        scope_id: scopeMode === "project" ? (scopeId || null) : null,
+        department_ids: scopeMode === "department" ? selectedDepts : [],
       };
-      if (!inFlight) {
-        body.department_ids = selectedDepts;
-        body.scope_type = scopeType;
-        body.scope_id = scopeType === "global" ? null : (scopeId || null);
-      }
+
       await api(`/api/sources/${source.id}`, { method: "PATCH", body });
       onSaved();
     } catch (err) {
@@ -102,7 +113,7 @@ export function EditSourceDialog({
   };
 
   const handleSave = () => {
-    if (source.status === "ready" && deptChanged()) {
+    if (source.status === "ready" && scopeChanged()) {
       setPendingConfirm(true);
     } else {
       doSave();
@@ -111,12 +122,13 @@ export function EditSourceDialog({
 
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{t("knowledge.edit.title", "Edit Document")}</DialogTitle>
         </DialogHeader>
 
         <div className="flex flex-col gap-4 mt-2">
+          {/* Document Title */}
           <div className="flex flex-col gap-1.5">
             <Label>{t("common.name", "Title")}</Label>
             <Input
@@ -126,16 +138,20 @@ export function EditSourceDialog({
             />
           </div>
 
+          {/* Knowledge Type */}
           <div className="flex flex-col gap-1.5">
             <Label>{t("knowledge.upload.typeLabel", "Knowledge Type")}</Label>
             <Select value={typeId} onValueChange={(v) => setTypeId(v ?? "")}>
               <SelectTrigger className="bg-background">
-                {typeId ? (() => { const item = types.find(x => x.id === typeId); return item ? (
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }} />
-                    <span>{item.name}</span>
-                  </div>
-                ) : <SelectValue placeholder={t("knowledge.upload.none", "No type")} />; })() : <SelectValue placeholder={t("knowledge.upload.none", "No type")} />}
+                {typeId ? (() => {
+                  const item = types.find(x => x.id === typeId);
+                  return item ? (
+                    <div className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+                      <span>{item.name}</span>
+                    </div>
+                  ) : <SelectValue placeholder={t("knowledge.upload.none", "No type")} />;
+                })() : <SelectValue placeholder={t("knowledge.upload.none", "No type")} />}
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="">{t("knowledge.upload.none", "No type")}</SelectItem>
@@ -151,111 +167,144 @@ export function EditSourceDialog({
             </Select>
           </div>
 
-          {inFlight && (
-            <div className="rounded-lg border border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/30 px-3 py-2 text-xs text-amber-800 dark:text-amber-300 flex items-start gap-1.5">
-              <span className="material-symbols-outlined shrink-0" style={{ fontSize: 14, marginTop: 1 }}>info</span>
-              <span>
-                {t("knowledge.edit.inFlight", "Document is being processed. You can edit title and type, but departments and visibility can only be changed once finished.")}
-              </span>
-            </div>
-          )}
-
-          {/* Multi-department selection */}
-          <div className="flex flex-col gap-1.5">
-            <Label className={inFlight ? "text-muted-foreground" : ""}>{t("knowledge.upload.departments", "Departments")}</Label>
+          {/* Unified Scope / Visibility Selector */}
+          <div className="flex flex-col gap-1.5 pt-1 border-t">
+            <Label className="font-semibold text-foreground flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-base">visibility</span>
+              {t("knowledge.upload.visibility", "Phạm vi hiển thị")}
+            </Label>
             <p className="text-xs text-muted-foreground">
-              {t("knowledge.upload.deptHint", "Select which departments can access this document. Leave empty for global access.")}
+              {t("knowledge.edit.scopeHint", "Chọn phạm vi hiển thị và quyền truy cập của tài liệu.")}
             </p>
-            <div className={`border rounded-lg p-2 max-h-40 overflow-y-auto bg-background ${inFlight ? "opacity-60" : ""}`}>
-              {departments.length === 0 ? (
-                <span className="text-xs text-muted-foreground">{t("dept.noDepts", "No departments available")}</span>
-              ) : (
-                departments.map((d) => (
-                  <label
-                    key={d.id}
-                    className={`flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted ${inFlight ? "cursor-not-allowed" : "cursor-pointer"}`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedDepts.includes(d.id)}
-                      onChange={() => toggleDept(d.id)}
-                      disabled={inFlight}
-                      className="rounded border-border"
-                    />
-                    <span className="text-sm">{d.name}</span>
-                  </label>
-                ))
-              )}
-            </div>
-            {selectedDepts.length > 0 && (
-              <div className="flex flex-wrap gap-1 mt-1">
-                {selectedDepts.map((id) => {
-                  const name = departments.find((d) => d.id === id)?.name ?? id;
-                  return (
-                    <span
-                      key={id}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary"
-                    >
-                      {name}
-                      <button
-                        type="button"
-                        onClick={() => toggleDept(id)}
-                        className="hover:text-destructive"
-                      >
-                        ×
-                      </button>
-                    </span>
-                  );
-                })}
-              </div>
-            )}
-          </div>
 
-          {/* Visibility / Scope */}
-          <div className="flex flex-col gap-1.5">
-            <Label className={inFlight ? "text-muted-foreground" : ""}>{t("knowledge.upload.visibility", "Visibility")}</Label>
-            <Select value={scopeType} disabled={inFlight} onValueChange={(v) => {
-              const val = v ?? "global";
-              setScopeType(val);
-              if (val === "global") setScopeId("");
-            }}>
-              <SelectTrigger className="bg-background">
+            <Select
+              value={scopeMode}
+              onValueChange={(val) => {
+                const mode = (val || "global") as "global" | "department" | "project";
+                setScopeMode(mode);
+                if (mode === "global") {
+                  setSelectedDepts([]);
+                  setScopeId("");
+                } else if (mode === "project") {
+                  setSelectedDepts([]);
+                } else if (mode === "department") {
+                  setScopeId("");
+                }
+              }}
+            >
+              <SelectTrigger className="bg-background font-medium">
                 <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined" style={{ fontSize: 14 }}>
-                    {scopeType === "global" ? "public" : "folder_special"}
+                  <span className="material-symbols-outlined text-base text-primary">
+                    {scopeMode === "global" ? "public" : scopeMode === "department" ? "apartment" : "folder_special"}
                   </span>
-                  <span className="capitalize">{scopeType === "project" ? t("scope.project", "Workspace") : t("scope.global", "Global")}</span>
+                  <span>
+                    {scopeMode === "global"
+                      ? t("knowledge.scope.global", "Toàn hệ thống")
+                      : scopeMode === "department"
+                      ? t("knowledge.scope.department", "Theo phòng ban")
+                      : t("knowledge.scope.project", "Theo Workspace")}
+                  </span>
                 </div>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="global">
                   <div className="flex items-center gap-2">
-                    <span className="material-symbols-outlined" style={{ fontSize: 14 }}>public</span>
-                    {t("scope.global", "Global")}
+                    <span className="material-symbols-outlined text-base">public</span>
+                    <div>
+                      <div className="font-medium">{t("knowledge.scope.global", "Toàn hệ thống")}</div>
+                      <div className="text-xs text-muted-foreground">Hiển thị cho tất cả cán bộ trong hệ thống</div>
+                    </div>
+                  </div>
+                </SelectItem>
+                <SelectItem value="department">
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-base">apartment</span>
+                    <div>
+                      <div className="font-medium">{t("knowledge.scope.department", "Theo phòng ban")}</div>
+                      <div className="text-xs text-muted-foreground">Giới hạn trong các phòng ban được chọn</div>
+                    </div>
                   </div>
                 </SelectItem>
                 <SelectItem value="project">
                   <div className="flex items-center gap-2">
-                    <span className="material-symbols-outlined" style={{ fontSize: 14 }}>folder_special</span>
-                    {t("scope.project", "Workspace")}
+                    <span className="material-symbols-outlined text-base">folder_special</span>
+                    <div>
+                      <div className="font-medium">{t("knowledge.scope.project", "Theo Workspace")}</div>
+                      <div className="text-xs text-muted-foreground">Giới hạn trong không gian làm việc / dự án</div>
+                    </div>
                   </div>
                 </SelectItem>
               </SelectContent>
             </Select>
-            {scopeType === "global" && (
-              <p className="text-xs text-amber-600 dark:text-amber-400 flex items-start gap-1.5 mt-0.5">
-                <span className="material-symbols-outlined shrink-0" style={{ fontSize: 13, marginTop: 1 }}>warning</span>
-                {t("knowledge.upload.globalNotice", "Document content will be compiled into the shared wiki and visible to all employees.")}
-              </p>
-            )}
           </div>
 
-          {scopeType === "project" && (
-            <div className="flex flex-col gap-1.5">
-              <Label className={inFlight ? "text-muted-foreground" : ""}>{t("scope.project", "Target Workspace")}</Label>
-              <Select value={scopeId} disabled={inFlight} onValueChange={(v) => setScopeId(v ?? "")}>
+          {/* Conditional Sub-selector: Global Notice */}
+          {scopeMode === "global" && (
+            <div className="rounded-lg border border-blue-200 bg-blue-50/50 dark:border-blue-900 dark:bg-blue-950/20 px-3 py-2 text-xs text-blue-800 dark:text-blue-300 flex items-start gap-1.5">
+              <span className="material-symbols-outlined shrink-0 text-blue-600 dark:text-blue-400" style={{ fontSize: 16 }}>public</span>
+              <span>{t("knowledge.upload.globalNotice", "Nội dung tài liệu sẽ được biên soạn vào wiki chung và hiển thị cho tất cả nhân sự.")}</span>
+            </div>
+          )}
+
+          {/* Conditional Sub-selector: Department Checklist */}
+          {scopeMode === "department" && (
+            <div className="flex flex-col gap-1.5 bg-muted/30 p-3 rounded-lg border">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-medium">{t("knowledge.upload.departments", "Chọn phòng ban được truy cập:")}</Label>
+                <span className="text-xs text-muted-foreground">Đã chọn {selectedDepts.length}</span>
+              </div>
+              <div className="border rounded-lg p-2 max-h-40 overflow-y-auto bg-background">
+                {departments.length === 0 ? (
+                  <span className="text-xs text-muted-foreground">{t("dept.noDepts", "Chưa có phòng ban")}</span>
+                ) : (
+                  departments.map((d) => (
+                    <label
+                      key={d.id}
+                      className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted cursor-pointer transition-colors"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedDepts.includes(d.id)}
+                        onChange={() => toggleDept(d.id)}
+                        className="rounded border-border"
+                      />
+                      <span className="text-sm">{d.name}</span>
+                    </label>
+                  ))
+                )}
+              </div>
+              {selectedDepts.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {selectedDepts.map((id) => {
+                    const name = departments.find((d) => d.id === id)?.name ?? id;
+                    return (
+                      <span
+                        key={id}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary border border-primary/20"
+                      >
+                        {name}
+                        <button
+                          type="button"
+                          onClick={() => toggleDept(id)}
+                          className="hover:text-destructive font-bold ml-0.5"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Conditional Sub-selector: Project / Workspace */}
+          {scopeMode === "project" && (
+            <div className="flex flex-col gap-1.5 bg-muted/30 p-3 rounded-lg border">
+              <Label className="text-xs font-medium">{t("scope.project", "Chọn Không gian làm việc (Workspace)")}</Label>
+              <Select value={scopeId} onValueChange={(v) => setScopeId(v ?? "")}>
                 <SelectTrigger className="bg-background">
-                  <span>{scopeId ? (projects.find(p => p.id === scopeId)?.name ?? "Select...") : "Select workspace..."}</span>
+                  <span>{scopeId ? (projects.find(p => p.id === scopeId)?.name ?? "Chọn workspace...") : "Chọn workspace..."}</span>
                 </SelectTrigger>
                 <SelectContent>
                   {projects.map((p) => (
@@ -268,39 +317,51 @@ export function EditSourceDialog({
             </div>
           )}
 
+          {/* Scope change confirmation dialog */}
           {pendingConfirm && (
-            <div className="rounded-lg border border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/30 p-3 flex flex-col gap-3">
-              <p className="text-sm text-amber-800 dark:text-amber-300">
-                {t("knowledge.edit.inFlight", "Changing department will rerun AI compilation. Continue?")}
-              </p>
+            <div className="rounded-lg border border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/30 p-3 flex flex-col gap-2.5">
+              <div className="flex items-start gap-2">
+                <span className="material-symbols-outlined text-amber-600 dark:text-amber-400 shrink-0 text-base mt-0.5">warning</span>
+                <p className="text-xs text-amber-800 dark:text-amber-300">
+                  {t(
+                    "knowledge.edit.scopeChangeConfirm",
+                    "Việc thay đổi phạm vi hiển thị sẽ kích hoạt biên soạn lại tri thức bằng AI. Bạn có muốn tiếp tục?"
+                  )}
+                </p>
+              </div>
               <div className="flex justify-end gap-2">
-                <Button variant="outline" size="sm" onClick={() => setPendingConfirm(false)}>{t("common.cancel", "Cancel")}</Button>
+                <Button variant="outline" size="sm" onClick={() => setPendingConfirm(false)}>
+                  {t("common.cancel", "Hủy")}
+                </Button>
                 <Button size="sm" onClick={doSave} className="bg-amber-600 hover:bg-amber-700 text-white">
-                  {t("common.confirm", "Confirm")}
+                  {t("common.confirm", "Xác nhận")}
                 </Button>
               </div>
             </div>
           )}
 
+          {/* Error display */}
           {error && (
-            <p className="text-destructive text-sm bg-destructive/10 px-3 py-2 rounded-lg">
+            <p className="text-destructive text-sm bg-destructive/10 px-3 py-2 rounded-lg flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-base">error</span>
               {error}
             </p>
           )}
 
-          <div className="flex justify-end gap-2 mt-2">
-            <Button variant="outline" onClick={onClose}>{t("common.cancel", "Cancel")}</Button>
+          {/* Footer Actions */}
+          <div className="flex justify-end gap-2 mt-2 pt-2 border-t">
+            <Button variant="outline" onClick={onClose}>{t("common.cancel", "Hủy")}</Button>
             <Button
               disabled={saving || pendingConfirm}
               onClick={handleSave}
               className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
               {saving ? (
-               <span className="flex items-center gap-2">
-                 <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
-                 {t("common.loading", "Saving...")}
-               </span>
-              ) : t("common.save", "Save")}
+                <span className="flex items-center gap-2">
+                  <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
+                  {t("common.loading", "Đang lưu...")}
+                </span>
+              ) : t("common.save", "Lưu thay đổi")}
             </Button>
           </div>
         </div>

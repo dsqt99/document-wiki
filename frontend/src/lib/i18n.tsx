@@ -148,6 +148,11 @@ export const dictionaries = {
     "knowledge.upload.noFiles": "Chưa chọn tệp nào",
     "knowledge.edit.title": "Chỉnh sửa tài liệu",
     "knowledge.edit.inFlight": "Tài liệu đang được xử lý. Bạn có thể đổi tên và loại tri thức, nhưng phòng ban và phạm vi chỉ đổi được sau khi xử lý xong.",
+    "knowledge.edit.scopeChangeConfirm": "Việc thay đổi phạm vi hiển thị sẽ kích hoạt biên soạn lại tri thức bằng AI. Bạn có muốn tiếp tục?",
+    "knowledge.edit.scopeHint": "Chọn phạm vi hiển thị và quyền truy cập của tài liệu.",
+    "knowledge.scope.global": "Toàn hệ thống",
+    "knowledge.scope.department": "Theo phòng ban",
+    "knowledge.scope.project": "Theo Workspace",
 
     // Scope
     "scope.global": "Toàn hệ thống",
@@ -591,6 +596,11 @@ export const dictionaries = {
     "knowledge.upload.noFiles": "No files selected",
     "knowledge.edit.title": "Edit Document",
     "knowledge.edit.inFlight": "Document is being processed. You can edit title and type, but departments and visibility can only be changed once finished.",
+    "knowledge.edit.scopeChangeConfirm": "Changing visibility scope will rerun AI compilation. Continue?",
+    "knowledge.edit.scopeHint": "Select the document visibility and access scope.",
+    "knowledge.scope.global": "Global",
+    "knowledge.scope.department": "By Department",
+    "knowledge.scope.project": "By Workspace",
 
     // Scope
     "scope.global": "Global",
