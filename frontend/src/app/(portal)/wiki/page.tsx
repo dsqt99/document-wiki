@@ -8,7 +8,6 @@ import { WikiPageSummary, WikiScope } from "@/types/wiki";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { WikiPageTree } from "@/components/wiki/wiki-page-tree";
-import { WikiTopFilterBar } from "@/components/wiki/wiki-top-filter-bar";
 import { WikiContent } from "@/components/wiki/wiki-content";
 import { WikiTypeBadge, wikiTypeGroupLabel } from "@/components/wiki/wiki-type-badge";
 import { ScopeBadge } from "@/components/shared/scope-badge";
@@ -18,7 +17,7 @@ import { WikiCreatePageDialog } from "@/components/wiki/wiki-create-page-dialog"
 import { EmptyState } from "@/components/shared/empty-state";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
-import { WikiSourceItem, computeSourceStats } from "@/lib/wiki-store";
+import { WikiSourceItem, computeSourceStats, displaySourceTitle } from "@/lib/wiki-store";
 import { parseSourceLegalMeta, LegalCategory } from "@/components/knowledge/knowledge-table/utils";
 import { SourceArticlesDrawer } from "@/components/knowledge/knowledge-table/source-articles-drawer";
 
@@ -309,9 +308,7 @@ export default function WikiIndexPage() {
 
         {/* Content Area */}
         <div className="flex-1 overflow-y-auto min-w-0">
-          <WikiTopFilterBar pages={allPages} />
-
-          <div className="px-8 py-6">
+          <div className="px-6 xl:px-8 py-5">
             {loading ? (
               <div className="flex items-center justify-center h-48">
                 <span className="material-symbols-outlined text-3xl text-muted-foreground animate-spin">
@@ -320,92 +317,58 @@ export default function WikiIndexPage() {
               </div>
             ) : (
               <>
-                {/* Stats Bar */}
-                {totalPages > 0 && (
-                  <div className="flex flex-wrap items-center gap-3 mb-6">
-                    <div className="flex items-center gap-2 bg-card border border-border rounded-xl px-4 py-2.5 shadow-sahara">
-                      <span className="material-symbols-outlined text-base text-primary">local_library</span>
-                      <span className="text-sm font-bold text-foreground">{sources.length}</span>
-                      <span className="text-xs text-muted-foreground">Văn bản</span>
-                    </div>
+                {/* View Mode Tabs + compact stats */}
+                <div className="flex items-end gap-1 border-b border-border mb-5">
+                  {(
+                    [
+                      { id: "library", label: "Tủ sách văn bản", icon: "local_library", count: sources.length },
+                      { id: "pages", label: "Tất cả trang Wiki", icon: "format_list_bulleted", count: totalPages },
+                      ...(indexMd
+                        ? [{ id: "index", label: "Mục lục tổng hợp", icon: "menu_book", count: null }]
+                        : []),
+                    ] as { id: typeof viewMode; label: string; icon: string; count: number | null }[]
+                  ).map((tab) => {
+                    const active = viewMode === tab.id;
+                    return (
+                      <button
+                        key={tab.id}
+                        onClick={() => setViewMode(tab.id)}
+                        className={cn(
+                          "flex items-center gap-2 px-3 py-2.5 -mb-px text-xs font-semibold border-b-2 transition-colors cursor-pointer",
+                          active
+                            ? "border-primary text-primary"
+                            : "border-transparent text-muted-foreground hover:text-foreground",
+                        )}
+                      >
+                        <span className="material-symbols-outlined" style={{ fontSize: 17 }}>{tab.icon}</span>
+                        <span>{tab.label}</span>
+                        {tab.count !== null && (
+                          <span
+                            className={cn(
+                              "px-1.5 py-px rounded-full text-[10px] font-bold tabular-nums",
+                              active ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground",
+                            )}
+                          >
+                            {tab.count}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
 
-                    <div className="flex items-center gap-2 bg-card border border-border rounded-xl px-4 py-2.5 shadow-sahara">
-                      <span className="material-symbols-outlined text-base text-primary">article</span>
-                      <span className="text-sm font-bold text-foreground">{totalPages}</span>
-                      <span className="text-xs text-muted-foreground">Trang Wiki</span>
-                    </div>
-
-                    <div className="flex items-center gap-2 bg-card border border-border rounded-xl px-3 py-2.5 shadow-sahara">
-                      <span className="material-symbols-outlined text-base text-emerald-500">gavel</span>
-                      <span className="text-xs font-semibold text-foreground">{sourceStats.articlesCount}</span>
-                      <span className="text-xs text-muted-foreground">Điều khoản</span>
-                    </div>
-
+                  <div className="ml-auto hidden md:flex items-center gap-3 pb-2.5 text-[11px] text-muted-foreground">
+                    <span className="flex items-center gap-1">
+                      <span className="material-symbols-outlined text-emerald-500" style={{ fontSize: 15 }}>gavel</span>
+                      <span className="font-semibold text-foreground tabular-nums">{sourceStats.articlesCount}</span>
+                      điều khoản
+                    </span>
                     {lastUpdated && (
-                      <div className="flex items-center gap-2 bg-card border border-border rounded-xl px-4 py-2.5 shadow-sahara ml-auto">
-                        <span className="material-symbols-outlined text-base text-muted-foreground">schedule</span>
-                        <span className="text-xs text-muted-foreground">
-                          Cập nhật {new Date(lastUpdated).toLocaleDateString("vi-VN")}
-                        </span>
-                      </div>
+                      <span className="flex items-center gap-1">
+                        <span className="material-symbols-outlined" style={{ fontSize: 15 }}>schedule</span>
+                        Cập nhật {new Date(lastUpdated).toLocaleDateString("vi-VN")}
+                      </span>
                     )}
                   </div>
-                )}
-
-                {/* View Mode Switcher Tabs */}
-                <div className="flex items-center gap-2 border-b border-border mb-6">
-                  <button
-                    onClick={() => setViewMode("library")}
-                    className={cn(
-                      "flex items-center gap-2 px-4 py-3 text-xs font-semibold border-b-2 transition-all cursor-pointer",
-                      viewMode === "library"
-                        ? "border-primary text-primary"
-                        : "border-transparent text-muted-foreground hover:text-foreground"
-                    )}
-                  >
-                    <span className="material-symbols-outlined text-[17px]">local_library</span>
-                    <span>Tủ sách Văn bản pháp luật</span>
-                    <span className={cn(
-                      "px-1.5 py-0.2 rounded-full text-[10px] font-bold tabular-nums",
-                      viewMode === "library" ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"
-                    )}>
-                      {sources.length}
-                    </span>
-                  </button>
-
-                  <button
-                    onClick={() => setViewMode("pages")}
-                    className={cn(
-                      "flex items-center gap-2 px-4 py-3 text-xs font-semibold border-b-2 transition-all cursor-pointer",
-                      viewMode === "pages"
-                        ? "border-primary text-primary"
-                        : "border-transparent text-muted-foreground hover:text-foreground"
-                    )}
-                  >
-                    <span className="material-symbols-outlined text-[17px]">format_list_bulleted</span>
-                    <span>Tất cả trang Wiki</span>
-                    <span className={cn(
-                      "px-1.5 py-0.2 rounded-full text-[10px] font-bold tabular-nums",
-                      viewMode === "pages" ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"
-                    )}>
-                      {totalPages}
-                    </span>
-                  </button>
-
-                  {indexMd && (
-                    <button
-                      onClick={() => setViewMode("index")}
-                      className={cn(
-                        "flex items-center gap-2 px-4 py-3 text-xs font-semibold border-b-2 transition-all cursor-pointer",
-                        viewMode === "index"
-                          ? "border-primary text-primary"
-                          : "border-transparent text-muted-foreground hover:text-foreground"
-                      )}
-                    >
-                      <span className="material-symbols-outlined text-[17px]">menu_book</span>
-                      <span>Mục lục tổng hợp (Markdown)</span>
-                    </button>
-                  )}
                 </div>
 
                 {/* VIEW 1: TỦ SÁCH VĂN BẢN (LIBRARY) */}
@@ -444,7 +407,7 @@ export default function WikiIndexPage() {
                               <span>{tab.label}</span>
                               <span
                                 className={cn(
-                                  "px-1.5 py-0.2 rounded-full text-[10px] tabular-nums font-semibold",
+                                  "px-1.5 py-px rounded-full text-[10px] tabular-nums font-semibold",
                                   active
                                     ? "bg-primary-foreground/20 text-primary-foreground"
                                     : "bg-muted text-muted-foreground"
@@ -531,7 +494,7 @@ export default function WikiIndexPage() {
                                   className="font-heading text-sm font-semibold text-foreground group-hover:text-primary transition-colors line-clamp-2 mb-2 leading-snug block"
                                   title={source.title}
                                 >
-                                  {source.title}
+                                  {displaySourceTitle(source)}
                                 </Link>
 
                                 {/* Metadata */}

@@ -6,7 +6,6 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { WikiPageDetail, DraftResponse } from "@/types/wiki";
 import { WikiPageTree } from "@/components/wiki/wiki-page-tree";
-import { WikiTopFilterBar } from "@/components/wiki/wiki-top-filter-bar";
 import { WikiContent } from "@/components/wiki/wiki-content";
 import { WikiSidebarRight } from "@/components/wiki/wiki-backlinks";
 import { WikiEditor } from "@/components/wiki/wiki-editor";
@@ -577,7 +576,6 @@ export default function WikiPageViewer() {
 
         {/* Center: Content */}
         <div className="flex-1 overflow-y-auto min-w-0">
-          <WikiTopFilterBar onSelectPage={handlePageSelect} />
           {loading ? (
             <div className="px-4 py-8">
               <div className="flex items-center gap-2 mb-4">

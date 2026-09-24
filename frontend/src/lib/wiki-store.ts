@@ -11,7 +11,6 @@ export type WikiSourceItem = {
 
 interface WikiStoreState {
   // UI State
-  selectedSourceId: string | null;
   categoryFilter: "all" | "articles" | "overview";
   groupByDocument: boolean;
   expandedDocuments: Set<string>;
@@ -28,7 +27,6 @@ interface WikiStoreState {
 
 // In-memory persistent state across client-side navigations and component remounts
 export const wikiStore: WikiStoreState = {
-  selectedSourceId: null,
   categoryFilter: "all",
   groupByDocument: true,
   expandedDocuments: new Set<string>(),
@@ -73,11 +71,6 @@ export function useWikiStore() {
     });
   }, []);
 
-  const setSelectedSourceId = React.useCallback((id: string | null) => {
-    wikiStore.selectedSourceId = id;
-    notifyWikiStore();
-  }, []);
-
   const setCategoryFilter = React.useCallback((cat: "all" | "articles" | "overview") => {
     wikiStore.categoryFilter = cat;
     notifyWikiStore();
@@ -107,21 +100,18 @@ export function useWikiStore() {
   }, []);
 
   const resetFilters = React.useCallback(() => {
-    wikiStore.selectedSourceId = null;
     wikiStore.categoryFilter = "all";
     wikiStore.search = "";
     notifyWikiStore();
   }, []);
 
   return {
-    selectedSourceId: wikiStore.selectedSourceId,
     categoryFilter: wikiStore.categoryFilter,
     groupByDocument: wikiStore.groupByDocument,
     search: wikiStore.search,
     expandedDocuments: wikiStore.expandedDocuments,
     expandedScopes: wikiStore.expandedScopes,
     sidebarScrollTop: wikiStore.sidebarScrollTop,
-    setSelectedSourceId,
     setCategoryFilter,
     setGroupByDocument,
     setSearch,
@@ -129,6 +119,17 @@ export function useWikiStore() {
     setExpandedScopes,
     resetFilters,
   };
+}
+
+/** Human-readable source title: strips file extensions and underscores from raw file names. */
+export function displaySourceTitle(s: { title?: string; file_name?: string }): string {
+  const raw = (s.title || s.file_name || "").trim();
+  if (!raw) return "Chưa đặt tên";
+  return raw
+    .replace(/\.(pdf|docx?|xlsx?|csv|txt|md|pptx?)$/i, "")
+    .replace(/_+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /** Maps a page to its corresponding source document (if any) */
