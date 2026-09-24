@@ -1342,6 +1342,61 @@ async def ai_pre_review_draft_task(
             flush_langfuse()
 
 
+async def reassign_source_scope_task(
+    ctx: dict,
+    source_id: str,
+    old_scopes: list[list],
+):
+    """
+    arq task: Async scope reassignment for a source that was already ready.
+    1. Detach old wiki pages and cascades (including vector embeddings in pgvector/Milvus).
+    2. Regenerate index for old scopes.
+    3. Re-queue ingest_map_reduce_task to compile into the new scope.
+    """
+    from app.database import async_session_factory
+    from app.database.models import Source
+    from app.services import wiki_service
+    from app.utils.progress import ProgressTracker
+
+    sid = uuid.UUID(source_id)
+    tracker = ProgressTracker(sid)
+    await tracker.update(0, "Detaching from old wiki scopes...")
+
+    async with async_session_factory() as session:
+        source = await session.get(Source, sid)
+        if not source:
+            logger.warning(f"reassign_source_scope_task: Source {source_id} not found")
+            return
+
+        # Detach source from wiki pages in old scopes
+        await wiki_service.detach_source_from_wiki(session, sid)
+
+        # Regenerate index for each old scope after detach
+        for item in old_scopes:
+            st = item[0]
+            raw_sid = item[1]
+            sid_val = uuid.UUID(raw_sid) if raw_sid else None
+            try:
+                await wiki_service.regenerate_index(session, scope_type=st, scope_id=sid_val)
+            except Exception as e:
+                logger.warning(f"regenerate_index failed for scope {st}/{sid_val}: {e}")
+
+        source.status = "processing"
+        source.progress = 5
+        source.progress_message = "Re-queued after scope change..."
+        await session.commit()
+
+    # Now enqueue ingest_map_reduce_task
+    pool = await get_arq_pool()
+    job = await pool.enqueue_job("ingest_map_reduce_task", str(sid))
+    if job:
+        async with async_session_factory() as session:
+            source = await session.get(Source, sid)
+            if source:
+                source.job_id = job.job_id
+                await session.commit()
+
+
 class WorkerSettings:
     """arq worker configuration."""
 
@@ -1354,6 +1409,7 @@ class WorkerSettings:
         regenerate_plan_task,
         reembed_all_pages_task,
         ai_pre_review_draft_task,
+        reassign_source_scope_task,
     ]
     redis_settings = _get_redis_settings()
     max_jobs = settings.worker_max_jobs

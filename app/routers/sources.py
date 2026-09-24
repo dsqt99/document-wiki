@@ -764,42 +764,39 @@ async def update_source(
     db: AsyncSession = Depends(get_db),
     _user: Employee = require_permission("doc:edit"),
 ):
-    from app.services import wiki_service
+    from app.ai.mrp.pipeline import _resolve_wiki_scopes
 
     source = await db.get(Source, source_id)
     if not source:
         raise HTTPException(status_code=404, detail="Source not found")
 
-    # Scope and department assignments drive where wiki pages get committed.
-    # The ingestion worker reads them from DB at commit time, so an edit while
-    # the pipeline is mid-flight can cause pages to land in the wrong scope
-    # (visibility leak). Block those fields for any in-flight status; title
-    # and knowledge_type are cosmetic for the pipeline and remain editable.
-    in_flight_statuses = ("pending", "processing", "awaiting_approval", "plan_ready")
-    if source.status in in_flight_statuses:
-        changing_scope = body.scope_type is not None or body.scope_id is not None
-        changing_dept = body.department_ids is not None
-        if changing_scope or changing_dept:
-            raise HTTPException(
-                status_code=409,
-                detail=(
-                    "Cannot change visibility or departments while the document "
-                    "is being processed. Wait until it finishes (or fails) and try again."
-                ),
-            )
+    old_dept_rows = (await db.execute(
+        select(SourceDepartment.department_id).where(SourceDepartment.source_id == source_id)
+    )).scalars().all()
+    old_dept_ids = set(old_dept_rows)
+
+    old_scope_type = source.scope_type
+    old_scope_id = source.scope_id
+
+    # Snapshot old scopes before any modifications
+    old_scopes = await _resolve_wiki_scopes(db, source)
 
     if body.title is not None:
         source.title = body.title
     if body.knowledge_type_id is not None:
         source.knowledge_type_id = body.knowledge_type_id
+
+    scope_changed = False
+    new_scope_type = body.scope_type if body.scope_type is not None else old_scope_type
+    new_scope_id = body.scope_id if body.scope_type is not None else old_scope_id
+
     if body.scope_type is not None:
         source.scope_type = body.scope_type
-        source.scope_id = body.scope_id
+        source.scope_id = body.scope_id if body.scope_type == "project" else None
 
-    # Detect department changes and trigger re-ingestion when needed
-    dept_changed = False
+    # Handle department assignments
+    new_dept_ids = old_dept_ids
     if body.department_ids is not None:
-        # Permission check: own_dept users may only assign their own department
         perms = _get_user_permissions(_user)
         if _user.role != "admin" and "doc:edit:all" not in perms:
             user_depts = set(_user.department_ids)
@@ -807,47 +804,49 @@ async def update_source(
                 if did not in user_depts:
                     raise HTTPException(403, "You can only assign documents to your own departments")
 
-        old_dept_rows = (await db.execute(
-            select(SourceDepartment.department_id).where(SourceDepartment.source_id == source_id)
-        )).scalars().all()
-        old_dept_ids = set(old_dept_rows)
         new_dept_ids = set(body.department_ids)
-
-        # Verbatim sources have no wiki pages whose scope needs rebuilding —
-        # their visibility is enforced at query time via RBAC. Skip re-ingest.
-        if old_dept_ids != new_dept_ids and source.status == "ready" and not source.preserve_verbatim:
-            dept_changed = True
-
-            # Snapshot old scopes before detaching so we can regenerate their indexes
-            from app.ai.mrp.pipeline import _resolve_wiki_scopes
-            old_scopes = await _resolve_wiki_scopes(db, source)
-
-            # Detach source from wiki pages in old scopes
-            await wiki_service.detach_source_from_wiki(db, source.id)
-
-            # Regenerate index for each old scope after detach
-            for st, sid in old_scopes:
-                await wiki_service.regenerate_index(db, scope_type=st, scope_id=sid)
-
-        # Replace M2M rows
         await db.execute(
             sql_delete(SourceDepartment).where(SourceDepartment.source_id == source_id)
         )
         for did in body.department_ids:
             db.add(SourceDepartment(source_id=source_id, department_id=did))
+    elif body.scope_type in ("global", "project"):
+        # If explicitly switched to global or project without specifying depts, clear department links
+        new_dept_ids = set()
+        await db.execute(
+            sql_delete(SourceDepartment).where(SourceDepartment.source_id == source_id)
+        )
+
+    # Check if visibility/scope actually changed
+    if (
+        old_scope_type != source.scope_type
+        or old_scope_id != source.scope_id
+        or old_dept_ids != new_dept_ids
+    ):
+        scope_changed = True
 
     await log_audit(db, _user, "update", "source", str(source.id), reason=source.title)
     await db.flush()
 
-    if dept_changed:
+    # If document was already ready, changing scope requires cleaning up old wiki pages
+    # and re-compiling into the new scope. We delegate this to the background worker
+    # so the API responds in <100ms and NEVER times out!
+    if scope_changed and source.status == "ready" and not source.preserve_verbatim:
         source.status = "processing"
         source.progress = 0
-        source.progress_message = "Re-queued after department change..."
+        source.progress_message = "Re-queued scope reassignment..."
         source.error_message = None
         await db.flush()
 
+        old_scopes_serialized = [
+            [st, str(sid) if sid else None] for st, sid in old_scopes
+        ]
         pool = await get_arq_pool()
-        job = await pool.enqueue_job("ingest_map_reduce_task", str(source_id))
+        job = await pool.enqueue_job(
+            "reassign_source_scope_task",
+            str(source_id),
+            old_scopes_serialized,
+        )
         if job:
             source.job_id = job.job_id
 
