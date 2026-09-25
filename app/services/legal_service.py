@@ -453,8 +453,7 @@ async def finalize_legal_source(session: AsyncSession, source: Source, tracker: 
     preamble = parsed["preamble"]
     articles = parsed["articles"]
 
-    scope_type = source.scope_type or "global"
-    scope_id = source.scope_id
+    wiki_scopes = await wiki_service.resolve_wiki_scopes(session, source)
 
     # Get knowledge type slug
     kt_slug = "legal"
@@ -514,69 +513,70 @@ async def finalize_legal_source(session: AsyncSession, source: Source, tracker: 
         or (preamble[:280].replace("\n", " ").strip() if preamble else f"Tổng quan văn bản quy phạm pháp luật {display_doc_name}")
     )
 
-    overview_page = await wiki_service.upsert_page(
-        session,
-        slug=doc_slug,
-        title=f"{display_doc_name} - Tổng quan & Căn cứ ban hành",
-        page_type="concept",
-        content_md=overview_content,
-        summary=overview_summary,
-        knowledge_type_slugs=[kt_slug],
-        source_ids=[source.id],
-        scope_type=scope_type,
-        scope_id=scope_id,
-        status="mature",
-    )
-    pages_to_index.append(overview_page)
-
-    # 2. Create/update each Điều as a separate WikiPage (Verbatim content with citation)
-    for idx, art in enumerate(articles):
-        art_slug = art["slug"]
-        heading = art["heading"]
-        art_num = art["num"]
-        art_title = art["title"]
-        verbatim_content = art["content_md"]
-
-        page_title = (
-            f"Điều {art_num}: {art_title} - {display_doc_name}"
-            if art_title
-            else f"{heading} - {display_doc_name}"
-        )
-
-        citation_lines = [
-            f"> **Căn cứ pháp lý**: Điều {art_num} — {display_doc_name}",
-        ]
-        if meta.get("official_title"):
-            citation_lines.append(f"> **Trích yếu**: {meta['official_title']}")
-        citation_lines.append(f"> **Toàn văn văn bản**: [[{doc_slug}|{display_doc_name}]]")
-        citation_header = "\n".join(citation_lines)
-
-        page_content = f"{citation_header}\n\n{verbatim_content}\n"
-
-        first_para = ""
-        for line in verbatim_content.splitlines():
-            line_s = line.strip()
-            if line_s and not line_s.lower().startswith("điều ") and not line_s.startswith(("#", "*", ">")):
-                first_para = line_s
-                break
-        page_summary = f"Điều {art_num}" + (f": {art_title}" if art_title else "")
-        if first_para:
-            page_summary += f" — {first_para[:180]}"
-
-        art_page = await wiki_service.upsert_page(
+    for scope_type, scope_id in wiki_scopes:
+        overview_page = await wiki_service.upsert_page(
             session,
-            slug=art_slug,
-            title=page_title,
+            slug=doc_slug,
+            title=f"{display_doc_name} - Tổng quan & Căn cứ ban hành",
             page_type="concept",
-            content_md=page_content,
-            summary=page_summary,
+            content_md=overview_content,
+            summary=overview_summary,
             knowledge_type_slugs=[kt_slug],
             source_ids=[source.id],
             scope_type=scope_type,
             scope_id=scope_id,
             status="mature",
         )
-        pages_to_index.append(art_page)
+        pages_to_index.append(overview_page)
+
+        # 2. Create/update each Điều as a separate WikiPage (Verbatim content with citation)
+        for idx, art in enumerate(articles):
+            art_slug = art["slug"]
+            heading = art["heading"]
+            art_num = art["num"]
+            art_title = art["title"]
+            verbatim_content = art["content_md"]
+
+            page_title = (
+                f"Điều {art_num}: {art_title} - {display_doc_name}"
+                if art_title
+                else f"{heading} - {display_doc_name}"
+            )
+
+            citation_lines = [
+                f"> **Căn cứ pháp lý**: Điều {art_num} — {display_doc_name}",
+            ]
+            if meta.get("official_title"):
+                citation_lines.append(f"> **Trích yếu**: {meta['official_title']}")
+            citation_lines.append(f"> **Toàn văn văn bản**: [[{doc_slug}|{display_doc_name}]]")
+            citation_header = "\n".join(citation_lines)
+
+            page_content = f"{citation_header}\n\n{verbatim_content}\n"
+
+            first_para = ""
+            for line in verbatim_content.splitlines():
+                line_s = line.strip()
+                if line_s and not line_s.lower().startswith("điều ") and not line_s.startswith(("#", "*", ">")):
+                    first_para = line_s
+                    break
+            page_summary = f"Điều {art_num}" + (f": {art_title}" if art_title else "")
+            if first_para:
+                page_summary += f" — {first_para[:180]}"
+
+            art_page = await wiki_service.upsert_page(
+                session,
+                slug=art_slug,
+                title=page_title,
+                page_type="concept",
+                content_md=page_content,
+                summary=page_summary,
+                knowledge_type_slugs=[kt_slug],
+                source_ids=[source.id],
+                scope_type=scope_type,
+                scope_id=scope_id,
+                status="mature",
+            )
+            pages_to_index.append(art_page)
 
     await session.commit()
 
@@ -627,17 +627,18 @@ async def finalize_legal_source(session: AsyncSession, source: Source, tracker: 
     else:
         logger.info("No active embedding model configured — skipping semantic vector index.")
 
-    # 4. Regenerate wiki index and append log
+    # 4. Regenerate wiki index and append log for each scope
     await tracker.update(96, "Đang cập nhật danh mục Wiki Index...")
-    try:
-        await wiki_service.regenerate_index(session, scope_type=scope_type, scope_id=scope_id)
-        log_msg = (
-            f"Văn bản luật: Đã nhập '{display_doc_name}' "
-            f"— tạo {total_pages} trang Wiki (1 Tổng quan + {total_articles} Điều)"
-        )
-        await wiki_service.append_log(session, log_msg, scope_type=scope_type, scope_id=scope_id)
-    except Exception as e:
-        logger.warning(f"Failed to regenerate index or log: {e}")
+    for scope_type, scope_id in wiki_scopes:
+        try:
+            await wiki_service.regenerate_index(session, scope_type=scope_type, scope_id=scope_id)
+            log_msg = (
+                f"Văn bản luật: Đã nhập '{display_doc_name}' "
+                f"— tạo {len(articles) + 1} trang Wiki (1 Tổng quan + {total_articles} Điều)"
+            )
+            await wiki_service.append_log(session, log_msg, scope_type=scope_type, scope_id=scope_id)
+        except Exception as e:
+            logger.warning(f"Failed to regenerate index or log for {scope_type}:{scope_id}: {e}")
 
     # 5. Mark source as ready
     source.status = "ready"

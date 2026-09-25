@@ -27,36 +27,7 @@ from app.ai.mrp.writer import PageWriteResult, run_refine_phase
 from app.utils.progress import ProgressTracker
 
 
-async def _resolve_wiki_scopes(session: AsyncSession, source) -> list[tuple[str, Optional[uuid.UUID]]]:
-    """Return the list of (scope_type, scope_id) tuples to commit wiki pages into.
-
-    Project scope takes priority. If source has department assignments, one scope
-    per department. Falls back to global.
-
-    Reads scope_type / scope_id fresh from DB rather than from the in-memory
-    `source` object: PATCH /sources/{id} may have changed scope while the
-    worker held a stale copy (session uses expire_on_commit=False). Mixing
-    in-memory scope with DB-read departments would commit wiki pages to the
-    wrong scope and could leak visibility.
-    """
-    from app.database.models import Source as SourceModel
-    from app.database.models import SourceDepartment
-
-    row = (await session.execute(
-        select(SourceModel.scope_type, SourceModel.scope_id).where(SourceModel.id == source.id)
-    )).one_or_none()
-    if row is None:
-        return [("global", None)]
-    scope_type, scope_id = row
-    if scope_type == "project":
-        return [("project", scope_id)]
-    rows = (await session.execute(
-        select(SourceDepartment.department_id).where(SourceDepartment.source_id == source.id)
-    )).all()
-    dept_ids = [r[0] for r in rows]
-    if dept_ids:
-        return [("department", did) for did in dept_ids]
-    return [("global", None)]
+from app.services.wiki_service import resolve_wiki_scopes as _resolve_wiki_scopes
 
 
 # ---------------------------------------------------------------------------

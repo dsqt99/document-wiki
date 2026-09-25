@@ -61,6 +61,42 @@ def _scope_filter_with_dept(department_ids: Optional[list[uuid.UUID]] = None):
     return _scope_filter("global")
 
 
+async def resolve_wiki_scopes(session: AsyncSession, source) -> list[tuple[str, Optional[uuid.UUID]]]:
+    """Return the list of (scope_type, scope_id) tuples to commit wiki pages into.
+
+    Project scope takes priority. If source has department assignments, one scope
+    per department. Falls back to global.
+
+    Reads scope_type / scope_id fresh from DB rather than from the in-memory
+    `source` object: PATCH /sources/{id} may have changed scope while the
+    worker held a stale copy (session uses expire_on_commit=False).
+    """
+    from app.database.models import Source as SourceModel
+    from app.database.models import SourceDepartment
+
+    row = (await session.execute(
+        select(SourceModel.scope_type, SourceModel.scope_id).where(SourceModel.id == source.id)
+    )).one_or_none()
+    if row is None:
+        # Fall back to in-memory source object if DB query returned nothing (e.g. in mock tests)
+        scope_type = getattr(source, "scope_type", None) or "global"
+        scope_id = getattr(source, "scope_id", None)
+        return [(scope_type, scope_id)]
+
+    scope_type, scope_id = row
+    if scope_type == "project":
+        return [("project", scope_id)]
+    rows = (await session.execute(
+        select(SourceDepartment.department_id).where(SourceDepartment.source_id == source.id)
+    )).all()
+    dept_ids = [r[0] for r in rows]
+    if dept_ids:
+        return [("department", did) for did in dept_ids]
+    if scope_type == "department" and scope_id:
+        return [("department", scope_id)]
+    return [("global", None)]
+
+
 def _scope_filter_for_identity(
     department_ids: Optional[list[uuid.UUID]] = None,
     project_ids: Optional[list[uuid.UUID]] = None,
