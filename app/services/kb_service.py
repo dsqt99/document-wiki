@@ -273,14 +273,15 @@ async def _extract_text_from_file(
             # Fall through to content_core
 
     if ext == "docx":
-        import io
+        from app.services.parsers.docx_parser import DocxParser
+        parser = DocxParser()
+        return await parser.parse(
+            file_data=file_data,
+            file_name=file_name,
+            vision_provider=vision_provider,
+            tracker=tracker,
+        )
 
-        import mammoth
-        try:
-            result = mammoth.extract_raw_text(io.BytesIO(file_data))
-            return [{"content": result.value or "", "page_number": 1}]
-        except Exception:
-            pass  # fall through to content_core
 
     if ext in ("txt", "md"):
         return [{"content": file_data.decode("utf-8", errors="ignore"), "page_number": 1}]
