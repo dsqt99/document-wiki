@@ -30,12 +30,14 @@ def assemble_full_text(pages: list[dict]) -> tuple[str, list[int]]:
 
         offsets[i] = start of pages[i] in the joined string
     """
+    from app.core.text_normalizer import normalize_text
+
     parts: list[str] = []
     offsets: list[int] = []
     cursor = 0
     for idx, page in enumerate(pages):
         offsets.append(cursor)
-        content = page.get("content") or ""
+        content = normalize_text(page.get("content") or "")
         parts.append(content)
         cursor += len(content)
         if idx < len(pages) - 1:

@@ -6,6 +6,7 @@ Permission model v2:
   - Upload creates source_departments M2M entries
 """
 
+import hashlib
 import uuid
 from typing import Optional
 
@@ -622,7 +623,6 @@ async def upload_source(
     db: AsyncSession = Depends(get_db),
     user: Employee = require_permission("doc:create"),
 ):
-    file_data = await file.read()
     file_name = file.filename or "unknown"
     ext = (file_name.rsplit(".", 1)[-1] if "." in file_name else "").lower()
     if ext == "doc":
@@ -630,6 +630,42 @@ async def upload_source(
             400,
             "Định dạng file .doc (Word 97-2003) không được hỗ trợ. "
             "Vui lòng chuyển đổi file sang định dạng .docx hoặc .pdf trước khi tải lên.",
+        )
+
+    # Stream-read file in 64KB chunks to calculate SHA-256 and enforce size limit
+    CHUNK_SIZE = 64 * 1024
+    MAX_UPLOAD_SIZE = getattr(settings, "max_upload_size_bytes", 100 * 1024 * 1024)
+    hasher = hashlib.sha256()
+    chunks = []
+    total_size = 0
+
+    while True:
+        chunk = await file.read(CHUNK_SIZE)
+        if not chunk:
+            break
+        total_size += len(chunk)
+        if total_size > MAX_UPLOAD_SIZE:
+            raise HTTPException(
+                413,
+                f"File tải lên vượt quá giới hạn dung lượng ({MAX_UPLOAD_SIZE // (1024 * 1024)}MB).",
+            )
+        hasher.update(chunk)
+        chunks.append(chunk)
+
+    content_hash = hasher.hexdigest()
+    file_data = b"".join(chunks)
+
+    # Check for duplicate non-error source by content_hash
+    existing = (await db.execute(
+        select(Source).where(
+            Source.content_hash == content_hash,
+            Source.status != "error",
+        )
+    )).scalars().first()
+    if existing:
+        raise HTTPException(
+            409,
+            f"Tài liệu này đã tồn tại trên hệ thống (ID: {existing.id}, Tiêu đề: '{existing.title}').",
         )
 
     # Parse department_ids
@@ -658,6 +694,8 @@ async def upload_source(
         source_type="file",
         file_name=file_name,
         file_size=len(file_data),
+        content_hash=content_hash,
+        attempt_id=uuid.uuid4(),
         status="pending",
         progress=0,
         progress_message="Queued for ingestion...",

@@ -104,6 +104,14 @@ class Source(Base):
     minio_key: Mapped[Optional[str]] = mapped_column(String(500))
     file_name: Mapped[Optional[str]] = mapped_column(String(500))
     file_size: Mapped[Optional[int]] = mapped_column(Integer)
+    content_hash: Mapped[Optional[str]] = mapped_column(
+        String(64), nullable=True, index=True,
+        comment="SHA-256 hash of file content stream for deduplication",
+    )
+    attempt_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), nullable=True, default=uuid.uuid4,
+        comment="Attempt UUID regenerated on every retry/reparse for task idempotency",
+    )
     status: Mapped[str] = mapped_column(String(50), default="pending")
     error_message: Mapped[Optional[str]] = mapped_column(Text)
     progress: Mapped[int] = mapped_column(Integer, default=0)
