@@ -846,3 +846,109 @@ async def ingest_legal_graph(
             relations_count += 1
 
     return {"units_count": units_count, "relations_count": relations_count}
+
+
+async def get_legal_context_with_hierarchy(
+    session: AsyncSession,
+    unit_id: uuid.UUID,
+) -> dict[str, Any]:
+    """Retrieve a legal unit along with its enclosing Article/Chapter context for RAG retrieval."""
+    from app.database.models import LegalUnit, LegalUnitType
+
+    unit = await session.get(LegalUnit, unit_id)
+    if not unit:
+        return {}
+
+    parent_art = None
+    if unit.unit_type in (LegalUnitType.CLAUSE, LegalUnitType.POINT):
+        curr = unit
+        while curr and curr.parent_unit_id:
+            parent = getattr(curr, "parent", None) or await session.get(LegalUnit, curr.parent_unit_id)
+            if parent and parent.unit_type == LegalUnitType.ARTICLE:
+                parent_art = parent
+                break
+            curr = parent
+
+    return {
+        "unit_id": str(unit.id),
+        "unit_type": unit.unit_type,
+        "unit_number": unit.unit_number,
+        "full_path": unit.full_path,
+        "content": unit.content,
+        "doc_number": unit.doc_number,
+        "parent_article": {
+            "id": str(parent_art.id),
+            "number": parent_art.unit_number,
+            "title": parent_art.title,
+            "content": parent_art.content,
+        } if parent_art else None,
+    }
+
+
+async def get_legal_unit_validity_warnings(
+    session: AsyncSession,
+    unit_id: uuid.UUID,
+) -> list[dict[str, Any]]:
+    """Check if a legal unit has been amended, supplemented, replaced, or repealed."""
+    from app.database.models import LegalRelation, LegalRelationType
+
+    query = (
+        select(LegalRelation)
+        .where(
+            LegalRelation.target_unit_id == unit_id,
+            LegalRelation.is_effective.is_(True),
+            LegalRelation.relation_type.in_([
+                LegalRelationType.SUA_DOI,
+                LegalRelationType.BO_SUNG,
+                LegalRelationType.THAY_THE,
+                LegalRelationType.BAI_BO,
+            ]),
+        )
+    )
+    res = await session.execute(query)
+    relations = res.scalars().all()
+
+    warnings: list[dict[str, Any]] = []
+    for rel in relations:
+        source_u = getattr(rel, "source_unit", None)
+        modifying_doc = (source_u.doc_number if source_u else None) or rel.target_doc_number or "văn bản mới"
+        modifying_art = source_u.unit_number if source_u else None
+
+        warnings.append({
+            "relation_id": str(rel.id),
+            "relation_type": rel.relation_type.value if hasattr(rel.relation_type, "value") else str(rel.relation_type),
+            "modifying_doc_number": modifying_doc,
+            "modifying_article_number": modifying_art,
+            "quote_context": rel.quote_context,
+        })
+    return warnings
+
+
+def format_legal_validity_warning_callout(warnings: list[dict[str, Any]]) -> str:
+    """Format legal validity warnings as a GitHub-style markdown alert box."""
+    if not warnings:
+        return ""
+
+    lines = ["> [!WARNING]", "> **CẢNH BÁO HIỆU LỰC PHÁP LÝ**:"]
+    for w in warnings:
+        rel_type = w.get("relation_type", "")
+        doc = w.get("modifying_doc_number", "")
+        art = w.get("modifying_article_number")
+        art_ref = f" (Điều {art})" if art else ""
+
+        if rel_type == "sua_doi":
+            msg = f"Quy định này đã được **sửa đổi, bổ sung** bởi {doc}{art_ref}."
+        elif rel_type == "bo_sung":
+            msg = f"Quy định này đã được **bổ sung** bởi {doc}{art_ref}."
+        elif rel_type == "bai_bo":
+            msg = f"Quy định này đã bị **bãi bỏ** bởi {doc}{art_ref}."
+        elif rel_type == "thay_the":
+            msg = f"Quy định này đã bị **thay thế** bởi {doc}{art_ref}."
+        else:
+            msg = f"Quy định này chịu tác động bởi văn bản {doc}{art_ref}."
+
+        lines.append(f"> - {msg}")
+        if w.get("quote_context"):
+            lines.append(f">   *Trích dẫn*: \"{w['quote_context'][:150]}...\"")
+
+    return "\n".join(lines)

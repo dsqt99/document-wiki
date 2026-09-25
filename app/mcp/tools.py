@@ -15,6 +15,7 @@ All tools verify the employee's MCP token and enforce knowledge_type scope:
 from typing import Optional
 
 from fastmcp import FastMCP
+from sqlalchemy import select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mcp.logging import current_identity, logged_tool
@@ -526,7 +527,24 @@ def register_tools(mcp: FastMCP):
                 session, slug, page.scope_type, page.scope_id,
             )
 
-        body = page.content_md or ""
+            # Check legal validity warnings if this is a legal article page
+            validity_callout = ""
+            try:
+                from app.database.models import LegalUnit
+                from app.services.legal_service import (
+                    get_legal_unit_validity_warnings,
+                    format_legal_validity_warning_callout,
+                )
+                unit_res = await session.execute(sa_select(LegalUnit).where(LegalUnit.wiki_page_id == page.id))
+                legal_unit = unit_res.scalar_one_or_none()
+                if legal_unit:
+                    warnings = await get_legal_unit_validity_warnings(session, legal_unit.id)
+                    if warnings:
+                        validity_callout = format_legal_validity_warning_callout(warnings) + "\n\n"
+            except Exception:
+                pass
+
+        body = validity_callout + (page.content_md or "")
         outlinks = sorted({s for s in outlinks if s != slug})
         if outlinks:
             body = body.rstrip() + "\n\n## Outlinks\n" + "\n".join(
@@ -537,6 +555,89 @@ def register_tools(mcp: FastMCP):
                 f"- `{s}`" for s in sorted(backlinks)
             )
         return body
+
+    @kb_tool(mcp, requires=ANY_AUTHENTICATED)
+    @logged_tool("get_legal_relations_graph")
+    async def get_legal_relations_graph(
+        doc_number: Optional[str] = None,
+        article_number: Optional[str] = None,
+        slug: Optional[str] = None,
+    ) -> str:
+        """
+        Query legal relations graph for a document or article (e.g. amendments, repeals, citations).
+        
+        Args:
+            doc_number: Official document number (e.g. "136/2020/NĐ-CP").
+            article_number: Article number (e.g. "5", "5a").
+            slug: Optional WikiPage slug for the article.
+            
+        Returns:
+            Structured summary of all modifying, amending, repealing, and cited relations.
+        """
+        identity, err = await _get_identity()
+        if err:
+            return err
+        assert identity is not None
+
+        from app.database import async_session_factory
+        from app.database.models import LegalUnit, LegalRelation, WikiPage
+        from app.services.legal_service import (
+            get_legal_unit_validity_warnings,
+            format_legal_validity_warning_callout,
+        )
+
+        async with async_session_factory() as session:
+            unit = None
+            if slug:
+                page_stmt = sa_select(WikiPage).where(WikiPage.slug == slug)
+                page = (await session.execute(page_stmt)).scalar_one_or_none()
+                if page:
+                    unit_stmt = sa_select(LegalUnit).where(LegalUnit.wiki_page_id == page.id)
+                    unit = (await session.execute(unit_stmt)).scalar_one_or_none()
+
+            if not unit and doc_number and article_number:
+                unit_stmt = sa_select(LegalUnit).where(
+                    LegalUnit.doc_number.ilike(doc_number),
+                    LegalUnit.unit_number.ilike(article_number),
+                )
+                unit = (await session.execute(unit_stmt)).scalar_one_or_none()
+
+            if not unit and doc_number:
+                rel_stmt = sa_select(LegalRelation).where(
+                    LegalRelation.target_doc_number.ilike(doc_number)
+                ).limit(50)
+                relations = (await session.execute(rel_stmt)).scalars().all()
+                if not relations:
+                    return f"Không tìm thấy quan hệ pháp lý nào liên quan đến văn bản `{doc_number}`."
+                lines = [f"### Quan hệ pháp lý của văn bản `{doc_number}` ({len(relations)} quan hệ):\n"]
+                for r in relations:
+                    r_type = r.relation_type.value if hasattr(r.relation_type, "value") else str(r.relation_type)
+                    lines.append(f"- **{r_type}**: Điều {r.target_article_number or '?'} ({r.quote_context or 'N/A'})")
+                return "\n".join(lines)
+
+            if not unit:
+                return "Vui lòng cung cấp `doc_number` và `article_number`, hoặc `slug` hợp lệ."
+
+            warnings = await get_legal_unit_validity_warnings(session, unit.id)
+            warning_callout = format_legal_validity_warning_callout(warnings)
+
+            out_stmt = sa_select(LegalRelation).where(LegalRelation.source_unit_id == unit.id)
+            out_rels = (await session.execute(out_stmt)).scalars().all()
+
+            lines = [f"## Đồ thị pháp lý: {unit.full_path} ({unit.doc_number or 'Chưa rõ số hiệu'})"]
+            if warning_callout:
+                lines.append("\n" + warning_callout)
+
+            if out_rels:
+                lines.append("\n### Quan hệ tác động / dẫn chiếu ra ngoài:")
+                for r in out_rels:
+                    r_type = r.relation_type.value if hasattr(r.relation_type, "value") else str(r.relation_type)
+                    lines.append(f"- **{r_type}** -> {r.target_doc_number or ''} Điều {r.target_article_number or ''}: {r.quote_context or ''}")
+
+            if not warnings and not out_rels:
+                lines.append("\n_Không có quan hệ sửa đổi hoặc dẫn chiếu đặc biệt ghi nhận cho điều này._")
+
+            return "\n".join(lines)
 
     @kb_tool(mcp, requires=ANY_AUTHENTICATED)
     @logged_tool("list_wiki_pages")
