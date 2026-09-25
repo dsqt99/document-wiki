@@ -53,15 +53,41 @@ from app.utils.progress import ProgressTracker  # noqa: E402
 # Ingestion tasks
 # ---------------------------------------------------------------------------
 
+async def _chain_to_mrp(source_id: str) -> Optional[str]:
+    """Chain execution to ingest_map_reduce_task and update source state."""
+    from app.database import async_session_factory
+    from app.database.models import Source
+
+    pool = await get_arq_pool()
+    job = await pool.enqueue_job("ingest_map_reduce_task", source_id)
+    if job:
+        try:
+            sid = uuid.UUID(source_id)
+            async with async_session_factory() as session:
+                source = await session.get(Source, sid)
+                if source:
+                    source.job_id = job.job_id
+                    source.progress_message = "Extraction queued..."
+                    await session.commit()
+        except Exception as e:
+            logger.warning(f"_chain_to_mrp: failed to update source {source_id} state: {e}")
+        logger.info(f"Successfully chained to ingest_map_reduce_task for {source_id}")
+        return job.job_id
+    logger.error(f"_chain_to_mrp: failed to enqueue ingest_map_reduce_task for {source_id}")
+    return None
+
+
 async def enqueue_post_extraction_pipeline(source_id: str, has_images: bool) -> Optional[str]:
     """Enqueue caption_images_task (if images) or ingest_map_reduce_task directly.
 
     Shared by ingest_file_task auto-proceed and the approve-extraction API.
     Returns the enqueued job_id, or None if enqueue failed.
     """
+    if not has_images:
+        return await _chain_to_mrp(source_id)
+
     pool = await get_arq_pool()
-    task_name = "caption_images_task" if has_images else "ingest_map_reduce_task"
-    job = await pool.enqueue_job(task_name, source_id)
+    job = await pool.enqueue_job("caption_images_task", source_id)
     return job.job_id if job else None
 
 
@@ -1233,7 +1259,8 @@ async def caption_images_task(ctx: dict, source_id: str):
                 registry = ProviderRegistry(session)
                 vision_provider = await registry.get_vision()
                 if not vision_provider:
-                    logger.info("caption_images_task: no vision provider configured, skipping")
+                    logger.info(f"caption_images_task: no vision provider configured, skipping to MRP for {source_id}")
+                    await _chain_to_mrp(source_id)
                     return
 
                 rows = (await session.execute(
@@ -1244,6 +1271,8 @@ async def caption_images_task(ctx: dict, source_id: str):
                 image_records = [(row.id, row.minio_key, row.content_type) for row in rows]
 
             if not image_records:
+                logger.info(f"caption_images_task: no image records for {source_id}, skipping to MRP")
+                await _chain_to_mrp(source_id)
                 return
 
             logger.info(f"caption_images_task: captioning {len(image_records)} images for {source_id}")
@@ -1310,16 +1339,12 @@ async def caption_images_task(ctx: dict, source_id: str):
                         logger.info(f"caption_images_task: refreshed full_text with {len(caption_by_id)} captions for {source_id}")
 
             # Chain into MAP-REDUCE (only now that captions are baked in).
-            pool = await get_arq_pool()
-            job = await pool.enqueue_job("ingest_map_reduce_task", source_id)
-            if job:
-                async with async_session_factory() as session:
-                    source = await session.get(Source, sid)
-                    if source:
-                        source.job_id = job.job_id
-                        source.progress_message = "Extraction queued..."
-                        await session.commit()
-            logger.info(f"caption_images_task: enqueued ingest_map_reduce_task for {source_id}")
+            await _chain_to_mrp(source_id)
+        except Exception as exc:
+            # If an error happens while captioning, ensure pipeline doesn't hang forever
+            logger.error(f"caption_images_task: unhandled error for {source_id}: {exc}")
+            await _chain_to_mrp(source_id)
+            raise
         finally:
             flush_langfuse()
 
