@@ -67,6 +67,4 @@ nginx/
 
 # data
 arkon-data/
-
-# test
-tests/
+
