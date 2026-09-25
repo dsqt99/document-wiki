@@ -903,6 +903,7 @@ async def retry_source(
     if source.source_type == "file" and not source.minio_key:
         raise HTTPException(status_code=400, detail="Source file not found in storage")
 
+    prev_status = source.status
     source.status = "pending"
     source.progress = 0
     source.progress_message = "Queued for retry..."
@@ -910,11 +911,11 @@ async def retry_source(
     await db.flush()
 
     pool = await get_arq_pool()
-    # Route to the right task based on pipeline phase
+    # Route to the right task based on pipeline phase and previous status
     pipeline_phase = source.pipeline_phase
     if pipeline_phase in ("refine", "verify", "commit"):
         task_name = "ingest_refine_task"
-    elif pipeline_phase in ("map", "reduce", "plan_review") or source.status == "plan_ready":
+    elif pipeline_phase in ("map", "reduce", "plan_review") or prev_status == "plan_ready":
         task_name = "ingest_map_reduce_task"
     else:
         task_name = "ingest_url_task" if source.source_type == "url" else "ingest_file_task"
