@@ -326,7 +326,38 @@ def parse_legal_metadata(text: str, file_name: str = "") -> dict[str, Any]:
     return meta
 
 
-def split_legal_text_by_articles(full_text: str, doc_title: str) -> dict[str, Any]:
+import hashlib
+
+
+def build_legal_doc_slug(
+    doc_title: str,
+    doc_number: Optional[str] = None,
+    source_id: Optional[Any] = None,
+) -> str:
+    """Build a deterministic, unique slug for a legal document.
+
+    If doc_number is provided (e.g., '136/2020/NĐ-CP'), slugifies the doc_number.
+    Otherwise, uses slugify(doc_title)[:40] combined with an 8-char hash of source_id.
+    """
+    if doc_number:
+        clean_num = slugify(doc_number).strip("-")
+        if clean_num:
+            return clean_num
+
+    base = slugify(doc_title or "van-ban-luat")[:40].rstrip("-") or "van-ban-luat"
+    if source_id:
+        sid_str = str(source_id).replace("-", "")[:8]
+        return f"{base}-{sid_str}"
+
+    h = hashlib.sha256((doc_title or "").encode("utf-8")).hexdigest()[:8]
+    return f"{base}-{h}"
+
+
+def split_legal_text_by_articles(
+    full_text: str,
+    doc_title: str = "",
+    doc_slug: Optional[str] = None,
+) -> dict[str, Any]:
     """Parse Vietnamese legal document text into preamble and individual articles.
 
     Returns:
@@ -343,7 +374,8 @@ def split_legal_text_by_articles(full_text: str, doc_title: str) -> dict[str, An
         return {"preamble": "", "articles": []}
 
     matches = list(ARTICLE_RE.finditer(full_text))
-    doc_slug = slugify(doc_title or "van-ban-luat")[:60].rstrip("-") or "van-ban-luat"
+    if not doc_slug:
+        doc_slug = build_legal_doc_slug(doc_title)
 
     if not matches:
         return {
@@ -448,8 +480,12 @@ async def finalize_legal_source(session: AsyncSession, source: Source, tracker: 
         source.title = display_doc_name
     await session.commit()
 
+    # Build unique, deterministic slug for this document
+    doc_number = meta.get("doc_number")
+    doc_slug = build_legal_doc_slug(doc_title, doc_number=doc_number, source_id=source.id)
+
     # Extract articles
-    parsed = split_legal_text_by_articles(full_text, doc_title)
+    parsed = split_legal_text_by_articles(full_text, doc_title, doc_slug=doc_slug)
     preamble = parsed["preamble"]
     articles = parsed["articles"]
 
@@ -461,8 +497,6 @@ async def finalize_legal_source(session: AsyncSession, source: Source, tracker: 
         kt = await session.get(KnowledgeType, source.knowledge_type_id)
         if kt and kt.slug:
             kt_slug = kt.slug
-
-    doc_slug = slugify(doc_title)[:60].rstrip("-") or "van-ban-luat"
 
     # Setup embedding provider
     registry = ProviderRegistry(session)
