@@ -585,6 +585,7 @@ async def finalize_legal_source(session: AsyncSession, source: Source, tracker: 
         )
         pages_to_index.append(overview_page)
 
+        art_page_map: dict[str, uuid.UUID] = {}
         # 2. Create/update each Điều as a separate WikiPage (Verbatim content with citation)
         for idx, art in enumerate(articles):
             art_slug = art["slug"]
@@ -632,9 +633,26 @@ async def finalize_legal_source(session: AsyncSession, source: Source, tracker: 
                 scope_id=scope_id,
                 status="mature",
             )
+            art_page_map[art_slug] = art_page.id
             pages_to_index.append(art_page)
 
     await session.commit()
+
+    # 2.5 Ingest Legal Knowledge Graph (Units & Relations)
+    try:
+        await tracker.update(68, "Đang bóc tách cây phả hệ pháp luật & trích xuất quan hệ...")
+        await ingest_legal_graph(
+            session=session,
+            source=source,
+            articles=articles,
+            preamble=preamble,
+            doc_number=meta.get("doc_number"),
+            art_page_map=art_page_map,
+        )
+        from app.services.legal_relation_extractor import relink_legal_relations
+        await relink_legal_relations(session, source_id=source.id)
+    except Exception as e:
+        logger.warning(f"Failed to ingest legal graph for source {source.id}: {e}")
 
     # 3. Compute vector embeddings (Page-level and Chunk-level)
     total_pages = len(pages_to_index)
@@ -716,3 +734,115 @@ async def finalize_legal_source(session: AsyncSession, source: Source, tracker: 
         "total_pages": total_pages,
         "articles": total_articles,
     }
+
+
+async def ingest_legal_graph(
+    session: AsyncSession,
+    source: Source,
+    articles: list[dict[str, Any]],
+    preamble: str = "",
+    doc_number: Optional[str] = None,
+    art_page_map: Optional[dict[str, uuid.UUID]] = None,
+) -> dict[str, int]:
+    """Populate LegalUnit hierarchy and extract LegalRelation graph for a legal source."""
+    from app.database.models import LegalUnit, LegalRelation, LegalUnitType, LegalRelationType
+    from app.services.legal_relation_extractor import LegalRelationExtractor
+    from sqlalchemy import delete
+
+    # 1. Clean up existing units for idempotency
+    await session.execute(delete(LegalUnit).where(LegalUnit.source_id == source.id))
+
+    units_count = 0
+    relations_count = 0
+    extractor = LegalRelationExtractor()
+    first_unit = None
+
+    for art in articles:
+        art_num = art.get("num") or art.get("number", "")
+        art_title = art.get("title", "")
+        art_content = art.get("content_md") or art.get("content", "")
+        slug = art.get("slug", "")
+        wiki_page_id = (art_page_map or {}).get(slug)
+
+        art_unit = LegalUnit(
+            id=uuid.uuid4(),
+            source_id=source.id,
+            wiki_page_id=wiki_page_id,
+            unit_type=LegalUnitType.ARTICLE,
+            unit_number=str(art_num),
+            title=art_title,
+            full_path=f"Điều {art_num}" + (f": {art_title}" if art_title else ""),
+            content=art_content,
+            doc_number=doc_number,
+        )
+        session.add(art_unit)
+        units_count += 1
+        if first_unit is None:
+            first_unit = art_unit
+
+        # Clauses
+        for clause in art.get("clauses", []):
+            cl_num = clause.get("num") or clause.get("number", "")
+            cl_content = clause.get("content_md") or clause.get("content", "")
+            clause_unit = LegalUnit(
+                id=uuid.uuid4(),
+                source_id=source.id,
+                unit_type=LegalUnitType.CLAUSE,
+                unit_number=str(cl_num),
+                full_path=f"{art_unit.full_path} > Khoản {cl_num}",
+                content=cl_content,
+                parent_unit_id=art_unit.id,
+                doc_number=doc_number,
+            )
+            session.add(clause_unit)
+            units_count += 1
+
+            # Points
+            for point in clause.get("points", []):
+                p_let = point.get("letter") or point.get("num", "")
+                p_content = point.get("content_md") or point.get("content", "")
+                point_unit = LegalUnit(
+                    id=uuid.uuid4(),
+                    source_id=source.id,
+                    unit_type=LegalUnitType.POINT,
+                    unit_number=str(p_let),
+                    full_path=f"{clause_unit.full_path} > Điểm {p_let}",
+                    content=p_content,
+                    parent_unit_id=clause_unit.id,
+                    doc_number=doc_number,
+                )
+                session.add(point_unit)
+                units_count += 1
+
+        # Extract relations from article content
+        art_relations = extractor.extract_from_text(art_content, default_doc_number=doc_number)
+        for rel in art_relations:
+            rel_model = LegalRelation(
+                id=uuid.uuid4(),
+                source_unit_id=art_unit.id,
+                target_doc_number=rel.target_doc_number,
+                target_article_number=rel.target_article_number,
+                target_clause_number=rel.target_clause_number,
+                relation_type=rel.relation_type,
+                quote_context=rel.quote_context,
+                is_effective=True,
+            )
+            session.add(rel_model)
+            relations_count += 1
+
+    # Extract legal basis from preamble
+    if preamble and first_unit:
+        basis_relations = extractor.extract_preamble_basis(preamble)
+        for rel in basis_relations:
+            rel_model = LegalRelation(
+                id=uuid.uuid4(),
+                source_unit_id=first_unit.id,
+                target_doc_number=rel.target_doc_number,
+                relation_type=rel.relation_type,
+                quote_context=rel.quote_context,
+                is_effective=True,
+            )
+            session.add(rel_model)
+            relations_count += 1
+
+    return {"units_count": units_count, "relations_count": relations_count}

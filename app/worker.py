@@ -1482,6 +1482,19 @@ async def reassign_source_scope_task(
                 await session.commit()
 
 
+async def relink_legal_relations_task(ctx: dict, source_id: Optional[str] = None) -> dict:
+    """Background task to relink unresolved legal relations across legal documents."""
+    from app.database import async_session_factory
+    from app.services.legal_relation_extractor import relink_legal_relations
+
+    sid = uuid.UUID(source_id) if source_id else None
+    logger.info(f"Starting relink_legal_relations_task (source_id={sid})...")
+    async with async_session_factory() as session:
+        result = await relink_legal_relations(session, source_id=sid)
+        logger.info(f"relink_legal_relations_task finished: {result}")
+        return result
+
+
 class WorkerSettings:
     """arq worker configuration."""
 
@@ -1495,6 +1508,7 @@ class WorkerSettings:
         reembed_all_pages_task,
         ai_pre_review_draft_task,
         reassign_source_scope_task,
+        relink_legal_relations_task,
     ]
     redis_settings = _get_redis_settings()
     max_jobs = settings.worker_max_jobs
