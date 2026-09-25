@@ -342,6 +342,7 @@ async def _auto_trigger_refine(source_id: uuid.UUID, plan) -> dict:
     # Mark plan as approved
     try:
         from app.database import async_session_factory
+        attempt_id_str = None
         async with async_session_factory() as sess:
             from app.database.models import Source, SourceCompilationPlan
             p = await sess.get(SourceCompilationPlan, plan.id)
@@ -353,12 +354,17 @@ async def _auto_trigger_refine(source_id: uuid.UUID, plan) -> dict:
             if src:
                 src.status = "processing"
                 src.progress_message = "Plan approved — compiling wiki pages..."
+                if src.attempt_id:
+                    attempt_id_str = str(src.attempt_id)
             await sess.commit()
     except Exception as exc:
         logger.warning(f"MRP auto-approve state update failed: {exc}")
 
     pool = await get_arq_pool()
-    job = await pool.enqueue_job("ingest_refine_task", str(source_id))
+    args = [str(source_id)]
+    if attempt_id_str:
+        args.append(attempt_id_str)
+    job = await pool.enqueue_job("ingest_refine_task", *args)
     return {"status": "plan_auto_approved", "job_id": job.job_id if job else None}
 
 

@@ -731,8 +731,11 @@ async def upload_source(
     await db.commit()
 
     pool = await get_arq_pool()
+    upload_args = [str(source.id)]
+    if source.attempt_id:
+        upload_args.append(str(source.attempt_id))
     job = await pool.enqueue_job(
-        "ingest_file_task", str(source.id),
+        "ingest_file_task", *upload_args,
     )
     if job:
         source.job_id = job.job_id
@@ -780,7 +783,10 @@ async def add_url_source(
     await db.refresh(source)
 
     pool = await get_arq_pool()
-    job = await pool.enqueue_job("ingest_url_task", str(source.id))
+    url_args = [str(source.id)]
+    if source.attempt_id:
+        url_args.append(str(source.attempt_id))
+    job = await pool.enqueue_job("ingest_url_task", *url_args)
     if job:
         source.job_id = job.job_id
     await db.commit()
@@ -957,7 +963,10 @@ async def retry_source(
         task_name = "ingest_map_reduce_task"
     else:
         task_name = "ingest_url_task" if source.source_type == "url" else "ingest_file_task"
-    job = await pool.enqueue_job(task_name, str(source_id))
+    retry_args = [str(source_id)]
+    if source.attempt_id:
+        retry_args.append(str(source.attempt_id))
+    job = await pool.enqueue_job(task_name, *retry_args)
 
     if job:
         source.job_id = job.job_id
@@ -1045,7 +1054,11 @@ async def approve_extraction(
         )
 
     has_images = (await _image_count(db, source_id)) > 0
-    job_id = await enqueue_post_extraction_pipeline(str(source_id), has_images=has_images)
+    job_id = await enqueue_post_extraction_pipeline(
+        str(source_id),
+        has_images=has_images,
+        attempt_id_str=str(source.attempt_id) if source.attempt_id else None,
+    )
 
     source.status = "processing"
     source.progress = 56
@@ -1112,7 +1125,10 @@ async def approve_compilation_plan(
     await db.flush()
 
     pool = await get_arq_pool()
-    job = await pool.enqueue_job("ingest_refine_task", str(source_id))
+    refine_args = [str(source_id)]
+    if source and source.attempt_id:
+        refine_args.append(str(source.attempt_id))
+    job = await pool.enqueue_job("ingest_refine_task", *refine_args)
 
     if job and source:
         source.job_id = job.job_id

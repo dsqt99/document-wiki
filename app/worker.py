@@ -53,13 +53,36 @@ from app.utils.progress import ProgressTracker  # noqa: E402
 # Ingestion tasks
 # ---------------------------------------------------------------------------
 
-async def _chain_to_mrp(source_id: str) -> Optional[str]:
+async def check_task_attempt_validity(session, source_id: uuid.UUID, attempt_id_str: Optional[str]) -> bool:
+    """Validate whether the task's attempt_id matches the current source.attempt_id in DB.
+
+    If attempt_id_str is None, it defaults to valid (backward compatibility).
+    If attempt_id_str doesn't match the current source.attempt_id, it is a stale job from an older attempt.
+    """
+    if not attempt_id_str:
+        return True
+    try:
+        expected = uuid.UUID(attempt_id_str)
+    except ValueError:
+        return False
+    from app.database.models import Source
+
+    curr_attempt = (await session.execute(
+        select(Source.attempt_id).where(Source.id == source_id)
+    )).scalar_one_or_none()
+    return curr_attempt is None or curr_attempt == expected
+
+
+async def _chain_to_mrp(source_id: str, attempt_id_str: Optional[str] = None) -> Optional[str]:
     """Chain execution to ingest_map_reduce_task and update source state."""
     from app.database import async_session_factory
     from app.database.models import Source
 
     pool = await get_arq_pool()
-    job = await pool.enqueue_job("ingest_map_reduce_task", source_id)
+    args = [source_id]
+    if attempt_id_str:
+        args.append(attempt_id_str)
+    job = await pool.enqueue_job("ingest_map_reduce_task", *args)
     if job:
         try:
             sid = uuid.UUID(source_id)
@@ -77,17 +100,20 @@ async def _chain_to_mrp(source_id: str) -> Optional[str]:
     return None
 
 
-async def enqueue_post_extraction_pipeline(source_id: str, has_images: bool) -> Optional[str]:
+async def enqueue_post_extraction_pipeline(source_id: str, has_images: bool, attempt_id_str: Optional[str] = None) -> Optional[str]:
     """Enqueue caption_images_task (if images) or ingest_map_reduce_task directly.
 
     Shared by ingest_file_task auto-proceed and the approve-extraction API.
     Returns the enqueued job_id, or None if enqueue failed.
     """
     if not has_images:
-        return await _chain_to_mrp(source_id)
+        return await _chain_to_mrp(source_id, attempt_id_str=attempt_id_str)
 
     pool = await get_arq_pool()
-    job = await pool.enqueue_job("caption_images_task", source_id)
+    args = [source_id]
+    if attempt_id_str:
+        args.append(attempt_id_str)
+    job = await pool.enqueue_job("caption_images_task", *args)
     return job.job_id if job else None
 
 
@@ -114,7 +140,7 @@ async def finalize_verbatim_source(session, source, tracker) -> dict:
     return {"status": "ready", "verbatim_chunks": n_chunks}
 
 
-async def ingest_file_task(ctx: dict, source_id: str):
+async def ingest_file_task(ctx: dict, source_id: str, attempt_id_str: Optional[str] = None):
     """
     arq task: full file ingestion → wiki compilation.
     Steps: download from MinIO → extract text → outline → enqueue MRP + caption_images_task.
@@ -142,6 +168,9 @@ async def ingest_file_task(ctx: dict, source_id: str):
                 source = await session.get(Source, sid)
                 if not source:
                     logger.warning(f"Source {source_id} not found, it may have been deleted.")
+                    return
+                if not await check_task_attempt_validity(session, sid, attempt_id_str):
+                    logger.warning(f"ingest_file_task: source {source_id} attempt {attempt_id_str} is stale, skipping.")
                     return
                 if not source.minio_key:
                     raise ValueError(f"Source {source_id} has no file in storage")
@@ -243,7 +272,11 @@ async def ingest_file_task(ctx: dict, source_id: str):
                         return {"status": "awaiting_approval", "token_count": token_count, "images": len(images)}
 
                     await tracker.update(55, "Queuing compilation pipeline...")
-                    job_id = await enqueue_post_extraction_pipeline(source_id, has_images=bool(images))
+                    job_id = await enqueue_post_extraction_pipeline(
+                        source_id,
+                        has_images=bool(images),
+                        attempt_id_str=attempt_id_str or (str(source.attempt_id) if source.attempt_id else None),
+                    )
                     source.status = "processing"
                     source.progress = 55
                     source.progress_message = (
@@ -285,7 +318,7 @@ async def ingest_file_task(ctx: dict, source_id: str):
             flush_langfuse()
 
 
-async def ingest_url_task(ctx: dict, source_id: str):
+async def ingest_url_task(ctx: dict, source_id: str, attempt_id_str: Optional[str] = None):
     """arq task: URL ingestion → wiki compilation."""
     from app.ai.tracing import flush_langfuse, trace_context
     from app.database import async_session_factory
@@ -303,6 +336,9 @@ async def ingest_url_task(ctx: dict, source_id: str):
                 source = await session.get(Source, sid)
                 if not source:
                     logger.warning(f"Source {source_id} not found, it may have been deleted.")
+                    return
+                if not await check_task_attempt_validity(session, sid, attempt_id_str):
+                    logger.warning(f"ingest_url_task: source {source_id} attempt {attempt_id_str} is stale, skipping.")
                     return
 
                 try:
@@ -354,7 +390,11 @@ async def ingest_url_task(ctx: dict, source_id: str):
                         return {"status": "awaiting_approval", "token_count": token_count}
 
                     await tracker.update(55, "Queuing compilation pipeline...")
-                    job_id = await enqueue_post_extraction_pipeline(source_id, has_images=False)
+                    job_id = await enqueue_post_extraction_pipeline(
+                        source_id,
+                        has_images=False,
+                        attempt_id_str=attempt_id_str or (str(source.attempt_id) if source.attempt_id else None),
+                    )
                     source.status = "processing"
                     source.progress = 55
                     source.progress_message = "Extraction queued..."
@@ -753,7 +793,7 @@ async def reembed_all_pages_task(ctx: dict, job_id: str) -> None:
 # MRP arq tasks
 # ---------------------------------------------------------------------------
 
-async def ingest_map_reduce_task(ctx: dict, source_id: str):
+async def ingest_map_reduce_task(ctx: dict, source_id: str, attempt_id_str: Optional[str] = None):
     """
     arq task: Phase 0-2 of MRP pipeline (Triage + MAP + REDUCE).
 
@@ -779,6 +819,9 @@ async def ingest_map_reduce_task(ctx: dict, source_id: str):
                 source = await session.get(Source, sid)
                 if not source:
                     logger.warning(f"Source {source_id} not found, it may have been deleted.")
+                    return
+                if not await check_task_attempt_validity(session, sid, attempt_id_str):
+                    logger.warning(f"ingest_map_reduce_task: source {source_id} attempt {attempt_id_str} is stale, skipping.")
                     return
                 if not source.full_text:
                     raise ValueError(f"Source {source_id} has no full_text — run pre-processing first")
@@ -874,7 +917,7 @@ async def ingest_map_reduce_task(ctx: dict, source_id: str):
             flush_langfuse()
 
 
-async def ingest_refine_task(ctx: dict, source_id: str):
+async def ingest_refine_task(ctx: dict, source_id: str, attempt_id_str: Optional[str] = None):
     """
     arq task: Phase 3-5 of MRP pipeline (REFINE + VERIFY + COMMIT).
 
@@ -897,6 +940,9 @@ async def ingest_refine_task(ctx: dict, source_id: str):
                 source = await session.get(Source, sid)
                 if not source:
                     logger.warning(f"Source {source_id} not found, it may have been deleted.")
+                    return
+                if not await check_task_attempt_validity(session, sid, attempt_id_str):
+                    logger.warning(f"ingest_refine_task: source {source_id} attempt {attempt_id_str} is stale, skipping.")
                     return
                 if not source.full_text:
                     raise ValueError(f"Source {source_id} has no full_text")
@@ -1225,7 +1271,7 @@ async def daily_stats_rollup_cron(ctx: dict):
     logger.info(f"daily_stats_rollup_cron: {target} -> {result}")
 
 
-async def caption_images_task(ctx: dict, source_id: str):
+async def caption_images_task(ctx: dict, source_id: str, attempt_id_str: Optional[str] = None):
     """
     arq task: vision-caption all SourceImage rows for a source.
 
@@ -1255,12 +1301,15 @@ async def caption_images_task(ctx: dict, source_id: str):
                 if not source:
                     logger.warning(f"caption_images_task: source {source_id} not found")
                     return
+                if not await check_task_attempt_validity(session, sid, attempt_id_str):
+                    logger.warning(f"caption_images_task: source {source_id} attempt {attempt_id_str} is stale, skipping.")
+                    return
 
                 registry = ProviderRegistry(session)
                 vision_provider = await registry.get_vision()
                 if not vision_provider:
                     logger.info(f"caption_images_task: no vision provider configured, skipping to MRP for {source_id}")
-                    await _chain_to_mrp(source_id)
+                    await _chain_to_mrp(source_id, attempt_id_str=attempt_id_str)
                     return
 
                 rows = (await session.execute(
@@ -1339,11 +1388,11 @@ async def caption_images_task(ctx: dict, source_id: str):
                         logger.info(f"caption_images_task: refreshed full_text with {len(caption_by_id)} captions for {source_id}")
 
             # Chain into MAP-REDUCE (only now that captions are baked in).
-            await _chain_to_mrp(source_id)
+            await _chain_to_mrp(source_id, attempt_id_str=attempt_id_str)
         except Exception as exc:
             # If an error happens while captioning, ensure pipeline doesn't hang forever
             logger.error(f"caption_images_task: unhandled error for {source_id}: {exc}")
-            await _chain_to_mrp(source_id)
+            await _chain_to_mrp(source_id, attempt_id_str=attempt_id_str)
             raise
         finally:
             flush_langfuse()
