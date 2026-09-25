@@ -1309,7 +1309,10 @@ async def caption_images_task(ctx: dict, source_id: str, attempt_id_str: Optiona
                 vision_provider = await registry.get_vision()
                 if not vision_provider:
                     logger.info(f"caption_images_task: no vision provider configured, skipping to MRP for {source_id}")
-                    await _chain_to_mrp(source_id, attempt_id_str=attempt_id_str)
+                    if attempt_id_str:
+                        await _chain_to_mrp(source_id, attempt_id_str=attempt_id_str)
+                    else:
+                        await _chain_to_mrp(source_id)
                     return
 
                 rows = (await session.execute(
@@ -1388,11 +1391,17 @@ async def caption_images_task(ctx: dict, source_id: str, attempt_id_str: Optiona
                         logger.info(f"caption_images_task: refreshed full_text with {len(caption_by_id)} captions for {source_id}")
 
             # Chain into MAP-REDUCE (only now that captions are baked in).
-            await _chain_to_mrp(source_id, attempt_id_str=attempt_id_str)
+            if attempt_id_str:
+                await _chain_to_mrp(source_id, attempt_id_str=attempt_id_str)
+            else:
+                await _chain_to_mrp(source_id)
         except Exception as exc:
             # If an error happens while captioning, ensure pipeline doesn't hang forever
             logger.error(f"caption_images_task: unhandled error for {source_id}: {exc}")
-            await _chain_to_mrp(source_id, attempt_id_str=attempt_id_str)
+            if attempt_id_str:
+                await _chain_to_mrp(source_id, attempt_id_str=attempt_id_str)
+            else:
+                await _chain_to_mrp(source_id)
             raise
         finally:
             flush_langfuse()

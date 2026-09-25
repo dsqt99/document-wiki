@@ -43,5 +43,8 @@ async def test_retry_source_routes_to_map_reduce_when_prev_status_was_plan_ready
         await retry_source(source_id=source_id, db=mock_db, _user=mock_user)
 
         # Before fix: called with ingest_file_task because source.status was overwritten to "pending"
-        # After fix: called with ingest_map_reduce_task
-        mock_pool.enqueue_job.assert_called_once_with("ingest_map_reduce_task", str(source_id))
+        # After fix: called with ingest_map_reduce_task and passing new attempt_id for idempotency
+        mock_pool.enqueue_job.assert_called_once_with(
+            "ingest_map_reduce_task", str(source_id), str(mock_source.attempt_id)
+        )
+
