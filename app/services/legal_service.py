@@ -360,6 +360,10 @@ def split_legal_text_by_articles(
 ) -> dict[str, Any]:
     """Parse Vietnamese legal document text into preamble and individual articles.
 
+    Uses LegalHierarchyParser state machine to accurately extract hierarchical structure
+    (Part, Chapter, Section, Article, Clause, Point) and avoid false-positive splits
+    inside quoted modification blocks.
+
     Returns:
         dict with:
             - 'preamble': text prior to the first 'Điều' (issuing authority, legal basis, etc.)
@@ -369,31 +373,38 @@ def split_legal_text_by_articles(
                 - 'title': extracted title string
                 - 'content_md': verbatim article text
                 - 'slug': unique page slug
+                - 'part_num': optional part number (Phần)
+                - 'chapter_num': optional chapter number (Chương)
+                - 'chapter_title': optional chapter title
+                - 'section_num': optional section number (Mục)
+                - 'clauses': list of parsed clauses and points
     """
     if not full_text:
         return {"preamble": "", "articles": []}
 
-    matches = list(ARTICLE_RE.finditer(full_text))
     if not doc_slug:
         doc_slug = build_legal_doc_slug(doc_title)
 
-    if not matches:
+    from app.services.legal_hierarchy_parser import LegalHierarchyParser
+
+    parser = LegalHierarchyParser()
+    doc_tree = parser.parse(full_text)
+    all_articles = doc_tree.get_all_articles()
+    if not all_articles:
         return {
             "preamble": full_text.strip(),
             "articles": [],
         }
 
-    preamble = full_text[: matches[0].start()].strip()
+    preamble = doc_tree.preamble
     articles: list[dict[str, Any]] = []
     seen_slugs: set[str] = {doc_slug}
 
-    for i, m in enumerate(matches):
-        start_idx = m.start()
-        end_idx = matches[i + 1].start() if i + 1 < len(matches) else len(full_text)
-        art_num = m.group(2).strip()
-        raw_heading = re.sub(r'[*#_“"”]', '', m.group(1)).strip()
-        art_title = re.sub(r'[*#_“"”]', '', m.group(3) or '').strip()
-        art_content = full_text[start_idx:end_idx].strip()
+    for art in all_articles:
+        art_num = art.number
+        raw_heading = f"Điều {art.number}. {art.title}" if art.title else f"Điều {art.number}"
+        art_title = art.title
+        art_content = art.content
 
         # Build unique slug for this article (dieu-X-doc-slug)
         base_slug = f"dieu-{art_num.lower()}-{doc_slug}"
@@ -415,6 +426,17 @@ def split_legal_text_by_articles(
             "title": art_title,
             "content_md": art_content,
             "slug": art_slug,
+            "chapter_num": art.chapter_num,
+            "chapter_title": art.chapter_title,
+            "section_num": art.section_num,
+            "clauses": [
+                {
+                    "num": c.number,
+                    "content_md": c.content,
+                    "points": [{"letter": p.letter, "content_md": p.content} for p in c.points],
+                }
+                for c in art.clauses
+            ],
         })
 
     return {
