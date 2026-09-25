@@ -6,7 +6,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libgl1 \
     libglib2.0-0 \
+    libreoffice-core-nogui \
+    libreoffice-writer \
+    libreoffice-calc \
+    libreoffice-impress \
     && rm -rf /var/lib/apt/lists/*
+
 
 RUN pip install --upgrade pip --no-cache-dir
 

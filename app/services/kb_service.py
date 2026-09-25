@@ -286,9 +286,29 @@ async def _extract_text_from_file(
     if ext in ("txt", "md"):
         return [{"content": file_data.decode("utf-8", errors="ignore"), "page_number": 1}]
 
-    if ext == "doc":
-        logger.warning("Extraction skipped: .doc format (Word 97-2003) is not supported.")
-        raise ValueError("Định dạng file .doc (Word 97-2003) không được hỗ trợ. Vui lòng chuyển đổi sang .docx hoặc .pdf.")
+    if ext in ("doc", "ppt", "rtf"):
+        from app.services.parsers.libreoffice_converter import libreoffice_converter
+        if libreoffice_converter.is_available():
+            try:
+                pdf_bytes = await libreoffice_converter.convert_to_pdf(file_data, ext)
+                from app.services.parsers.pdf_parser import PDFParser
+                parser = PDFParser()
+                return await parser.parse(
+                    file_data=pdf_bytes,
+                    file_name=f"{file_name}.pdf",
+                    vision_provider=vision_provider,
+                    tracker=tracker,
+                )
+            except Exception as conv_err:
+                logger.warning(f"LibreOffice conversion failed for '{file_name}': {conv_err}")
+                raise ValueError(f"Không thể chuyển đổi file .{ext} sang PDF: {conv_err}")
+        else:
+            logger.warning(f"Extraction skipped: .{ext} format requires LibreOffice headless converter.")
+            raise ValueError(
+                f"Định dạng file .{ext} yêu cầu LibreOffice để chuyển đổi tự động nhưng hệ thống chưa cài đặt. "
+                "Vui lòng chuyển đổi sang .docx hoặc .pdf trước khi tải lên."
+            )
+
 
     # Other formats (pptx, ...): write to a temp file and let
     # content-core extract via file path. Passing raw bytes as "content"
