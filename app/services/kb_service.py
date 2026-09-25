@@ -228,100 +228,15 @@ async def _extract_text_from_file(
     pages_data: list[dict] = []
 
     if ext == "pdf":
-        import fitz
-        doc = fitz.open(stream=file_data, filetype="pdf")
-        empty_pages: list[tuple[int, int]] = []  # (index, page_number)
+        from app.services.parsers.pdf_parser import PDFParser
+        parser = PDFParser()
+        return await parser.parse(
+            file_data=file_data,
+            file_name=file_name,
+            vision_provider=vision_provider,
+            tracker=tracker,
+        )
 
-        for i, page in enumerate(doc):  # type: ignore[arg-type]
-            text = (page.get_text() or "").strip()
-            pages_data.append({"content": text, "page_number": i + 1})
-            if not text:
-                empty_pages.append((i, i + 1))
-
-        # --- OCR for empty pages (Dedicated GLM-OCR model first, Vision Provider fallback) ---
-        from app.services.ocr_service import ocr_service
-
-        if empty_pages and (ocr_service.is_configured or vision_provider):
-            ocr_prompt = (
-                "Extract ALL text from this document page exactly as written. "
-                "Preserve the original layout, headings, tables, and formatting "
-                "as closely as possible using markdown. If the page contains a "
-                "table, reproduce it as a markdown table. If there is no text "
-                "at all, respond with an empty string."
-            )
-            total_empty = len(empty_pages)
-            logger.info(
-                f"OCR processing: {total_empty}/{len(pages_data)} empty pages in '{file_name}'. "
-                f"Dedicated OCR configured: {ocr_service.is_configured}, Vision provider available: {bool(vision_provider)}"
-            )
-
-            # Pre-render page images (alpha=False, JPEG quality 85 for speed & low network bandwidth)
-            page_images: list[tuple[int, int, bytes]] = []
-            for idx, page_num in empty_pages:
-                try:
-                    page = doc[idx]
-                    pix = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
-                    img_bytes = pix.tobytes("jpg", jpg_quality=85)
-                    page_images.append((idx, page_num, img_bytes))
-                except Exception as render_err:
-                    logger.warning(f"Failed to render page {page_num} of '{file_name}': {render_err}")
-
-            # Process OCR with concurrency (5 concurrent requests to avoid rate limits while speeding up 5x)
-            sem = asyncio.Semaphore(5)
-            completed_count = 0
-            progress_lock = asyncio.Lock()
-
-            async def _process_page_ocr(idx: int, page_num: int, img_bytes: bytes) -> None:
-                nonlocal completed_count
-                async with sem:
-                    ocr_text: Optional[str] = None
-
-                    # Step 1: Try dedicated OCR model (GLM-OCR) first
-                    if ocr_service.is_configured:
-                        try:
-                            ocr_text = await ocr_service.ocr_image(
-                                img_bytes, mime_type="image/jpeg", prompt=ocr_prompt,
-                            )
-                            if ocr_text and ocr_text.strip():
-                                logger.info(f"GLM-OCR page {page_num}: {len(ocr_text)} chars")
-                        except Exception as ocr_err:
-                            logger.warning(f"GLM-OCR failed on page {page_num} of '{file_name}': {ocr_err}")
-                            ocr_text = None
-
-                    # Step 2: Fallback to Vision Provider if dedicated OCR didn't produce text
-                    if (not ocr_text or not ocr_text.strip()) and vision_provider:
-                        logger.info(f"Vision OCR processing page {page_num}/{len(pages_data)} of '{file_name}'")
-                        try:
-                            ocr_text = await vision_provider.analyze_image(
-                                img_bytes, mime_type="image/jpeg", prompt=ocr_prompt,
-                            )
-                            if ocr_text and ocr_text.strip():
-                                logger.debug(f"Vision provider OCR page {page_num}: {len(ocr_text)} chars")
-                        except Exception as vis_err:
-                            logger.warning(f"Vision provider OCR failed on page {page_num} of '{file_name}': {vis_err}")
-
-                    if ocr_text and ocr_text.strip():
-                        pages_data[idx]["content"] = ocr_text.strip()
-
-                    async with progress_lock:
-                        completed_count += 1
-                        if tracker:
-                            try:
-                                prog = 15 + int(10 * completed_count / total_empty)
-                                await tracker.update(
-                                    prog,
-                                    f"Vision OCR: {completed_count}/{total_empty} trang...",
-                                )
-                            except Exception:
-                                pass
-
-            await asyncio.gather(
-                *[_process_page_ocr(idx, pnum, img_b) for idx, pnum, img_b in page_images],
-                return_exceptions=True,
-            )
-
-        doc.close()
-        return pages_data
 
     # --- Excel / Spreadsheet extraction ---
     if ext in ("xlsx", "xls", "csv"):
