@@ -118,7 +118,7 @@ class Settings(BaseSettings):
     # --- Milvus Vector Database ---
     milvus_host: str = Field(default="milvus", description="Milvus server host")
     milvus_port: int = Field(default=19530, description="Milvus server port")
-    milvus_enabled: bool = Field(default=True, description="Enable Milvus vector database")
+    milvus_enabled: bool = Field(default=False, description="Enable Milvus vector database (default False when pgvector is primary)")
     milvus_user: str = Field(default="", description="Milvus username")
     milvus_password: str = Field(default="", description="Milvus password")
     milvus_database: str = Field(default="default", description="Milvus database name")
@@ -127,6 +127,14 @@ class Settings(BaseSettings):
     ocr_base_url: str = Field(default="", description="Base URL for dedicated OCR service (e.g. 'https://unsloth.anm05.com/v1')")
     ocr_api_key: str = Field(default="", description="API key for dedicated OCR service")
     ocr_model: str = Field(default="ggml-org/GLM-OCR-GGUF:f16", description="Model name for dedicated OCR service")
+
+    # --- Reranker Service ---
+    reranker_enabled: bool = Field(default=True, description="Enable cross-encoder reranker in retrieval")
+    reranker_provider: str = Field(default="http", description="Reranker provider: 'http' or 'local'")
+    reranker_base_url: str = Field(default="", description="Base URL for TEI/Infinity/BGE reranker (e.g. 'http://reranker:8080')")
+    reranker_api_key: str = Field(default="", description="API key for reranker service")
+    reranker_model: str = Field(default="BAAI/bge-reranker-v2-m3", description="Model name for reranking")
+    reranker_top_n: int = Field(default=10, description="Top N results to retain after reranking")
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
