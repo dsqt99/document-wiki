@@ -4,7 +4,7 @@ x-backend: &backend
   build:
     context: .
     dockerfile: Dockerfile
-  image: arkon-backend:latest
+  image: wiki-backend:latest
   env_file: [.env.docker]
   restart: always
   depends_on:
@@ -24,7 +24,7 @@ services:
 
   postgres:
     image: pgvector/pgvector:pg16
-    container_name: arkon_postgres
+    container_name: wiki_postgres
     restart: always
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-arkon}
@@ -42,7 +42,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: arkon_redis
+    container_name: wiki_redis
     restart: always
     command: redis-server --save 60 1 --loglevel warning --requirepass ${REDIS_PASSWORD:-arkon_secret}
     volumes:
@@ -57,7 +57,7 @@ services:
 
   minio:
     image: minio/minio:latest
-    container_name: arkon_minio
+    container_name: wiki_minio
     restart: always
     command: server /data --console-address ":9001"
     environment:
@@ -75,7 +75,7 @@ services:
       retries: 10
 
   etcd:
-    container_name: arkon_etcd
+    container_name: wiki_etcd
     image: quay.io/coreos/etcd:v3.5.14
     restart: always
     environment:
@@ -93,7 +93,7 @@ services:
       retries: 5
 
   milvus:
-    container_name: arkon_milvus
+    container_name: wiki_milvus
     image: milvusdb/milvus:v2.4.15
     restart: always
     command: ["milvus", "run", "standalone"]
@@ -123,7 +123,7 @@ services:
       start_period: 30s
 
   milvus_ui:
-    container_name: arkon_milvus_ui
+    container_name: wiki_milvus_ui
     image: zilliz/attu:latest
     restart: always
     environment:
@@ -138,13 +138,13 @@ services:
 
   migrator:
     <<: *backend
-    container_name: arkon_migrator
+    container_name: wiki_migrator
     command: alembic upgrade head
     restart: "no"
 
   api:
     <<: *backend
-    container_name: arkon_api
+    container_name: wiki_api
     depends_on:
       migrator:
         condition: service_completed_successfully
@@ -170,7 +170,7 @@ services:
 
   worker:
     <<: *backend
-    container_name: arkon_worker
+    container_name: wiki_worker
     command: python -m arq app.worker.WorkerSettings
     depends_on:
       api:
@@ -178,7 +178,7 @@ services:
 
   worker_skills:
     <<: *backend
-    container_name: arkon_worker_skills
+    container_name: wiki_worker_skills
     command: python -m arq app.worker.SkillWorkerSettings
     depends_on:
       api:
@@ -191,8 +191,8 @@ services:
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5055}
         INTERNAL_API_URL: http://api:5055
-    image: arkon-frontend:latest
-    container_name: arkon_frontend
+    image: wiki-frontend:latest
+    container_name: wiki_frontend
     restart: always
     ports:
       - "3119:3000"

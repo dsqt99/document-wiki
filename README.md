@@ -106,17 +106,17 @@ Hệ thống Document Wiki vận hành đồng bộ thông qua cụm 11 dịch v
 
 | Dịch vụ Container | Vai trò & Công nghệ | Cổng Host / Mạng nội bộ |
 | :--- | :--- | :---: |
-| **`arkon_frontend`** | Giao diện Portal người dùng (Next.js 16, React 19, Tailwind CSS) | `3119:3000` |
-| **`arkon_api`** | Lõi xử lý Backend REST API & FastMCP Server (FastAPI) | `5055:5055` |
-| **`arkon_worker`** | Worker xử lý luồng MRP Pipeline biên tập tài liệu (Python ARQ) | Nội bộ |
-| **`arkon_worker_skills`** | Worker quản lý và thực thi AI Skills (Python ARQ) | Nội bộ |
-| **`arkon_migrator`** | Tự động cập nhật lược đồ CSDL khi nâng cấp (Alembic) | Nội bộ |
-| **`arkon_postgres`** | Cơ sở dữ liệu quan hệ & Vector Store (PostgreSQL 16 + pgvector) | `5432` |
-| **`arkon_redis`** | Quản lý hàng đợi tác vụ nền và bộ nhớ đệm (Redis 7) | `6379` |
-| **`arkon_minio`** | Lưu trữ tệp tin tài liệu gốc, hình ảnh, tài sản đính kèm (MinIO S3) | API: `9002` \| Console: `9003` |
-| **`arkon_milvus`** | Cơ sở dữ liệu Vector chuyên dụng cho tìm kiếm quy mô lớn (Milvus 2.4) | `19530` / `9091` |
-| **`arkon_etcd`** | Lưu trữ metadata cho cụm Milvus Standalone (etcd v3.5) | Nội bộ |
-| **`arkon_milvus_ui`** | Bảng điều khiển trực quan quản lý Milvus Vector (Attu UI) | `9004:3000` |
+| **`wiki_frontend`** | Giao diện Portal người dùng (Next.js 16, React 19, Tailwind CSS) | `3119:3000` |
+| **`wiki_api`** | Lõi xử lý Backend REST API & FastMCP Server (FastAPI) | `5055:5055` |
+| **`wiki_worker`** | Worker xử lý luồng MRP Pipeline biên tập tài liệu (Python ARQ) | Nội bộ |
+| **`wiki_worker_skills`** | Worker quản lý và thực thi AI Skills (Python ARQ) | Nội bộ |
+| **`wiki_migrator`** | Tự động cập nhật lược đồ CSDL khi nâng cấp (Alembic) | Nội bộ |
+| **`wiki_postgres`** | Cơ sở dữ liệu quan hệ & Vector Store (PostgreSQL 16 + pgvector) | `5432` |
+| **`wiki_redis`** | Quản lý hàng đợi tác vụ nền và bộ nhớ đệm (Redis 7) | `6379` |
+| **`wiki_minio`** | Lưu trữ tệp tin tài liệu gốc, hình ảnh, tài sản đính kèm (MinIO S3) | API: `9002` \| Console: `9003` |
+| **`wiki_milvus`** | Cơ sở dữ liệu Vector chuyên dụng cho tìm kiếm quy mô lớn (Milvus 2.4) | `19530` / `9091` |
+| **`wiki_etcd`** | Lưu trữ metadata cho cụm Milvus Standalone (etcd v3.5) | Nội bộ |
+| **`wiki_milvus_ui`** | Bảng điều khiển trực quan quản lý Milvus Vector (Attu UI) | `9004:3000` |
 
 ---
 
