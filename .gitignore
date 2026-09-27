@@ -59,6 +59,8 @@ uv.lock
 # Reference
 .rtk/
 
+temp_uploads/
+
 # Ai Client
 .claude/
 
