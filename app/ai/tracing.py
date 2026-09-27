@@ -234,7 +234,8 @@ def sync_all_models_to_langfuse() -> int:
             else:
                 break
     except Exception as e:
-        logger.debug(f"Could not list Langfuse models: {e}")
+        logger.warning(f"Could not connect/list Langfuse models ({e}), skipping model pricing sync.")
+        return 0
 
     # 1. Sync LLM Models
     for spec in LLM_CATALOG.values():

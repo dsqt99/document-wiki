@@ -1725,18 +1725,18 @@ class WorkerSettings:
 
     @staticmethod
     async def on_startup(ctx: dict):
-        from app.ai.tracing import get_langfuse, sync_all_models_to_langfuse
-        get_langfuse()
-        try:
-            sync_all_models_to_langfuse()
-        except Exception as e:
-            logger.warning(f"Could not sync models to Langfuse on worker startup: {e}")
+        # from app.ai.tracing import get_langfuse, sync_all_models_to_langfuse
+        # get_langfuse()
+        # try:
+        #     sync_all_models_to_langfuse()
+        # except Exception as e:
+        #     logger.warning(f"Could not sync models to Langfuse on worker startup: {e}")
         logger.info("arq worker started — listening for ingestion jobs...")
 
     @staticmethod
     async def on_shutdown(ctx: dict):
-        from app.ai.tracing import shutdown_langfuse
-        shutdown_langfuse()
+        # from app.ai.tracing import shutdown_langfuse
+        # shutdown_langfuse()
         logger.info("arq worker shutting down...")
 
 
@@ -1758,12 +1758,12 @@ class SkillWorkerSettings:
 
     @staticmethod
     async def on_startup(ctx: dict):
-        from app.ai.tracing import get_langfuse
-        get_langfuse()
+        # from app.ai.tracing import get_langfuse
+        # get_langfuse()
         logger.info("arq skills worker started — listening for skill jobs...")
 
     @staticmethod
     async def on_shutdown(ctx: dict):
-        from app.ai.tracing import shutdown_langfuse
-        shutdown_langfuse()
+        # from app.ai.tracing import shutdown_langfuse
+        # shutdown_langfuse()
         logger.info("arq skills worker shutting down...")

@@ -3,6 +3,7 @@ Arkon — Enterprise AI Control Center.
 FastAPI application entry point.
 """
 
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -94,13 +95,13 @@ async def lifespan(app: FastAPI):
         # MCP server ready
         logger.success("Arkon MCP Server ready at /mcp")
 
-        # Initialize Langfuse & sync model pricing definitions
-        try:
-            from app.ai.tracing import get_langfuse, sync_all_models_to_langfuse
-            get_langfuse()
-            sync_all_models_to_langfuse()
-        except Exception as e:
-            logger.warning(f"Could not sync models to Langfuse: {e}")
+        # Initialize Langfuse & sync model pricing definitions (temporarily commented)
+        # try:
+        #     from app.ai.tracing import get_langfuse, sync_all_models_to_langfuse
+        #     if get_langfuse():
+        #         asyncio.create_task(asyncio.to_thread(sync_all_models_to_langfuse))
+        # except Exception as e:
+        #     logger.warning(f"Could not initialize Langfuse background sync: {e}")
 
         logger.success("Arkon API started successfully")
         yield
