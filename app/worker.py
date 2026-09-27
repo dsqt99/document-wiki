@@ -1513,6 +1513,99 @@ async def relink_legal_relations_task(ctx: dict, source_id: Optional[str] = None
         return result
 
 
+async def generate_questions_task(
+    ctx: dict,
+    source_id: str,
+    attempt_id_str: Optional[str] = None,
+    max_provisions: int = 15,
+) -> dict:
+    """Generate potential search queries for key legal provisions in background queue."""
+    from app.database import async_session_factory
+    from app.database.models import LegalUnit, Source
+    from app.services.question_generator import (
+        QuestionGenerator,
+        build_question_chunks,
+        index_question_chunks,
+    )
+
+    sid = uuid.UUID(source_id)
+    async with async_session_factory() as session:
+        if not await check_task_attempt_validity(session, sid, attempt_id_str):
+            logger.warning(f"generate_questions_task: source {source_id} attempt is stale, skipping.")
+            return {"status": "stale", "source_id": source_id}
+
+        source = await session.get(Source, sid)
+        if not source:
+            logger.warning(f"generate_questions_task: source {source_id} not found.")
+            return {"status": "not_found", "source_id": source_id}
+
+        # Check provider
+        from app.ai.registry import ProviderRegistry
+        registry = ProviderRegistry(session)
+        llm = await registry.get_llm()
+
+        generator = QuestionGenerator(llm_provider=llm)
+
+        legal_units = (
+            await session.execute(
+                select(LegalUnit)
+                .where(LegalUnit.source_id == sid)
+                .limit(max_provisions)
+            )
+        ).scalars().all()
+
+        all_question_chunks = []
+        if legal_units:
+            for idx, unit in enumerate(legal_units):
+                title = f"{unit.unit_type.value.capitalize()} {unit.unit_number}: {unit.title or ''}"
+                questions = await generator.generate_questions_for_chunk(
+                    text=unit.content or "",
+                    title=title,
+                    max_questions=3,
+                )
+                if questions:
+                    chunks = build_question_chunks(
+                        source_id=sid,
+                        parent_chunk_index=idx,
+                        questions=questions,
+                        page_number=1,
+                        context_preview=unit.content or "",
+                    )
+                    all_question_chunks.extend(chunks)
+        else:
+            from app.services.verbatim_service import build_verbatim_chunks
+            verbatim_chunks = build_verbatim_chunks(source.full_text or "", source.page_offsets or [])[:max_provisions]
+            for c in verbatim_chunks:
+                questions = await generator.generate_questions_for_chunk(
+                    text=c.text,
+                    max_questions=3,
+                )
+                if questions:
+                    chunks = build_question_chunks(
+                        source_id=sid,
+                        parent_chunk_index=c.index,
+                        questions=questions,
+                        page_number=c.page_number,
+                        context_preview=c.text,
+                    )
+                    all_question_chunks.extend(chunks)
+
+        indexed_count = 0
+        if all_question_chunks:
+            indexed_count = await index_question_chunks(session, sid, all_question_chunks)
+
+        logger.info(
+            f"generate_questions_task: generated {len(all_question_chunks)} question chunks, "
+            f"indexed {indexed_count} for source {source_id}"
+        )
+        return {
+            "status": "success",
+            "source_id": source_id,
+            "questions_generated": len(all_question_chunks),
+            "chunks_indexed": indexed_count,
+        }
+
+
 class WorkerSettings:
     """arq worker configuration."""
 
@@ -1527,6 +1620,7 @@ class WorkerSettings:
         ai_pre_review_draft_task,
         reassign_source_scope_task,
         relink_legal_relations_task,
+        generate_questions_task,
     ]
     redis_settings = _get_redis_settings()
     max_jobs = settings.worker_max_jobs
