@@ -15,6 +15,7 @@ All tools verify the employee's MCP token and enforce knowledge_type scope:
 from typing import Optional
 
 from fastmcp import FastMCP
+from loguru import logger
 from sqlalchemy import select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -298,7 +299,17 @@ def register_tools(mcp: FastMCP):
 
         import asyncio
 
+        from app.services.legal_route_service import route_exact_legal_query
+        from app.services.retrieval_service import expand_graph_neighbors, format_graph_neighbors_section
+        from app.services.reranker_service import RerankerService
+
+        exact_match = None
+        graph_neighbors = []
+
         async with async_session_factory() as session:
+            # Check exact legal route first for queries like "Điều 5 Nghị định 136/2020"
+            exact_match = await route_exact_legal_query(session, query)
+
             registry = ProviderRegistry(session)
             embedding_provider = await registry.get_embedding(task="search_query")
             query_embedding = await embedding_provider.embed(query)
@@ -312,7 +323,7 @@ def register_tools(mcp: FastMCP):
                 session,
                 query_embedding=query_embedding,
                 query_text=query,
-                top_k=top_k,
+                top_k=top_k * 2,
                 allowed_kt_slugs=identity.allowed_knowledge_types,
                 department_ids=identity.department_ids,
                 project_ids=proj_uuids,
@@ -322,7 +333,7 @@ def register_tools(mcp: FastMCP):
                 session,
                 query_embedding=query_embedding,
                 query_text=query,
-                top_k=top_k,
+                top_k=top_k * 2,
                 allowed_source_ids=allowed_source_ids,
             )
             # Out-of-scope peek — admins already see everything, so the hint only
@@ -345,6 +356,11 @@ def register_tools(mcp: FastMCP):
                 wiki_hits, source_hits = await asyncio.gather(wiki_task, source_task)
                 oos_hint = ""
 
+            # 1-hop Graph Neighbor Expansion on top wiki hits
+            top_page_ids = [h["page"].id for h in wiki_hits[:5] if "page" in h]
+            if top_page_ids:
+                graph_neighbors = await expand_graph_neighbors(session, top_page_ids)
+
         # Threshold floor: drop weak vector-only hits (noise), but keep anything
         # the lexical arm matched — an exact keyword hit is meaningful even at low
         # cosine. Applied per pool before the cross-pool merge.
@@ -357,13 +373,47 @@ def register_tools(mcp: FastMCP):
         wiki_hits = [h for h in wiki_hits if _passes(h)]
         source_hits = [h for h in source_hits if _passes(h)]
 
-        # Unify into one ranked list by fused RRF score.
-        ranked: list = [("wiki", h["rrf"], h) for h in wiki_hits]
-        ranked += [("source", h["rrf"], h) for h in source_hits]
-        ranked.sort(key=lambda r: r[1], reverse=True)
-        ranked = ranked[:top_k]
+        # Prepare candidates for reranking
+        candidates = []
+        for h in wiki_hits:
+            p = h["page"]
+            body = getattr(p, "content_md", "") or getattr(p, "content", "")
+            candidates.append({"kind": "wiki", "hit": h, "text": f"{p.title}\n{body}"})
+        for h in source_hits:
+            c = h.get("chunk")
+            text = (getattr(c, "text", "") or getattr(c, "content", "") or "") if c else ""
+            candidates.append({"kind": "source", "hit": h, "text": text})
+
+        reranker = RerankerService.get_instance()
+        if candidates and reranker and reranker.enabled:
+            reranked_docs = await reranker.rerank(query, candidates, text_key="text", top_n=top_k)
+            ranked = []
+            for cand in reranked_docs:
+                score = cand.get("rerank_score", cand["hit"].get("rrf", 0.0))
+                cand["hit"]["rerank_score"] = score
+                ranked.append((cand["kind"], score, cand["hit"]))
+        else:
+            # Unify into one ranked list by fused RRF score.
+            ranked = [("wiki", h["rrf"], h) for h in wiki_hits]
+            ranked += [("source", h["rrf"], h) for h in source_hits]
+            ranked.sort(key=lambda r: r[1], reverse=True)
+            ranked = ranked[:top_k]
+
+        exact_block = ""
+        if exact_match and exact_match.get("matched"):
+            exact_block = (
+                "🎯 **KẾT QUẢ TRA CỨU CHÍNH XÁC VĂN BẢN QUY PHẠM PHÁP LUẬT**:\n"
+                f"- **Văn bản**: {exact_match.get('doc_number', '')} — {exact_match.get('full_path', '')}\n"
+                f"- **Tiêu đề**: {exact_match.get('title') or ''}\n"
+                f"- **Nội dung**:\n{exact_match.get('content', '')}\n"
+            )
+            if exact_match.get("validity_callout"):
+                exact_block += f"\n{exact_match['validity_callout']}\n"
+            exact_block += "\n---\n"
 
         if not ranked:
+            if exact_block:
+                return exact_block
             base = f"No knowledge base matches found for: \"{query}\""
             if oos_hint:
                 return f"{base}\n\n{oos_hint}"
@@ -374,12 +424,17 @@ def register_tools(mcp: FastMCP):
             return f"{base}/wiki/source/{source_id}" if base else f"/wiki/source/{source_id}"
 
         def _score_label(hit: dict) -> str:
+            if "rerank_score" in hit:
+                return f"⚡ rerank {hit['rerank_score']:.2f}"
             cos = hit.get("cosine")
             if cos is not None:
                 return f"{cos:.0%}"
             return "🔑 từ khóa"  # FTS-only match, no cosine
 
-        lines = [f"**KB search — {len(ranked)} result(s) for: \"{query}\"**\n"]
+        lines = []
+        if exact_block:
+            lines.append(exact_block)
+        lines.append(f"**KB search — {len(ranked)} result(s) for: \"{query}\"**\n")
         for kind, _score, hit in ranked:
             score_label = _score_label(hit)
             if kind == "wiki":
@@ -412,6 +467,10 @@ def register_tools(mcp: FastMCP):
                     f"Link: {_portal_link(source.id)}_"
                 )
             lines.append(entry)
+
+        if graph_neighbors:
+            lines.append("")
+            lines.append(format_graph_neighbors_section(graph_neighbors))
 
         if oos_hint:
             lines.append("")

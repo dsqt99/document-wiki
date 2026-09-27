@@ -28,6 +28,14 @@ class RerankResult:
 class RerankerService:
     """Manages document re-ranking and diversification."""
 
+    _instance: Optional[RerankerService] = None
+
+    @classmethod
+    def get_instance(cls) -> RerankerService:
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
+
     def __init__(
         self,
         base_url: Optional[str] = None,
