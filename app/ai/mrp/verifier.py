@@ -218,5 +218,28 @@ async def run_verify_phase(
         else:
             pr.status = assess_page_status(pr.content_md)
 
+    # 4.4 Citation & Footnote verification against source text
+    await tracker.update(95, "Verifying citations & footnotes...")
+    from app.services.citation_verifier import CitationVerifier, apply_citation_callout
+
+    verifier = CitationVerifier()
+    for pr in page_results:
+        if pr.slug in ("_index", "_log", "_hot") or pr.page_type == "source":
+            continue
+        try:
+            report = verifier.verify_page(
+                page_slug=pr.slug,
+                content_md=pr.content_md,
+                source_text=full_text,
+            )
+            if report.has_hallucinations:
+                pr.content_md = apply_citation_callout(pr.content_md, report)
+                logger.warning(
+                    f"MRP VERIFY: Injected citation warning on page '{pr.slug}' "
+                    f"({len(report.unverified_claims)} unverified claims, score={report.score:.2f})"
+                )
+        except Exception as exc:
+            logger.warning(f"MRP VERIFY citation verification error on '{pr.slug}': {exc}")
+
     logger.info(f"MRP VERIFY complete: {len(page_results)} pages verified for source={source.id}")
     return page_results
