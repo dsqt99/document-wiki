@@ -9,6 +9,7 @@ Start with:
 """
 
 import asyncio
+import time
 import uuid
 import zipfile
 from typing import Optional
@@ -183,9 +184,14 @@ async def ingest_file_task(ctx: dict, source_id: str, attempt_id_str: Optional[s
                     source.progress_message = "Starting processing..."
                     await session.commit()
 
+                    from app.models.task_failure import record_stage_timing
+
                     # --- Step 1: Download from MinIO (10%) ---
                     await tracker.update(5, "Loading file...")
+                    t_dl = time.perf_counter()
                     file_data = storage_service.download_file(source.minio_key)
+                    dl_ms = int((time.perf_counter() - t_dl) * 1000)
+                    await record_stage_timing(session, sid, "download", dl_ms, {"size_bytes": len(file_data) if file_data else 0})
                     await tracker.update(10, "File loaded")
 
                     # --- Step 2: Extract text per page (25%) ---
@@ -198,7 +204,10 @@ async def ingest_file_task(ctx: dict, source_id: str, attempt_id_str: Optional[s
                         vision_provider = await registry.get_vision()
                     except Exception:
                         pass  # OCR fallback unavailable — continue without it
+                    t_parse = time.perf_counter()
                     pages_data = await _extract_text_from_file(file_data, file_name, vision_provider=vision_provider, tracker=tracker)
+                    parse_ms = int((time.perf_counter() - t_parse) * 1000)
+                    await record_stage_timing(session, sid, "parse", parse_ms, {"pages_count": len(pages_data) if pages_data else 0})
 
                     if not pages_data or not any((p.get("content") or "").strip() for p in pages_data):
                         source.status = "error"
@@ -213,6 +222,7 @@ async def ingest_file_task(ctx: dict, source_id: str, attempt_id_str: Optional[s
                     # Captioning is offloaded to caption_images_task (enqueued below) so
                     # this job is not blocked by the number of images in the document.
                     await tracker.update(30, "Extracting images...")
+                    t_img = time.perf_counter()
                     images = extract_images(file_data, file_name, source_id)
 
                     # Persist images so wiki content_md can reference them by uuid.
@@ -232,10 +242,13 @@ async def ingest_file_task(ctx: dict, source_id: str, attempt_id_str: Optional[s
 
                     # Inline image markers into per-page text so the compiler sees them.
                     _inline_image_markers(pages_data, images)
+                    img_ms = int((time.perf_counter() - t_img) * 1000)
+                    await record_stage_timing(session, sid, "extract_images", img_ms, {"images_count": len(images)})
                     await tracker.update(40, f"Analyzed {len(images)} images")
 
                     # --- Step 4: Build outline + assemble full_text (50%) ---
                     await tracker.update(45, "Building document outline...")
+                    t_out = time.perf_counter()
                     source.outline_json = build_outline(pages_data)
                     full_text, page_offsets = assemble_full_text(pages_data)
                     source.full_text = full_text
@@ -245,6 +258,8 @@ async def ingest_file_task(ctx: dict, source_id: str, attempt_id_str: Optional[s
                     token_count = count_tokens(full_text)
                     source.extracted_token_count = token_count
                     await session.commit()
+                    out_ms = int((time.perf_counter() - t_out) * 1000)
+                    await record_stage_timing(session, sid, "outline", out_ms, {"token_count": token_count})
                     await tracker.update(50, f"Outline: {len(source.outline_json or [])} top-level sections, ~{token_count} tokens")
 
                     # --- Legal Document: parse into Điều-level WikiPages + vector embeddings ---
@@ -300,6 +315,7 @@ async def ingest_file_task(ctx: dict, source_id: str, attempt_id_str: Optional[s
                     async def _mark_error_file() -> None:
                         from app.database import async_session_factory as _sf
                         from app.database.models import Source as _Source
+                        from app.models.task_failure import record_task_failure
                         async with _sf() as err_session:
                             src = await err_session.get(_Source, sid)
                             if src:
@@ -308,6 +324,14 @@ async def ingest_file_task(ctx: dict, source_id: str, attempt_id_str: Optional[s
                                 src.progress = 0
                                 src.progress_message = progress_msg
                                 await err_session.commit()
+                            await record_task_failure(
+                                session=err_session,
+                                task_name="ingest_file_task",
+                                error=e,
+                                source_id=sid,
+                                attempt_id=attempt_id_str,
+                                payload={"file_name": file_name} if "file_name" in locals() else None,
+                            )
 
                     try:
                         await asyncio.shield(_mark_error_file())
@@ -352,7 +376,11 @@ async def ingest_url_task(ctx: dict, source_id: str, attempt_id_str: Optional[st
                         source.error_message = "Source has no URL"
                         await session.commit()
                         return {"status": "error"}
+                    from app.models.task_failure import record_stage_timing
+                    t_url = time.perf_counter()
                     pages_data = await _extract_text_from_url(source.url)
+                    url_ms = int((time.perf_counter() - t_url) * 1000)
+                    await record_stage_timing(session, sid, "fetch_url", url_ms, {"pages_count": len(pages_data) if pages_data else 0})
 
                     if not pages_data or not any((p.get("content") or "").strip() for p in pages_data):
                         source.status = "error"
@@ -361,6 +389,7 @@ async def ingest_url_task(ctx: dict, source_id: str, attempt_id_str: Optional[st
                         return {"status": "error"}
 
                     await tracker.update(40, "Building outline...")
+                    t_out = time.perf_counter()
                     source.outline_json = build_outline(pages_data)
                     full_text, page_offsets = assemble_full_text(pages_data)
                     source.full_text = full_text
@@ -368,6 +397,8 @@ async def ingest_url_task(ctx: dict, source_id: str, attempt_id_str: Optional[st
                     token_count = count_tokens(full_text)
                     source.extracted_token_count = token_count
                     await session.commit()
+                    out_ms = int((time.perf_counter() - t_out) * 1000)
+                    await record_stage_timing(session, sid, "outline", out_ms, {"token_count": token_count})
 
                     # --- Legal Document: parse into Điều-level WikiPages + vector embeddings ---
                     from app.services.legal_service import is_legal_source, finalize_legal_source
@@ -412,6 +443,7 @@ async def ingest_url_task(ctx: dict, source_id: str, attempt_id_str: Optional[st
                     async def _mark_error_url() -> None:
                         from app.database import async_session_factory as _sf
                         from app.database.models import Source as _Source
+                        from app.models.task_failure import record_task_failure
                         async with _sf() as err_session:
                             src = await err_session.get(_Source, sid)
                             if src:
@@ -419,6 +451,13 @@ async def ingest_url_task(ctx: dict, source_id: str, attempt_id_str: Optional[st
                                 src.error_message = error_msg
                                 src.progress = 0
                                 await err_session.commit()
+                            await record_task_failure(
+                                session=err_session,
+                                task_name="ingest_url_task",
+                                error=e,
+                                source_id=sid,
+                                attempt_id=attempt_id_str,
+                            )
 
                     try:
                         await asyncio.shield(_mark_error_url())
@@ -864,6 +903,8 @@ async def ingest_map_reduce_task(ctx: dict, source_id: str, attempt_id_str: Opti
                         if kt:
                             kt_slug, kt_name, kt_desc = kt.slug, kt.name, kt.description
 
+                    from app.models.task_failure import record_stage_timing
+                    t_mrp = time.perf_counter()
                     result = await run_mrp_pipeline(
                         session=session,
                         source=source,
@@ -873,6 +914,11 @@ async def ingest_map_reduce_task(ctx: dict, source_id: str, attempt_id_str: Opti
                         kt_slug=kt_slug,
                         kt_name=kt_name,
                         kt_desc=kt_desc,
+                    )
+                    mrp_ms = int((time.perf_counter() - t_mrp) * 1000)
+                    await record_stage_timing(
+                        session, sid, "map_reduce", mrp_ms,
+                        {"status": result.get("status") if isinstance(result, dict) else None}
                     )
 
                     if result.get("status") == "plan_ready":
@@ -899,6 +945,7 @@ async def ingest_map_reduce_task(ctx: dict, source_id: str, attempt_id_str: Opti
                     async def _mark_error_mr() -> None:
                         from app.database import async_session_factory as _sf
                         from app.database.models import Source as _Source
+                        from app.models.task_failure import record_task_failure
                         async with _sf() as err_session:
                             src = await err_session.get(_Source, sid)
                             if src:
@@ -907,6 +954,13 @@ async def ingest_map_reduce_task(ctx: dict, source_id: str, attempt_id_str: Opti
                                 src.progress = 0
                                 src.progress_message = progress_msg
                                 await err_session.commit()
+                            await record_task_failure(
+                                session=err_session,
+                                task_name="ingest_map_reduce_task",
+                                error=e,
+                                source_id=sid,
+                                attempt_id=attempt_id_str,
+                            )
 
                     try:
                         await asyncio.shield(_mark_error_mr())
@@ -961,6 +1015,8 @@ async def ingest_refine_task(ctx: dict, source_id: str, attempt_id_str: Optional
                         if kt:
                             kt_slug, kt_name, kt_desc = kt.slug, kt.name, kt.description
 
+                    from app.models.task_failure import record_stage_timing
+                    t_refine = time.perf_counter()
                     result = await run_refine_pipeline(
                         session=session,
                         source=source,
@@ -970,6 +1026,14 @@ async def ingest_refine_task(ctx: dict, source_id: str, attempt_id_str: Optional
                         kt_slug=kt_slug,
                         kt_name=kt_name,
                         kt_desc=kt_desc,
+                    )
+                    refine_ms = int((time.perf_counter() - t_refine) * 1000)
+                    await record_stage_timing(
+                        session, sid, "refine", refine_ms,
+                        {
+                            "pages_created": result.get("pages_created", 0) if isinstance(result, dict) else 0,
+                            "pages_updated": result.get("pages_updated", 0) if isinstance(result, dict) else 0,
+                        }
                     )
 
                     logger.success(
@@ -987,6 +1051,7 @@ async def ingest_refine_task(ctx: dict, source_id: str, attempt_id_str: Optional
                     async def _mark_error_refine() -> None:
                         from app.database import async_session_factory as _sf
                         from app.database.models import Source as _Source
+                        from app.models.task_failure import record_task_failure
                         async with _sf() as err_session:
                             src = await err_session.get(_Source, sid)
                             if src:
@@ -995,6 +1060,13 @@ async def ingest_refine_task(ctx: dict, source_id: str, attempt_id_str: Optional
                                 src.progress = 0
                                 src.progress_message = progress_msg
                                 await err_session.commit()
+                            await record_task_failure(
+                                session=err_session,
+                                task_name="ingest_refine_task",
+                                error=e,
+                                source_id=sid,
+                                attempt_id=attempt_id_str,
+                            )
 
                     try:
                         await asyncio.shield(_mark_error_refine())
@@ -1201,6 +1273,16 @@ async def sweep_stuck_processing_cron(ctx: dict):
                     f"Press Retry to try again ({attempts}/{cap} auto-recoveries used)."
                 )
             src.progress_message = src.error_message
+
+            from app.models.task_failure import record_task_failure
+            await record_task_failure(
+                session=session,
+                task_name=src.job_id or "pipeline_stuck_sweep",
+                error=TimeoutError(src.error_message),
+                source_id=src.id,
+                attempt_id=str(src.attempt_id) if src.attempt_id else None,
+                payload={"auto_recover_count": attempts, "cap": cap},
+            )
 
         await session.commit()
         logger.warning(

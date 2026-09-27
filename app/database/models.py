@@ -1529,3 +1529,4 @@ class LegalRelation(Base):
         Index("ix_legal_relations_target_lookup", "target_doc_number", "target_article_number"),
     )
 
+
