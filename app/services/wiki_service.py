@@ -423,8 +423,10 @@ def _fts_expr(table_name: str, column: str = "text"):
 
 
 def _fts_query(query_text: str):
-    """websearch_to_tsquery over the accent-folded query."""
-    return func.websearch_to_tsquery(_FTS_CONFIG, func.f_unaccent(query_text))
+    """websearch_to_tsquery over the accent-folded and Vietnamese compound-tokenized query."""
+    from app.core.vi_tokenizer import tokenize_vi
+    tokenized = tokenize_vi(query_text)
+    return func.websearch_to_tsquery(_FTS_CONFIG, func.f_unaccent(tokenized))
 
 
 async def search_pages_semantic(

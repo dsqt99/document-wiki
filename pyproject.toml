@@ -48,8 +48,9 @@ dependencies = [
     # Security
     "cryptography>=44.0",
     "mammoth>=1.12.0",
-    # Tokenization (extraction token count for upload gate)
+    # Tokenization & NLP
     "tiktoken>=0.8.0",
+    "pyvi>=0.1.1",
     # Spreadsheet extraction (arkon-spreadsheet skill)
     "pandas>=2.0",
     "openpyxl>=3.1",
