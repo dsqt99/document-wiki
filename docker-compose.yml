@@ -1,9 +1,6 @@
 
 # Backend image built once, reused by api + workers
 x-backend: &backend
-  build:
-    context: .
-    dockerfile: Dockerfile
   image: wiki-backend:latest
   env_file: [.env.docker]
   restart: always
@@ -138,6 +135,9 @@ services:
 
   migrator:
     <<: *backend
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: wiki_migrator
     command: alembic upgrade head
     restart: "no"
