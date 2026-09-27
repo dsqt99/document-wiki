@@ -647,6 +647,15 @@ async def run_reduce_phase(
     if src:
         src.pipeline_phase = "plan_review"
 
+    # 2.9 Collect and persist concept relations with closed predicates
+    try:
+        from app.models.concept_relation import collect_concept_relations, persist_concept_relations
+        concept_rels = collect_concept_relations(chunk_extracts)
+        if concept_rels:
+            await persist_concept_relations(session, source.id, concept_rels)
+    except Exception as rel_err:
+        logger.warning(f"MRP REDUCE failed to persist concept relations for source={source.id}: {rel_err}")
+
     await session.commit()
     logger.info(f"MRP REDUCE complete: plan with {len(plan_dict.get('pages', []))} pages for source={source.id}")
 

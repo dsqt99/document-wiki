@@ -446,6 +446,13 @@ async def compile_source_into_wiki(
     )
     await wiki_service.append_log(session, final_log)
 
+    # 6. Link concept relations to compiled wiki pages
+    try:
+        from app.models.concept_relation import link_concept_relations_to_pages
+        await link_concept_relations_to_pages(session, source.id)
+    except Exception as link_err:
+        logger.warning(f"Failed to link concept relations to wiki pages for source {source.id}: {link_err}")
+
     logger.info(
         f"Wiki compile done for source {source.id}: "
         f"created={created} updated={updated}"
