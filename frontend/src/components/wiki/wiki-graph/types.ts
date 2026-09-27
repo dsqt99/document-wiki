@@ -13,6 +13,23 @@ export type GraphNode = SimulationNodeDatum & {
 export type GraphLink = SimulationLinkDatum<GraphNode> & {
   from: string;
   to: string;
+  type?: string;
+  label?: string;
+  predicate?: string;
+  weight?: number;
+  evidence?: string | null;
+  target_doc_number?: string | null;
+};
+
+export type EdgeInput = {
+  from: string;
+  to: string;
+  type?: string;
+  label?: string;
+  predicate?: string;
+  weight?: number;
+  evidence?: string | null;
+  target_doc_number?: string | null;
 };
 
 export type NodeInput = {

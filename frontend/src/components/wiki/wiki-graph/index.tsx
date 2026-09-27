@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { forceX, forceY } from "d3-force";
 import { cn } from "@/lib/utils";
 import { wikiTypeColor, wikiTypeGroupLabel, wikiTypeIcon } from "../wiki-type-badge";
-import { NodeInput } from "./types";
+import { EdgeInput, NodeInput } from "./types";
 import { nodeRadius } from "./utils";
 
 // react-force-graph-2d uses canvas APIs (no SSR).
@@ -33,11 +33,17 @@ type Node = NodeInput & {
 type Link = {
   source: string | Node;
   target: string | Node;
+  type?: string;
+  label?: string;
+  predicate?: string;
+  weight?: number;
+  evidence?: string | null;
+  target_doc_number?: string | null;
 };
 
 type Props = {
   nodes: NodeInput[];
-  edges: { from: string; to: string }[];
+  edges: EdgeInput[];
   centerSlug?: string;
   mini?: boolean;
   height?: number;
@@ -48,6 +54,43 @@ const EDGE_COLOR = "rgba(120,112,106,0.35)";
 const EDGE_HIGHLIGHT = "#c2652a";
 const LABEL_COLOR = "#3a302a";
 const BG_COLOR = "#faf5ee";
+
+export const RELATION_COLORS: Record<string, string> = {
+  // Concept predicates
+  la_mot: "#2563eb",       // Blue (is-a)
+  thuoc: "#7c3aed",        // Purple (part-of)
+  quy_dinh: "#059669",     // Emerald (regulates)
+  ap_dung_cho: "#d97706",  // Amber (applies-to)
+  lien_quan: "#64748b",    // Slate (relates-to)
+  // Legal relation types
+  sua_doi: "#dc2626",      // Red (amends)
+  bo_sung: "#ea580c",      // Orange (supplements)
+  thay_the: "#e11d48",     // Rose (replaces)
+  bai_bo: "#991b1b",       // Dark Red (repeals)
+  huong_dan: "#0d9488",    // Teal (guides)
+  can_cu: "#0284c7",       // Sky (references base)
+  dan_chieu: "#475569",    // Slate (cites)
+  // Wikilink & fallback
+  wikilink: "rgba(120,112,106,0.35)",
+  concept: "#2563eb",
+  legal: "#dc2626",
+};
+
+export const RELATION_LABELS: Record<string, string> = {
+  la_mot: "Là một (is-a)",
+  thuoc: "Thuộc về (part-of)",
+  quy_dinh: "Quy định (regulates)",
+  ap_dung_cho: "Áp dụng cho (applies-to)",
+  lien_quan: "Liên quan (relates-to)",
+  sua_doi: "Sửa đổi (amends)",
+  bo_sung: "Bổ sung (supplements)",
+  thay_the: "Thay thế (replaces)",
+  bai_bo: "Bãi bỏ (repeals)",
+  huong_dan: "Hướng dẫn (guides)",
+  can_cu: "Căn cứ (basis)",
+  dan_chieu: "Dẫn chiếu (cites)",
+  wikilink: "Liên kết wiki",
+};
 
 const SCOPE_COLORS: Record<string, string> = {
   global: "#bfa88f",
@@ -62,7 +105,7 @@ const STATUS_COLORS: Record<string, string> = {
   evergreen: "#3a8a3f",
 };
 
-function getNodeColor(n: Node, mode: "scope" | "status"): string {
+function getNodeColor(n: Node, mode: "scope" | "status" | "relation"): string {
   if (mode === "status") {
     return STATUS_COLORS[n.status || "seed"] || STATUS_COLORS.seed;
   }
@@ -198,8 +241,10 @@ export function WikiGraph({
     degree: number;
     scopeType?: string;
     scopeName?: string | null;
+    color?: string;
   } | null>(null);
   const [colorMode, setColorMode] = React.useState<"scope" | "status">("scope");
+  const [edgeTypeFilter, setEdgeTypeFilter] = React.useState<"all" | "concept" | "legal" | "wikilink">("all");
 
   // Measure container.
   React.useEffect(() => {
@@ -219,11 +264,17 @@ export function WikiGraph({
   // state (vx, vy, x, y, alpha) intact when only the hover state changes.
   const nodeMapRef = React.useRef<Map<string, Node>>(new Map());
 
+  // Filter edges based on edgeTypeFilter
+  const filteredEdges = React.useMemo(() => {
+    if (edgeTypeFilter === "all") return rawEdges;
+    return rawEdges.filter((e) => (e.type || "wikilink") === edgeTypeFilter);
+  }, [rawEdges, edgeTypeFilter]);
+
   // Build graph data + adjacency (memo so the simulation only re-warms when
   // raw inputs change, not on every parent render).
   const { nodes, links, adjacency, components, componentTargetX } = React.useMemo(() => {
     const degreeMap = new Map<string, number>();
-    for (const e of rawEdges) {
+    for (const e of filteredEdges) {
       degreeMap.set(e.from, (degreeMap.get(e.from) ?? 0) + 1);
       degreeMap.set(e.to, (degreeMap.get(e.to) ?? 0) + 1);
     }
@@ -251,9 +302,18 @@ export function WikiGraph({
       if (!seen.has(id)) nodeMapRef.current.delete(id);
     }
     const ids = new Set(nodes.map((n) => n.id));
-    const links: Link[] = rawEdges
+    const links: Link[] = filteredEdges
       .filter((e) => ids.has(e.from) && ids.has(e.to))
-      .map((e) => ({ source: e.from, target: e.to }));
+      .map((e) => ({
+        source: e.from,
+        target: e.to,
+        type: e.type,
+        label: e.label,
+        predicate: e.predicate,
+        weight: e.weight,
+        evidence: e.evidence,
+        target_doc_number: e.target_doc_number,
+      }));
 
     // Adjacency for hover-neighbour highlighting.
     const adj = new Map<string, Set<string>>();
@@ -288,7 +348,7 @@ export function WikiGraph({
       components: compOf,
       componentTargetX: cid,
     };
-  }, [rawNodes, rawEdges]);
+  }, [rawNodes, filteredEdges]);
 
   // Wire custom forces + pin centerSlug + cluster X spread once per dataset.
   React.useEffect(() => {
@@ -474,11 +534,13 @@ export function WikiGraph({
     (rawLink: object) => {
       const hovered = hoveredIdRef.current;
       const l = rawLink as Link;
-      if (!hovered) return EDGE_COLOR;
+      const pred = l.predicate || l.label || l.type || "wikilink";
+      const baseColor = RELATION_COLORS[pred] || RELATION_COLORS[l.type || ""] || EDGE_COLOR;
+      if (!hovered) return baseColor;
       const s = typeof l.source === "string" ? l.source : l.source.id;
       const t = typeof l.target === "string" ? l.target : l.target.id;
       const hot = s === hovered || t === hovered;
-      return hot ? EDGE_HIGHLIGHT : "rgba(120,112,106,0.08)";
+      return hot ? (RELATION_COLORS[pred] || EDGE_HIGHLIGHT) : "rgba(120,112,106,0.08)";
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [hoverVersion]
@@ -487,10 +549,12 @@ export function WikiGraph({
     (rawLink: object) => {
       const hovered = hoveredIdRef.current;
       const l = rawLink as Link;
-      if (!hovered) return 1.2;
+      const weight = l.weight ?? 1;
+      const baseWidth = Math.max(1, Math.min(weight * 1.2, 3));
+      if (!hovered) return baseWidth;
       const s = typeof l.source === "string" ? l.source : l.source.id;
       const t = typeof l.target === "string" ? l.target : l.target.id;
-      return s === hovered || t === hovered ? 2.5 : 1;
+      return s === hovered || t === hovered ? baseWidth * 1.8 : 0.8;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [hoverVersion]
@@ -525,6 +589,7 @@ export function WikiGraph({
     if (!n) {
       setTooltip(null);
     } else {
+      const color = getNodeColor(n, colorMode);
       setTooltip((prev) => ({
         ...(prev ?? { x: 0, y: 0 }),
         title: n.title,
@@ -532,11 +597,10 @@ export function WikiGraph({
         degree: n.degree ?? 0,
         scopeType: n.scope_type,
         scopeName: n.scope_name,
+        color,
       }));
     }
-  }, []);
-
-
+  }, [colorMode]);
 
   const scopeCounts = React.useMemo(() => {
     const counts: Record<string, { count: number; scopeType: string }> = {};
@@ -611,6 +675,8 @@ export function WikiGraph({
         }}
         linkColor={linkColor}
         linkWidth={linkWidth}
+        linkDirectionalArrowLength={mini ? 0 : 3.5}
+        linkDirectionalArrowRelPos={0.88}
         onNodeClick={handleNodeClick}
         onNodeHover={handleNodeHover}
         cooldownTicks={mini ? 50 : 90}
@@ -624,81 +690,107 @@ export function WikiGraph({
         maxZoom={5}
       />
 
-      {/* Color Mode Switcher */}
+      {/* Control Toolbar */}
       {!mini && (
-        <div className="absolute top-3 right-3 flex gap-1 rounded-xl border border-border bg-card/90 backdrop-blur-sm p-1.5 shadow-sm z-10">
-          <button
-            onClick={() => setColorMode("scope")}
-            className={cn(
-              "px-2 py-1 text-[10px] font-semibold rounded-lg transition-all",
-              colorMode === "scope" ? "bg-primary text-primary-foreground shadow" : "text-muted-foreground hover:bg-accent"
-            )}
-          >
-            Scope
-          </button>
-          <button
-            onClick={() => setColorMode("status")}
-            className={cn(
-              "px-2 py-1 text-[10px] font-semibold rounded-lg transition-all",
-              colorMode === "status" ? "bg-primary text-primary-foreground shadow" : "text-muted-foreground hover:bg-accent"
-            )}
-          >
-            Maturity
-          </button>
+        <div className="absolute top-3 right-3 flex flex-col items-end gap-2 z-10">
+          {/* Edge Relation Filter */}
+          <div className="flex items-center gap-1 rounded-xl border border-border bg-card/90 backdrop-blur-sm p-1.5 shadow-sm">
+            <span className="text-[10px] font-semibold text-muted-foreground px-1.5">Quan hệ:</span>
+            {(["all", "concept", "legal", "wikilink"] as const).map((filter) => {
+              const filterLabelMap: Record<string, string> = {
+                all: "Tất cả",
+                concept: "Khái niệm",
+                legal: "Pháp lý",
+                wikilink: "Wiki link",
+              };
+              return (
+                <button
+                  key={filter}
+                  onClick={() => setEdgeTypeFilter(filter)}
+                  className={cn(
+                    "px-2 py-0.5 text-[10px] font-medium rounded-lg transition-all",
+                    edgeTypeFilter === filter
+                      ? "bg-primary text-primary-foreground shadow"
+                      : "text-muted-foreground hover:bg-accent"
+                  )}
+                >
+                  {filterLabelMap[filter]}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Color Mode Switcher */}
+          <div className="flex gap-1 rounded-xl border border-border bg-card/90 backdrop-blur-sm p-1.5 shadow-sm">
+            <button
+              onClick={() => setColorMode("scope")}
+              className={cn(
+                "px-2 py-1 text-[10px] font-semibold rounded-lg transition-all",
+                colorMode === "scope" ? "bg-primary text-primary-foreground shadow" : "text-muted-foreground hover:bg-accent"
+              )}
+            >
+              Scope
+            </button>
+            <button
+              onClick={() => setColorMode("status")}
+              className={cn(
+                "px-2 py-1 text-[10px] font-semibold rounded-lg transition-all",
+                colorMode === "status" ? "bg-primary text-primary-foreground shadow" : "text-muted-foreground hover:bg-accent"
+              )}
+            >
+              Maturity
+            </button>
+          </div>
         </div>
       )}
 
       {/* Tooltip */}
-      {tooltip && hoveredId && (() => {
-        const hoveredNode = nodeMapRef.current.get(hoveredId);
-        const nodeColor = hoveredNode ? getNodeColor(hoveredNode, colorMode) : wikiTypeColor(tooltip.type);
-        return (
-          <div
-            className="pointer-events-none z-50 px-3 py-2 rounded-lg text-xs shadow-lg"
-            style={{
-              position: "absolute",
-              left: Math.min(tooltip.x + 12, dimensions.w - 220),
-              top: Math.max(tooltip.y - 8, 8),
-              background: "var(--color-card, #fff)",
-              color: "var(--color-foreground, #3a302a)",
-              border: "1px solid var(--color-border, rgba(216,208,200,0.6))",
-              maxWidth: 220,
-            }}
-          >
-            <p className="font-medium text-sm mb-0.5 truncate">{tooltip.title}</p>
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <span
-                className="w-2 h-2 rounded-full shrink-0"
-                style={{ background: nodeColor }}
-              />
-              <span className="capitalize">{tooltip.type}</span>
-              <span className="ml-auto">{tooltip.degree} links</span>
-            </div>
-            {tooltip.scopeType && (
-              <div className="flex items-center gap-1.5 mt-1 pt-1 border-t border-border/50 text-muted-foreground">
-                <span className="material-symbols-outlined" style={{ fontSize: 11 }}>
-                  {tooltip.scopeType === "project"
-                    ? "folder_special"
-                    : tooltip.scopeType === "department"
-                    ? "business"
-                    : "public"}
-                </span>
-                <span className="truncate">
-                  {tooltip.scopeType === "project"
-                    ? tooltip.scopeName || "Workspace"
-                    : tooltip.scopeType === "department"
-                    ? tooltip.scopeName || "Department"
-                    : "Global"}
-                </span>
-              </div>
-            )}
+      {tooltip && hoveredId && (
+        <div
+          className="pointer-events-none z-50 px-3 py-2 rounded-lg text-xs shadow-lg"
+          style={{
+            position: "absolute",
+            left: Math.min(tooltip.x + 12, dimensions.w - 220),
+            top: Math.max(tooltip.y - 8, 8),
+            background: "var(--color-card, #fff)",
+            color: "var(--color-foreground, #3a302a)",
+            border: "1px solid var(--color-border, rgba(216,208,200,0.6))",
+            maxWidth: 220,
+          }}
+        >
+          <p className="font-medium text-sm mb-0.5 truncate">{tooltip.title}</p>
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <span
+              className="w-2 h-2 rounded-full shrink-0"
+              style={{ background: tooltip.color || wikiTypeColor(tooltip.type) }}
+            />
+            <span className="capitalize">{tooltip.type}</span>
+            <span className="ml-auto">{tooltip.degree} links</span>
           </div>
-        );
-      })()}
+          {tooltip.scopeType && (
+            <div className="flex items-center gap-1.5 mt-1 pt-1 border-t border-border/50 text-muted-foreground">
+              <span className="material-symbols-outlined" style={{ fontSize: 11 }}>
+                {tooltip.scopeType === "project"
+                  ? "folder_special"
+                  : tooltip.scopeType === "department"
+                  ? "business"
+                  : "public"}
+              </span>
+              <span className="truncate">
+                {tooltip.scopeType === "project"
+                  ? tooltip.scopeName || "Workspace"
+                  : tooltip.scopeType === "department"
+                  ? tooltip.scopeName || "Department"
+                  : "Global"}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Legend */}
       {!mini && (
-        <div className="absolute bottom-3 left-3 rounded-xl border border-border bg-card/90 backdrop-blur-sm px-3 py-2.5 text-xs shadow-sm max-w-[240px] z-10">
+        <div className="absolute bottom-3 left-3 rounded-xl border border-border bg-card/90 backdrop-blur-sm px-3 py-2.5 text-xs shadow-sm max-w-[240px] z-10 max-h-[50vh] overflow-y-auto">
           {colorMode === "status" && (
             <>
               <div className="mb-1.5 font-semibold text-foreground text-xs">Maturity Lifecycle</div>
@@ -780,6 +872,32 @@ export function WikiGraph({
             </>
           )}
 
+          {/* Relation Types in Legend */}
+          <div className="mt-2 pt-2 border-t border-border/50">
+            <div className="mb-1.5 font-semibold text-foreground text-xs">Loại quan hệ (Edges)</div>
+            <div className="flex flex-col gap-1 text-[11px]">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-0.5 rounded-full shrink-0" style={{ background: RELATION_COLORS.la_mot }} />
+                <span className="text-muted-foreground">Là một (is-a)</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-0.5 rounded-full shrink-0" style={{ background: RELATION_COLORS.thuoc }} />
+                <span className="text-muted-foreground">Thuộc về (part-of)</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-0.5 rounded-full shrink-0" style={{ background: RELATION_COLORS.quy_dinh }} />
+                <span className="text-muted-foreground">Quy định / Áp dụng</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-0.5 rounded-full shrink-0" style={{ background: RELATION_COLORS.sua_doi }} />
+                <span className="text-muted-foreground">Sửa đổi / Bổ sung</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-0.5 rounded-full shrink-0" style={{ background: RELATION_COLORS.wikilink }} />
+                <span className="text-muted-foreground">Wiki link</span>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
