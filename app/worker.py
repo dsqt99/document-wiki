@@ -1390,6 +1390,24 @@ async def caption_images_task(ctx: dict, source_id: str, attempt_id_str: Optiona
                         await session.commit()
                         logger.info(f"caption_images_task: refreshed full_text with {len(caption_by_id)} captions for {source_id}")
 
+                # Index visual image chunks into source_chunk_embeddings
+                try:
+                    from app.services.image_service import index_image_chunks
+                    image_chunks = []
+                    for r in rows:
+                        if r.caption:
+                            image_chunks.append({
+                                "chunk_type": "image_caption",
+                                "text": f"[image_caption | Trang {r.page_number or 1}]: {r.caption.strip()}",
+                                "page_number": r.page_number or 1,
+                                "image_id": str(r.id),
+                                "minio_key": r.minio_key,
+                            })
+                    if image_chunks:
+                        await index_image_chunks(session, sid, image_chunks)
+                except Exception as img_chunk_err:
+                    logger.warning(f"caption_images_task: failed to index image chunks for {source_id}: {img_chunk_err}")
+
             # Chain into MAP-REDUCE (only now that captions are baked in).
             if attempt_id_str:
                 await _chain_to_mrp(source_id, attempt_id_str=attempt_id_str)

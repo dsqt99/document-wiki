@@ -168,6 +168,7 @@ def _guess_content_type(file_name: str) -> str:
         "md": "text/markdown",
         "csv": "text/csv",
         "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     }.get(ext, "application/octet-stream")
 
 
@@ -269,6 +270,16 @@ async def _extract_text_from_file(
             tracker=tracker,
         )
 
+
+    if ext == "pptx":
+        from app.services.parsers.pptx_parser import PPTXParser
+        parser = PPTXParser()
+        return await parser.parse(
+            file_data=file_data,
+            file_name=file_name,
+            vision_provider=vision_provider,
+            tracker=tracker,
+        )
 
     if ext in ("txt", "md"):
         return [{"content": file_data.decode("utf-8", errors="ignore"), "page_number": 1}]
