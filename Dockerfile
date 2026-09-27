@@ -6,10 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libgl1 \
     libglib2.0-0 \
-    libreoffice-core-nogui \
-    libreoffice-writer \
-    libreoffice-calc \
-    libreoffice-impress \
+    libreoffice-nogui \
     && rm -rf /var/lib/apt/lists/*
 
 
