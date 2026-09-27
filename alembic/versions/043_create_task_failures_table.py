@@ -10,14 +10,18 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 revision = "043_create_task_failures_table"
-down_revision = "042_create_concept_relations_table"
+down_revision = "042_create_concept_relations"
 branch_labels = None
 depends_on = None
 
 
 def upgrade() -> None:
+    conn = op.get_bind()
+    insp = sa.inspect(conn)
+
     # 1. task_failures table
-    op.create_table(
+    if not insp.has_table("task_failures"):
+        op.create_table(
         "task_failures",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
         sa.Column("source_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("sources.id", ondelete="SET NULL"), nullable=True),
@@ -39,7 +43,8 @@ def upgrade() -> None:
     op.create_index("ix_task_failures_status_created", "task_failures", ["status", "created_at"])
 
     # 2. source_stage_timings table
-    op.create_table(
+    if not insp.has_table("source_stage_timings"):
+        op.create_table(
         "source_stage_timings",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
         sa.Column("source_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("sources.id", ondelete="CASCADE"), nullable=False),

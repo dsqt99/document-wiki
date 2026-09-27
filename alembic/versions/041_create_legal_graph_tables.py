@@ -10,14 +10,18 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 revision = "041_create_legal_graph_tables"
-down_revision = "040_add_content_hash_and_attempt_id"
+down_revision = "040_content_hash_attempt_id"
 branch_labels = None
 depends_on = None
 
 
 def upgrade() -> None:
-    # 1. Create legal_units table
-    op.create_table(
+    conn = op.get_bind()
+    insp = sa.inspect(conn)
+
+    # 1. Create legal_units table if not exists
+    if not insp.has_table("legal_units"):
+        op.create_table(
         "legal_units",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
         sa.Column("source_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("sources.id", ondelete="CASCADE"), nullable=False),
@@ -41,8 +45,9 @@ def upgrade() -> None:
     op.create_index("ix_legal_units_doc_number", "legal_units", ["doc_number"])
     op.create_index("ix_legal_units_lookup", "legal_units", ["doc_number", "unit_type", "unit_number"])
 
-    # 2. Create legal_relations table
-    op.create_table(
+    # 2. Create legal_relations table if not exists
+    if not insp.has_table("legal_relations"):
+        op.create_table(
         "legal_relations",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
         sa.Column("source_unit_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("legal_units.id", ondelete="CASCADE"), nullable=False),

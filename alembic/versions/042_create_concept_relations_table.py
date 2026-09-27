@@ -9,14 +9,17 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
-revision = "042_create_concept_relations_table"
+revision = "042_create_concept_relations"
 down_revision = "041_create_legal_graph_tables"
 branch_labels = None
 depends_on = None
 
 
 def upgrade() -> None:
-    op.create_table(
+    conn = op.get_bind()
+    insp = sa.inspect(conn)
+    if not insp.has_table("concept_relations"):
+        op.create_table(
         "concept_relations",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
         sa.Column("source_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("sources.id", ondelete="CASCADE"), nullable=False),
