@@ -2213,3 +2213,89 @@ def register_tools(mcp: FastMCP):
             await session.commit()
 
         return f"Page `{slug}` created at v{page.version}."
+
+    # =========================================================================
+    # Spreadsheet / Tabular Analytics via DuckDB
+    # =========================================================================
+
+    @kb_tool(mcp, requires=ANY_AUTHENTICATED)
+    @logged_tool("query_table", query_arg="sql_query")
+    async def query_table(
+        source_id: str,
+        sql_query: str,
+        max_rows: int = 50,
+    ) -> str:
+        """
+        Execute a safe, read-only SQL query against an uploaded spreadsheet (Excel or CSV).
+
+        Args:
+            source_id: UUID of the source spreadsheet document.
+            sql_query: SQL SELECT query (e.g. `SELECT name, rank FROM can_bo WHERE unit = 'Đội 1'`).
+                       Sheet names are registered as tables (unaccented, lowercase, underscores).
+            max_rows: Maximum rows to return (default: 50, max: 100).
+
+        Returns:
+            Markdown table of query results or an informative error message.
+        """
+        identity, err = await _get_identity()
+        if err:
+            return err
+        assert identity is not None
+
+        import uuid
+        from app.database import async_session_factory
+        from app.database.models import Source
+        from app.services.storage_service import storage_service
+        from app.services.table_query_service import TableQueryService
+
+        try:
+            source_uuid = uuid.UUID(source_id)
+        except ValueError:
+            return f"Invalid source_id format: '{source_id}'."
+
+        max_rows = min(max(1, max_rows), 100)
+
+        async with async_session_factory() as session:
+            source = await session.get(Source, source_uuid)
+            if not source:
+                return f"Source '{source_id}' not found."
+
+            if not source.minio_key:
+                return f"Source '{source_id}' has no stored file."
+
+            # Verify permissions/scope
+            allowed_ids = await _get_allowed_source_ids(identity, session)
+            if allowed_ids is not None and source.id not in allowed_ids:
+                return f"Access denied to source '{source_id}'."
+
+            file_bytes = storage_service.download_file(source.minio_key)
+            if not file_bytes:
+                return f"Failed to retrieve file content for source '{source_id}'."
+
+            file_name = source.file_name or "table.xlsx"
+
+        query_service = TableQueryService(default_max_rows=max_rows)
+        res = query_service.query_excel_bytes(
+            file_bytes=file_bytes,
+            file_name=file_name,
+            sql_query=sql_query,
+            max_rows=max_rows,
+        )
+
+        if not res["success"]:
+            return f"❌ Lỗi truy vấn bảng: {res['error']}"
+
+        cols = res["columns"]
+        rows = res["rows"]
+        if not rows:
+            return f"Truy vấn thành công nhưng không có dòng nào thỏa mãn: `{sql_query}`"
+
+        lines = [
+            f"**Kết quả truy vấn bảng tính ({len(rows)} dòng) từ `{file_name}`**:\n",
+            "| " + " | ".join(cols) + " |",
+            "| " + " | ".join(["---"] * len(cols)) + " |",
+        ]
+        for r in rows:
+            lines.append("| " + " | ".join(str(r.get(c, "")) for c in cols) + " |")
+
+        return "\n".join(lines)

@@ -239,38 +239,25 @@ async def _extract_text_from_file(
 
 
     # --- Excel / Spreadsheet extraction ---
-    if ext in ("xlsx", "xls", "csv"):
+    if ext in ("xlsx", "xls"):
+        from app.services.parsers.excel_parser import ExcelParser
+        parser = ExcelParser()
+        return await parser.parse(
+            file_data=file_data,
+            file_name=file_name,
+            vision_provider=vision_provider,
+            tracker=tracker,
+        )
+
+    if ext == "csv":
         try:
             import io
             import pandas as pd
-
-            pages_data = []
-            if ext == "csv":
-                df = pd.read_csv(io.BytesIO(file_data))
-                md = df.to_markdown(index=False)
-                pages_data.append({"content": md or "", "page_number": 1})
-            else:
-                # Read all sheets
-                xls = pd.ExcelFile(io.BytesIO(file_data))
-                for sheet_idx, sheet_name in enumerate(xls.sheet_names):
-                    try:
-                        df = pd.read_excel(xls, sheet_name=sheet_name)
-                        if df.empty:
-                            continue
-                        header = f"## Sheet: {sheet_name}\n\n"
-                        md = df.to_markdown(index=False)
-                        pages_data.append({
-                            "content": header + (md or ""),
-                            "page_number": sheet_idx + 1,
-                        })
-                    except Exception as e:
-                        logger.warning(f"Failed to read sheet '{sheet_name}': {e}")
-            if pages_data:
-                return pages_data
-            # Fall through if all sheets empty
+            df = pd.read_csv(io.BytesIO(file_data))
+            md = df.to_markdown(index=False)
+            return [{"content": md or "", "page_number": 1}]
         except Exception as e:
-            logger.warning(f"Spreadsheet extraction failed for '{file_name}': {e}")
-            # Fall through to content_core
+            logger.warning(f"CSV extraction failed for '{file_name}': {e}")
 
     if ext == "docx":
         from app.services.parsers.docx_parser import DocxParser

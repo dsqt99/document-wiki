@@ -51,11 +51,12 @@ dependencies = [
     # Tokenization & NLP
     "tiktoken>=0.8.0",
     "pyvi>=0.1.1",
-    # Spreadsheet extraction (arkon-spreadsheet skill)
+    # Spreadsheet extraction & Analytics
     "pandas>=2.0",
     "openpyxl>=3.1",
     "xlrd>=2.0",
     "tabulate>=0.9",
+    "duckdb>=1.0.0",
 ]
 
 [project.optional-dependencies]
