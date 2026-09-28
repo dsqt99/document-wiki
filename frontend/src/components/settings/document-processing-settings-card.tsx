@@ -52,37 +52,37 @@ export function DocumentProcessingSettingsCard() {
   } | null>(null);
 
   useEffect(() => {
+    async function loadSettings() {
+      setLoading(true);
+      setSaveError("");
+      try {
+        const data = await api<SettingsMap>("/api/settings");
+        if (data) {
+          if (data.ocr_base_url) setOcrBaseUrl(String(data.ocr_base_url));
+          if (data.ocr_api_key) setOcrApiKey(String(data.ocr_api_key));
+          if (data.ocr_model) setOcrModel(String(data.ocr_model));
+          if (data.ocr_prompt) setOcrPrompt(String(data.ocr_prompt));
+          if (data.ocr_mode) setOcrMode(String(data.ocr_mode));
+          if (data.ocr_fallback_vision !== undefined) {
+            setOcrFallbackVision(data.ocr_fallback_vision !== "false");
+          }
+          if (data.pdf_parser_engine) setPdfEngine(String(data.pdf_parser_engine));
+          if (data.pdf_strip_headers_footers !== undefined) {
+            setStripHeaders(data.pdf_strip_headers_footers !== "false");
+          }
+          if (data.pdf_enhance_headings !== undefined) {
+            setEnhanceHeadings(data.pdf_enhance_headings !== "false");
+          }
+        }
+      } catch (err) {
+        setSaveError(err instanceof Error ? err.message : "Không thể tải cấu hình");
+      } finally {
+        setLoading(false);
+      }
+    }
+
     void loadSettings();
   }, []);
-
-  async function loadSettings() {
-    setLoading(true);
-    setSaveError("");
-    try {
-      const data = await api<SettingsMap>("/api/settings");
-      if (data) {
-        if (data.ocr_base_url) setOcrBaseUrl(String(data.ocr_base_url));
-        if (data.ocr_api_key) setOcrApiKey(String(data.ocr_api_key));
-        if (data.ocr_model) setOcrModel(String(data.ocr_model));
-        if (data.ocr_prompt) setOcrPrompt(String(data.ocr_prompt));
-        if (data.ocr_mode) setOcrMode(String(data.ocr_mode));
-        if (data.ocr_fallback_vision !== undefined) {
-          setOcrFallbackVision(data.ocr_fallback_vision !== "false");
-        }
-        if (data.pdf_parser_engine) setPdfEngine(String(data.pdf_parser_engine));
-        if (data.pdf_strip_headers_footers !== undefined) {
-          setStripHeaders(data.pdf_strip_headers_footers !== "false");
-        }
-        if (data.pdf_enhance_headings !== undefined) {
-          setEnhanceHeadings(data.pdf_enhance_headings !== "false");
-        }
-      }
-    } catch (err) {
-      setSaveError(err instanceof Error ? err.message : "Không thể tải cấu hình");
-    } finally {
-      setLoading(false);
-    }
-  }
 
   async function handleSave() {
     setSaving(true);
@@ -281,7 +281,7 @@ export function DocumentProcessingSettingsCard() {
                 <Label htmlFor="ocr-mode" className="text-xs font-medium">
                   Chế độ OCR (Quét chữ)
                 </Label>
-                <Select value={ocrMode} onValueChange={setOcrMode}>
+                <Select value={ocrMode} onValueChange={(val) => { if (val) setOcrMode(val); }}>
                   <SelectTrigger id="ocr-mode" className="text-xs">
                     <SelectValue placeholder="Chọn chế độ" />
                   </SelectTrigger>
@@ -355,7 +355,7 @@ export function DocumentProcessingSettingsCard() {
                 <Label htmlFor="pdf-engine" className="text-xs font-medium">
                   Công cụ phân tích PDF (PDF Parser Engine)
                 </Label>
-                <Select value={pdfEngine} onValueChange={setPdfEngine}>
+                <Select value={pdfEngine} onValueChange={(val) => { if (val) setPdfEngine(val); }}>
                   <SelectTrigger id="pdf-engine" className="text-xs">
                     <SelectValue placeholder="Chọn engine" />
                   </SelectTrigger>

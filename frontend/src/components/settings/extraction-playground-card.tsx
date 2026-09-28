@@ -11,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 import { api } from "@/lib/api";
 import { WikiContent } from "@/components/wiki/wiki-content";
 
@@ -253,7 +254,7 @@ export function ExtractionPlaygroundCard() {
                   <Label htmlFor="max-pages-select" className="text-xs font-medium">
                     Giới hạn số trang xem trước
                   </Label>
-                  <Select value={maxPages} onValueChange={setMaxPages}>
+                  <Select value={maxPages} onValueChange={(val) => { if (val) setMaxPages(val); }}>
                     <SelectTrigger id="max-pages-select" className="text-xs">
                       <SelectValue />
                     </SelectTrigger>
@@ -270,7 +271,7 @@ export function ExtractionPlaygroundCard() {
                   <Label htmlFor="doc-engine-select" className="text-xs font-medium">
                     Ghi đè Bộ phân tích PDF
                   </Label>
-                  <Select value={docEngine} onValueChange={setDocEngine}>
+                  <Select value={docEngine} onValueChange={(val) => { if (val) setDocEngine(val); }}>
                     <SelectTrigger id="doc-engine-select" className="text-xs">
                       <SelectValue />
                     </SelectTrigger>
@@ -286,7 +287,7 @@ export function ExtractionPlaygroundCard() {
                   <Label htmlFor="doc-ocr-mode-select" className="text-xs font-medium">
                     Ghi đè Chế độ OCR
                   </Label>
-                  <Select value={docOcrMode} onValueChange={setDocOcrMode}>
+                  <Select value={docOcrMode} onValueChange={(val) => { if (val) setDocOcrMode(val); }}>
                     <SelectTrigger id="doc-ocr-mode-select" className="text-xs">
                       <SelectValue />
                     </SelectTrigger>

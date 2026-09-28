@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmbeddingSettingsCard } from "@/components/settings/embedding-settings-card";
+import { DocumentProcessingSettingsCard } from "@/components/settings/document-processing-settings-card";
+import { ExtractionPlaygroundCard } from "@/components/settings/extraction-playground-card";
 import { NotificationChannelsCard } from "@/components/settings/notification-channels-card";
 import {
   ModelCatalogCard,
@@ -75,6 +77,10 @@ export default function SettingsPage() {
       />
 
       <div className="flex flex-col gap-6">
+        <ExtractionPlaygroundCard />
+
+        <DocumentProcessingSettingsCard />
+
         <EmbeddingSettingsCard />
 
         <ModelCatalogCard
