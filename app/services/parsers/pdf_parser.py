@@ -1,11 +1,11 @@
 """PDF Parser using PyMuPDF4LLM with Vietnamese heading heuristics,
-
 repeated header/footer stripping, and scanned page OCR fallback.
+Supports customizable engine, OCR modes, and page limits.
 """
 
 import asyncio
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 from loguru import logger
 
 try:
@@ -176,7 +176,7 @@ def is_scanned_page(page: Any, text: str) -> bool:
 class PDFParser(BaseParser):
     """High-fidelity PDF parser using PyMuPDF4LLM with OCR fallback."""
 
-    OCR_PROMPT = (
+    DEFAULT_OCR_PROMPT = (
         "Trích xuất TOÀN BỘ văn bản từ hình ảnh trang tài liệu này một cách chính xác tuyệt đối.\n"
         "Yêu cầu nghiêm ngặt:\n"
         "1. Giữ nguyên số hiệu văn bản, tiêu đề, dấu câu, ngày tháng, các cụm từ viết tắt ngành (CAND, CSGT, PCCC, ANTT, QĐ, NĐ, TT...).\n"
@@ -192,19 +192,40 @@ class PDFParser(BaseParser):
         *,
         vision_provider: Optional[Any] = None,
         tracker: Optional[Any] = None,
+        engine: str = "pymupdf4llm",
+        ocr_mode: str = "auto",
+        strip_headers_footers: bool = True,
+        enhance_headings: bool = True,
+        max_pages: Optional[int] = None,
+        ocr_base_url: Optional[str] = None,
+        ocr_api_key: Optional[str] = None,
+        ocr_model: Optional[str] = None,
+        ocr_prompt: Optional[str] = None,
+        ocr_fallback_vision: bool = True,
+        db: Optional[Any] = None,
         **kwargs: Any,
     ) -> List[Dict[str, Any]]:
         """Parse PDF binary data into structured Markdown page records."""
         doc = fitz.open(stream=file_data, filetype="pdf")
-        num_pages = len(doc)
-        raw_pages: List[str] = []
+        total_doc_pages = len(doc)
+        
+        if max_pages is not None and max_pages > 0:
+            num_pages = min(total_doc_pages, max_pages)
+        else:
+            num_pages = total_doc_pages
 
-        # Step 1: Extract with pymupdf4llm if available, otherwise native fitz get_text()
+        raw_pages: List[str] = []
+        target_page_indices = list(range(num_pages))
+
+        # Step 1: Extract with chosen engine
         extracted_via_llm = False
-        if pymupdf4llm is not None:
+        if engine == "pymupdf4llm" and pymupdf4llm is not None:
             try:
                 chunks = pymupdf4llm.to_markdown(
-                    doc, page_chunks=True, table_strategy="lines_strict"
+                    doc,
+                    pages=target_page_indices,
+                    page_chunks=True,
+                    table_strategy="lines_strict",
                 )
                 if chunks and isinstance(chunks, list):
                     raw_pages = [chunk.get("text", "") for chunk in chunks]
@@ -218,22 +239,34 @@ class PDFParser(BaseParser):
                 )
 
         if not extracted_via_llm or len(raw_pages) != num_pages:
-            raw_pages = [(page.get_text() or "") for page in doc]
+            raw_pages = [(doc[idx].get_text() or "") for idx in target_page_indices]
 
-        # Step 2: Identify scanned / empty pages that need OCR
+        # Step 2: Determine which pages require OCR based on ocr_mode
         scanned_indices: List[int] = []
-        for idx, page in enumerate(doc):
-            page_text = raw_pages[idx] if idx < len(raw_pages) else ""
-            if not page_text.strip() or is_scanned_page(page, page_text):
-                scanned_indices.append(idx)
+        normalized_mode = (ocr_mode or "auto").lower()
 
-        # Step 3: Trigger OCR for scanned/empty pages if providers available
+        if normalized_mode == "disabled":
+            scanned_indices = []
+        elif normalized_mode == "force_ocr":
+            scanned_indices = list(range(num_pages))
+        else:  # 'auto'
+            for idx in range(num_pages):
+                page_text = raw_pages[idx] if idx < len(raw_pages) else ""
+                page = doc[idx]
+                if not page_text.strip() or is_scanned_page(page, page_text):
+                    scanned_indices.append(idx)
+
+        # Step 3: Trigger OCR for target pages if providers available
         from app.services.ocr_service import ocr_service
 
-        if scanned_indices and (ocr_service.is_configured or vision_provider):
+        is_ocr_ready = ocr_service.is_configured(base_url=ocr_base_url, api_key=ocr_api_key)
+        has_vision = bool(vision_provider and ocr_fallback_vision)
+        ocr_successful_pages: Set[int] = set()
+
+        if scanned_indices and (is_ocr_ready or has_vision):
             total_ocr = len(scanned_indices)
             logger.info(
-                f"PDFParser: {total_ocr}/{num_pages} scanned/empty pages detected in '{file_name}'. Running OCR..."
+                f"PDFParser: {total_ocr}/{num_pages} pages scheduled for OCR (mode={normalized_mode}) in '{file_name}'."
             )
 
             page_images: List[Tuple[int, bytes]] = []
@@ -251,37 +284,43 @@ class PDFParser(BaseParser):
             sem = asyncio.Semaphore(5)
             progress_lock = asyncio.Lock()
             completed = 0
+            prompt_to_use = ocr_prompt or self.DEFAULT_OCR_PROMPT
 
             async def _run_ocr_one(idx: int, img_bytes: bytes) -> None:
                 nonlocal completed
                 async with sem:
                     ocr_res = None
-                    if ocr_service.is_configured:
+                    if is_ocr_ready:
                         try:
                             ocr_res = await ocr_service.ocr_image(
                                 img_bytes,
                                 mime_type="image/jpeg",
-                                prompt=self.OCR_PROMPT,
+                                prompt=prompt_to_use,
+                                base_url=ocr_base_url,
+                                api_key=ocr_api_key,
+                                model=ocr_model,
+                                db=db,
                             )
                         except Exception as e:
                             logger.warning(
-                                f"PDFParser: GLM-OCR failed on page {idx+1}: {e}"
+                                f"PDFParser: dedicated OCR failed on page {idx+1}: {e}"
                             )
 
-                    if (not ocr_res or not ocr_res.strip()) and vision_provider:
+                    if (not ocr_res or not ocr_res.strip()) and has_vision:
                         try:
                             ocr_res = await vision_provider.analyze_image(
                                 img_bytes,
                                 mime_type="image/jpeg",
-                                prompt=self.OCR_PROMPT,
+                                prompt=prompt_to_use,
                             )
                         except Exception as e:
                             logger.warning(
-                                f"PDFParser: Vision OCR failed on page {idx+1}: {e}"
+                                f"PDFParser: Vision OCR fallback failed on page {idx+1}: {e}"
                             )
 
                     if ocr_res and ocr_res.strip():
                         raw_pages[idx] = ocr_res.strip()
+                        ocr_successful_pages.add(idx)
 
                     async with progress_lock:
                         completed += 1
@@ -304,17 +343,23 @@ class PDFParser(BaseParser):
 
         # Step 4: Post-processing pipeline:
         # A. Strip recurring headers and footers
-        cleaned_pages = strip_repeated_headers_and_footers(raw_pages)
+        if strip_headers_footers:
+            cleaned_pages = strip_repeated_headers_and_footers(raw_pages)
+        else:
+            cleaned_pages = raw_pages
 
         # B. Enhance headings & normalize Unicode NFC
         final_pages: List[Dict[str, Any]] = []
         for i, page_text in enumerate(cleaned_pages):
-            enhanced = enhance_vietnamese_headings(page_text)
+            enhanced = enhance_vietnamese_headings(page_text) if enhance_headings else page_text
             normalized = normalize_text(enhanced)
             final_pages.append(
                 {
                     "content": normalized,
                     "page_number": i + 1,
+                    "is_ocr": i in ocr_successful_pages,
+                    "char_count": len(normalized),
+                    "word_count": len(normalized.split()),
                 }
             )
 
