@@ -89,6 +89,19 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"Could not seed built-in skills: {e}")
 
+        # Load custom role permissions if configured
+        try:
+            from app.database import async_session_factory
+            from app.services.config_service import ConfigService
+            from app.services.permissions import load_role_permissions_override
+            async with async_session_factory() as session:
+                cfg = ConfigService(session)
+                custom_perms = await cfg.get("role_permissions_custom")
+                if custom_perms:
+                    load_role_permissions_override(custom_perms)
+        except Exception as e:
+            logger.warning(f"Could not load custom role permissions: {e}")
+
         # Warn if sensitive defaults are unchanged
         if settings.secret_key == "change-me-to-a-random-secret-string":
             logger.warning("⚠️  SECRET_KEY is set to the default value — change it before deploying to production!")

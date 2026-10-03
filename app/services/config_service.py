@@ -70,6 +70,7 @@ DEFAULT_CONFIG_VALUES: dict[str, str] = {
     "ocr_mode": "auto",
     "ocr_fallback_vision": "true",
     "pdf_parser_engine": "pymupdf4llm",
+    "excel_parser_engine": "openpyxl",
     "pdf_strip_headers_footers": "true",
     "pdf_enhance_headings": "true",
 }
@@ -101,8 +102,9 @@ ALL_CONFIG_KEYS = [
     "ocr_mode",
     "ocr_fallback_vision",
 
-    # --- Document Processing & PDF Parsing ---
+    # --- Document Processing & Parsing ---
     "pdf_parser_engine",
+    "excel_parser_engine",
     "pdf_strip_headers_footers",
     "pdf_enhance_headings",
 
@@ -114,6 +116,7 @@ ALL_CONFIG_KEYS = [
 
     # --- System ---
     "session_timeout_minutes",
+    "role_permissions_custom",
 
     # --- Deprecated embedding keys (kept readable for one release; do not write) ---
     "embedding_provider",

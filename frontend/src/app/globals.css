@@ -215,3 +215,18 @@
 .sidebar-scrollbar:hover {
   scrollbar-color: rgba(15, 23, 42, 0.08) transparent;
 }
+
+@keyframes scan {
+  0% {
+    top: 5%;
+    opacity: 0.3;
+  }
+  50% {
+    top: 90%;
+    opacity: 1;
+  }
+  100% {
+    top: 5%;
+    opacity: 0.3;
+  }
+}

@@ -29,11 +29,31 @@ class ExcelParser(BaseParser):
         *,
         vision_provider: Optional[Any] = None,
         tracker: Optional[Any] = None,
+        engine: str = "openpyxl",
         **kwargs: Any,
     ) -> list[dict[str, Any]]:
         """Parse Excel binary data into page-like sheet markdown records."""
         import io
         from app.core.text_normalizer import normalize_text
+
+        if engine == "markitdown":
+            try:
+                from markitdown import MarkItDown
+                md_converter = MarkItDown()
+                ext = f".{file_name.rsplit('.', 1)[-1].lower()}" if "." in file_name else ".xlsx"
+                res = md_converter.convert_stream(io.BytesIO(file_data), file_extension=ext)
+                text = normalize_text((res.text_content or "").strip())
+                if text:
+                    return [{
+                        "content": text,
+                        "page_number": 1,
+                        "sheet_name": "Sheet1",
+                        "total_sheets": 1,
+                        "columns": [],
+                        "row_count": len(text.splitlines()),
+                    }]
+            except Exception as e:
+                logger.warning(f"ExcelParser: MarkItDown failed for '{file_name}': {e}")
 
         wb = openpyxl.load_workbook(io.BytesIO(file_data), data_only=True)
         pages: list[dict[str, Any]] = []

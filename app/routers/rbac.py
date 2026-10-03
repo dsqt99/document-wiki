@@ -489,3 +489,87 @@ async def get_my_mcp_token_status(
 ):
     """Check if the current employee has an active MCP token (without revealing it)."""
     return {"has_token": bool(current_user.mcp_token_hash)}
+
+
+# ---------------------------------------------------------------------------
+# RBAC Permissions Matrix Management
+# ---------------------------------------------------------------------------
+
+class UpdatePermissionsMatrixRequest(BaseModel):
+    role_permissions: dict[str, list[str]]
+
+
+@router.get("/rbac/matrix")
+async def get_permissions_matrix(
+    db: AsyncSession = Depends(get_db),
+    _user: Employee = require_permission("org:employees:read"),
+):
+    """Get the full role permissions matrix with groups, labels, and descriptions."""
+    import json
+    from app.services.config_service import ConfigService
+    from app.services.permissions import (
+        ALL_PERMISSIONS,
+        PERMISSION_DESCRIPTIONS,
+        PERMISSION_GROUPS,
+        PERMISSION_LABELS,
+        SYSTEM_ROLES,
+        get_effective_role_permissions,
+        load_role_permissions_override,
+    )
+
+    # Ensure in-memory cache has latest DB override
+    cfg = ConfigService(db)
+    custom_json = await cfg.get("role_permissions_custom")
+    if custom_json:
+        load_role_permissions_override(custom_json)
+
+    return {
+        "roles": SYSTEM_ROLES,
+        "groups": PERMISSION_GROUPS,
+        "labels": PERMISSION_LABELS,
+        "descriptions": PERMISSION_DESCRIPTIONS,
+        "all_permissions": ALL_PERMISSIONS,
+        "role_permissions": get_effective_role_permissions(),
+    }
+
+
+@router.put("/rbac/matrix")
+async def update_permissions_matrix(
+    body: UpdatePermissionsMatrixRequest,
+    db: AsyncSession = Depends(get_db),
+    _user: Employee = require_permission("org:roles:manage"),
+):
+    """Update role permissions matrix (requires admin or org:roles:manage)."""
+    import json
+    from app.services.config_service import ConfigService
+    from app.services.permissions import (
+        ALL_PERMISSIONS,
+        get_effective_role_permissions,
+        load_role_permissions_override,
+    )
+
+    clean_map: dict[str, list[str]] = {}
+    valid_perms_set = set(ALL_PERMISSIONS)
+
+    for role_id, perms in body.role_permissions.items():
+        if role_id == "admin":
+            continue  # Admin role permissions cannot be altered
+        if isinstance(perms, list):
+            clean_map[role_id] = [p for p in perms if p in valid_perms_set]
+
+    payload_str = json.dumps(clean_map, ensure_ascii=False)
+    cfg = ConfigService(db)
+    await cfg.set("role_permissions_custom", payload_str)
+    load_role_permissions_override(payload_str)
+
+    await log_audit(
+        db, _user, "update", "rbac_matrix", "system",
+        reason=f"updated roles: {', '.join(clean_map.keys())}",
+    )
+    await db.commit()
+
+    return {
+        "success": True,
+        "role_permissions": get_effective_role_permissions(),
+    }
+

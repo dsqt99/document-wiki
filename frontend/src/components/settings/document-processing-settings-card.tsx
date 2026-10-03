@@ -1,12 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -15,41 +12,74 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { api } from "@/lib/api";
-
-const DEFAULT_OCR_PROMPT =
-  "Trích xuất TOÀN BỘ văn bản từ hình ảnh trang tài liệu này một cách chính xác tuyệt đối.\n" +
-  "Yêu cầu nghiêm ngặt:\n" +
-  "1. Giữ nguyên số hiệu văn bản, tiêu đề, dấu câu, ngày tháng, các cụm từ viết tắt ngành (CAND, CSGT, PCCC, ANTT, QĐ, NĐ, TT...).\n" +
-  "2. Tái tạo chính xác cấu trúc bảng biểu dạng Markdown Table (| Cột 1 | Cột 2 |).\n" +
-  "3. Tái tạo cấu trúc thứ bậc đề mục: Phần, Chương, Mục, Điều, Khoản, Điểm.\n" +
-  "4. Tuyệt đối không thêm lời bình, không tóm tắt hay tự ý suy diễn từ ngữ.";
+import { WikiContent } from "@/components/wiki/wiki-content";
 
 type SettingsMap = Record<string, string | null | undefined>;
 
+type PageItem = {
+  page_number: number;
+  content: string;
+  is_ocr: boolean;
+  char_count: number;
+  word_count: number;
+};
+
+type ExtractionStats = {
+  total_pages: number;
+  preview_pages_count: number;
+  ocr_pages_count: number;
+  total_words: number;
+  total_chars: number;
+  latency_ms: number;
+};
+
+type ExtractionResponse = {
+  success: boolean;
+  file_name: string;
+  file_type: string;
+  stats?: ExtractionStats;
+  pages: PageItem[];
+  error?: string | null;
+};
+
+function getFileBadgeColor(fileName: string) {
+  const ext = fileName.split(".").pop()?.toLowerCase();
+  switch (ext) {
+    case "pdf":
+      return "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20";
+    case "xlsx":
+    case "xls":
+    case "csv":
+      return "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20";
+    case "docx":
+    case "doc":
+      return "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20";
+    default:
+      return "bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20";
+  }
+}
+
 export function DocumentProcessingSettingsCard() {
-  const [ocrBaseUrl, setOcrBaseUrl] = useState("");
-  const [ocrApiKey, setOcrApiKey] = useState("");
-  const [showApiKey, setShowApiKey] = useState(false);
-  const [ocrModel, setOcrModel] = useState("ggml-org/GLM-OCR-GGUF:f16");
-  const [ocrPrompt, setOcrPrompt] = useState(DEFAULT_OCR_PROMPT);
-  const [ocrMode, setOcrMode] = useState("auto");
-  const [ocrFallbackVision, setOcrFallbackVision] = useState(true);
-
-  const [pdfEngine, setPdfEngine] = useState("pymupdf4llm");
-  const [stripHeaders, setStripHeaders] = useState(true);
-  const [enhanceHeadings, setEnhanceHeadings] = useState(true);
-
+  // Config state
+  const [pdfEngine, setPdfEngine] = useState<string>("pymupdf4llm");
+  const [excelEngine, setExcelEngine] = useState<string>("openpyxl");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState("");
 
-  const [testingConn, setTestingConn] = useState(false);
-  const [testResult, setTestResult] = useState<{
-    success: boolean;
-    message: string;
-    latency_ms: number;
-  } | null>(null);
+  // Test / Preview state
+  const [testFile, setTestFile] = useState<File | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [testLoading, setTestLoading] = useState(false);
+  const [testResult, setTestResult] = useState<ExtractionResponse | null>(null);
+  const [selectedPageIndex, setSelectedPageIndex] = useState<number>(0);
+  const [viewMode, setViewMode] = useState<"rendered" | "raw">("rendered");
+  const [copied, setCopied] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     async function loadSettings() {
@@ -58,21 +88,8 @@ export function DocumentProcessingSettingsCard() {
       try {
         const data = await api<SettingsMap>("/api/settings");
         if (data) {
-          if (data.ocr_base_url) setOcrBaseUrl(String(data.ocr_base_url));
-          if (data.ocr_api_key) setOcrApiKey(String(data.ocr_api_key));
-          if (data.ocr_model) setOcrModel(String(data.ocr_model));
-          if (data.ocr_prompt) setOcrPrompt(String(data.ocr_prompt));
-          if (data.ocr_mode) setOcrMode(String(data.ocr_mode));
-          if (data.ocr_fallback_vision !== undefined) {
-            setOcrFallbackVision(data.ocr_fallback_vision !== "false");
-          }
           if (data.pdf_parser_engine) setPdfEngine(String(data.pdf_parser_engine));
-          if (data.pdf_strip_headers_footers !== undefined) {
-            setStripHeaders(data.pdf_strip_headers_footers !== "false");
-          }
-          if (data.pdf_enhance_headings !== undefined) {
-            setEnhanceHeadings(data.pdf_enhance_headings !== "false");
-          }
+          if (data.excel_parser_engine) setExcelEngine(String(data.excel_parser_engine));
         }
       } catch (err) {
         setSaveError(err instanceof Error ? err.message : "Không thể tải cấu hình");
@@ -80,7 +97,6 @@ export function DocumentProcessingSettingsCard() {
         setLoading(false);
       }
     }
-
     void loadSettings();
   }, []);
 
@@ -89,22 +105,15 @@ export function DocumentProcessingSettingsCard() {
     setSaveSuccess(false);
     setSaveError("");
 
-    const payload: Record<string, string> = {
-      ocr_base_url: ocrBaseUrl.trim(),
-      ocr_api_key: ocrApiKey.trim(),
-      ocr_model: ocrModel.trim(),
-      ocr_prompt: ocrPrompt.trim(),
-      ocr_mode: ocrMode,
-      ocr_fallback_vision: ocrFallbackVision ? "true" : "false",
-      pdf_parser_engine: pdfEngine,
-      pdf_strip_headers_footers: stripHeaders ? "true" : "false",
-      pdf_enhance_headings: enhanceHeadings ? "true" : "false",
-    };
-
     try {
       await api("/api/settings", {
         method: "PUT",
-        body: { settings: payload },
+        body: {
+          settings: {
+            pdf_parser_engine: pdfEngine,
+            excel_parser_engine: excelEngine,
+          },
+        },
       });
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
@@ -115,314 +124,537 @@ export function DocumentProcessingSettingsCard() {
     }
   }
 
-  async function handleTestConnection() {
-    setTestingConn(true);
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setTestFile(file);
     setTestResult(null);
+    setSelectedPageIndex(0);
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+    setTestFile(file);
+    setTestResult(null);
+    setSelectedPageIndex(0);
+  }
+
+  async function handleRunExtraction() {
+    if (!testFile) return;
+    setTestLoading(true);
+    setTestResult(null);
+
+    const formData = new FormData();
+    formData.append("file", testFile);
+    formData.append("max_pages", "5");
+    formData.append("pdf_parser_engine", pdfEngine);
+    formData.append("excel_parser_engine", excelEngine);
+
     try {
-      const res = await api<{ success: boolean; message: string; latency_ms: number }>(
-        "/api/settings/test-ocr-connection",
-        {
-          method: "POST",
-          body: {
-            base_url: ocrBaseUrl.trim() || undefined,
-            api_key: ocrApiKey.trim() || undefined,
-            model: ocrModel.trim() || undefined,
-          },
-        }
-      );
+      const res = await api<ExtractionResponse>("/api/settings/test-extraction", {
+        method: "POST",
+        body: formData,
+        timeoutMs: 180_000,
+      });
       setTestResult(res);
+      setSelectedPageIndex(0);
     } catch (err) {
       setTestResult({
         success: false,
-        message: err instanceof Error ? err.message : "Kết nối thất bại",
-        latency_ms: 0,
+        file_name: testFile.name,
+        file_type: testFile.name.split(".").pop() || "",
+        pages: [],
+        error: err instanceof Error ? err.message : "Bóc tách thất bại",
       });
     } finally {
-      setTestingConn(false);
+      setTestLoading(false);
     }
   }
 
+  function handleCopy(text: string) {
+    void navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  function handleDownloadMarkdown() {
+    if (!activePage?.content) return;
+    const blob = new Blob([activePage.content], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${testFile?.name || "extracted_page"}_trang_${activePage.page_number}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  const activePage = testResult?.pages?.[selectedPageIndex];
+
+  // Optional search highlighting / filtering
+  const displayContent = useMemo(() => {
+    return activePage?.content || "";
+  }, [activePage]);
+
   return (
-    <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
-      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between mb-6 pb-4 border-b border-border">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
-            <span className="material-symbols-outlined text-2xl">document_scanner</span>
+    <div className="rounded-2xl border border-border/80 bg-card p-6 shadow-[0_4px_24px_-4px_rgba(0,0,0,0.04)] dark:shadow-[0_4px_24px_-4px_rgba(0,0,0,0.25)] transition-all">
+      {/* Header Bar */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-6 pb-4 border-b border-border/60">
+        <div className="flex items-center gap-3.5">
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 shadow-xs">
+            <span className="material-symbols-outlined text-[26px]">document_scanner</span>
           </div>
           <div>
-            <h2 className="text-lg font-semibold tracking-tight">
-              Cấu hình Bóc tách Tài liệu & OCR
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              Tùy chỉnh mô hình OCR chuyên dụng, engine trích xuất PDF và các bước tiền xử lý đề mục.
+            <div className="flex items-center gap-2">
+              <h2 className="text-base font-semibold tracking-tight text-foreground">
+                Cấu hình Bóc tách Document
+              </h2>
+              <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-muted-foreground border border-border">
+                v2 Engine
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Tùy chọn engine bóc tách PDF, Excel và phòng thử nghiệm xem trước trực tiếp.
             </p>
           </div>
         </div>
 
         {saveSuccess && (
-          <Badge variant="outline" className="text-emerald-600 border-emerald-500/30 bg-emerald-500/10 gap-1.5 self-start sm:self-auto">
+          <Badge
+            variant="outline"
+            className="text-emerald-600 border-emerald-500/30 bg-emerald-500/10 gap-1.5 self-start sm:self-auto py-1 px-3"
+          >
             <span className="material-symbols-outlined text-sm">check_circle</span>
-            Đã lưu thành công
+            Đã cập nhật engine
           </Badge>
         )}
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center py-10 text-muted-foreground gap-2">
-          <span className="material-symbols-outlined animate-spin text-xl">progress_activity</span>
-          <span>Đang tải thông số cấu hình...</span>
+        <div className="flex items-center justify-center py-12 text-muted-foreground gap-2.5">
+          <span className="material-symbols-outlined animate-spin text-xl text-primary">progress_activity</span>
+          <span className="text-xs font-medium">Đang tải thiết lập engine...</span>
         </div>
       ) : (
-        <div className="space-y-8">
-          {/* PHẦN 1: OCR SERVICE */}
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-                  1. Dịch vụ OCR Chuyên dụng (OpenAI-Compatible)
-                </h3>
-                <p className="text-xs text-muted-foreground">
-                  Sử dụng GLM-OCR hoặc mô hình Vision tương thích OpenAI để quét chữ từ ảnh tài liệu scan.
-                </p>
+        /* Layout ngang 1 | 1 Cân đối */
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          {/* CỘT TRÁI (1): CẤU HÌNH & BÀN ĐIỀU KHIỂN (Col span 5/12) */}
+          <div className="lg:col-span-5 space-y-5">
+            {/* Box 1: Cấu hình Engine */}
+            <div className="rounded-xl border border-border/70 bg-muted/20 p-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-sm text-primary">tune</span>
+                  Engine trích xuất mặc định
+                </span>
+                <Button
+                  size="sm"
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="gap-1.5 text-xs font-medium h-7 px-3 shadow-xs active:scale-[0.98] transition-transform"
+                >
+                  {saving ? (
+                    <span className="material-symbols-outlined animate-spin text-xs">progress_activity</span>
+                  ) : (
+                    <span className="material-symbols-outlined text-xs">save</span>
+                  )}
+                  Lưu thiết lập
+                </Button>
               </div>
 
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleTestConnection}
-                disabled={testingConn}
-                className="gap-1.5 h-8 text-xs font-medium"
-              >
-                {testingConn ? (
-                  <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
-                ) : (
-                  <span className="material-symbols-outlined text-sm">network_ping</span>
-                )}
-                Kiểm tra kết nối
-              </Button>
+              <div className="space-y-3.5">
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <Label htmlFor="pdf-engine-select" className="font-medium text-foreground">
+                      Engine PDF
+                    </Label>
+                    <span className="text-[11px] text-muted-foreground font-mono">.pdf</span>
+                  </div>
+                  <Select value={pdfEngine} onValueChange={(val) => { if (val) setPdfEngine(val); }}>
+                    <SelectTrigger id="pdf-engine-select" className="text-xs h-9 bg-background">
+                      <SelectValue placeholder="Chọn engine PDF" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="pymupdf4llm">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">PyMuPDF4LLM</span>
+                          <span className="text-[10px] text-muted-foreground">(Bảng biểu, đề mục)</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="pymupdf_plain">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">PDF2text</span>
+                          <span className="text-[10px] text-muted-foreground">(PyMuPDF text siêu tốc)</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="markitdown">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">MarkItDown</span>
+                          <span className="text-[10px] text-muted-foreground">(Microsoft MD converter)</span>
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <Label htmlFor="excel-engine-select" className="font-medium text-foreground">
+                      Engine Excel / Bảng tính
+                    </Label>
+                    <span className="text-[11px] text-muted-foreground font-mono">.xlsx, .xls</span>
+                  </div>
+                  <Select value={excelEngine} onValueChange={(val) => { if (val) setExcelEngine(val); }}>
+                    <SelectTrigger id="excel-engine-select" className="text-xs h-9 bg-background">
+                      <SelectValue placeholder="Chọn engine Excel" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="openpyxl">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">OpenPyXL</span>
+                          <span className="text-[10px] text-muted-foreground">(Tách từng Sheet & bảng)</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="markitdown">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">MarkItDown</span>
+                          <span className="text-[10px] text-muted-foreground">(Markdown tổng hợp)</span>
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {saveError && (
+                <div className="p-2 rounded-lg bg-destructive/10 text-destructive text-[11px] font-medium border border-destructive/20">
+                  {saveError}
+                </div>
+              )}
             </div>
 
-            {testResult && (
+            {/* Box 2: Test Studio Dropzone */}
+            <div className="rounded-xl border border-border/70 bg-card p-4 space-y-3.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-sm text-primary">science</span>
+                  Phòng thử nghiệm bóc tách
+                </span>
+                <span className="text-[10px] text-muted-foreground font-mono">Tối đa 5 trang</span>
+              </div>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.docx,.xlsx,.xls,.csv,.txt,.md"
+                className="hidden"
+                onChange={handleFileSelect}
+              />
+
+              {/* Drag & Drop interactive zone */}
               <div
-                className={`p-3 rounded-lg text-xs flex items-center justify-between border ${
-                  testResult.success
-                    ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-700 dark:text-emerald-400"
-                    : "bg-destructive/10 border-destructive/20 text-destructive"
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setIsDragging(true);
+                }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={handleDrop}
+                onClick={() => fileInputRef.current?.click()}
+                className={`relative group cursor-pointer rounded-xl border-2 border-dashed p-4 transition-all duration-200 text-center flex flex-col items-center justify-center ${
+                  isDragging
+                    ? "border-primary bg-primary/10 scale-[1.01]"
+                    : testFile
+                    ? "border-primary/40 bg-primary/5 hover:border-primary/60"
+                    : "border-border/80 hover:border-primary/50 hover:bg-muted/30 bg-muted/15"
                 }`}
               >
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-base">
-                    {testResult.success ? "check_circle" : "error"}
-                  </span>
-                  <span>{testResult.message}</span>
-                </div>
-                {testResult.latency_ms > 0 && (
-                  <span className="font-mono font-medium">
-                    {testResult.latency_ms} ms
-                  </span>
+                {testFile ? (
+                  <div className="w-full flex items-center justify-between gap-3 text-left">
+                    <div className="flex items-center gap-3 overflow-hidden">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-background border border-border/80 shadow-xs">
+                        <span className="material-symbols-outlined text-xl text-primary">
+                          description
+                        </span>
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <Badge
+                            variant="outline"
+                            className={`text-[9px] uppercase px-1.5 py-0 font-mono ${getFileBadgeColor(testFile.name)}`}
+                          >
+                            {testFile.name.split(".").pop()}
+                          </Badge>
+                          <p className="text-xs font-medium text-foreground truncate max-w-[170px]">
+                            {testFile.name}
+                          </p>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                          {(testFile.size / 1024).toFixed(1)} KB • Nhấn để đổi file
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setTestFile(null);
+                        setTestResult(null);
+                      }}
+                      className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors"
+                      title="Gỡ file"
+                    >
+                      <span className="material-symbols-outlined text-base">close</span>
+                    </button>
+                  </div>
+                ) : (
+                  <div className="py-2 flex flex-col items-center">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-primary mb-2 group-hover:scale-110 transition-transform">
+                      <span className="material-symbols-outlined text-xl">upload_file</span>
+                    </div>
+                    <p className="text-xs font-semibold text-foreground">
+                      Kéo thả file vào đây hoặc bấm để chọn
+                    </p>
+                    <p className="text-[11px] text-muted-foreground mt-1">
+                      Hỗ trợ: PDF, Word (.docx), Excel (.xlsx, .csv), TXT, Markdown
+                    </p>
+                  </div>
                 )}
               </div>
-            )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="ocr-base-url" className="text-xs font-medium">
-                  OCR Base URL
-                </Label>
-                <Input
-                  id="ocr-base-url"
-                  placeholder="https://unsloth.anm05.com/v1"
-                  value={ocrBaseUrl}
-                  onChange={(e) => setOcrBaseUrl(e.target.value)}
-                  className="font-mono text-xs"
-                />
-              </div>
+              {/* Action Button */}
+              <Button
+                size="sm"
+                onClick={handleRunExtraction}
+                disabled={!testFile || testLoading}
+                className="w-full gap-2 text-xs font-medium h-9 shadow-xs active:scale-[0.98] transition-all"
+              >
+                {testLoading ? (
+                  <>
+                    <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
+                    Đang bóc tách dữ liệu...
+                  </>
+                ) : (
+                  <>
+                    <span className="material-symbols-outlined text-sm">play_arrow</span>
+                    Bóc tách &amp; Xem trước ngay
+                  </>
+                )}
+              </Button>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="ocr-api-key" className="text-xs font-medium">
-                  OCR API Key
-                </Label>
-                <div className="relative">
-                  <Input
-                    id="ocr-api-key"
-                    type={showApiKey ? "text" : "password"}
-                    placeholder="sk-..."
-                    value={ocrApiKey}
-                    onChange={(e) => setOcrApiKey(e.target.value)}
-                    className="font-mono text-xs pr-10"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowApiKey(!showApiKey)}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    title={showApiKey ? "Ẩn" : "Hiện"}
-                  >
-                    <span className="material-symbols-outlined text-base">
-                      {showApiKey ? "visibility_off" : "visibility"}
-                    </span>
-                  </button>
+              {testResult?.error && (
+                <div className="p-3 rounded-lg border border-destructive/20 bg-destructive/10 text-destructive text-xs flex items-start gap-2">
+                  <span className="material-symbols-outlined text-base shrink-0 mt-0.5">error</span>
+                  <div className="space-y-1">
+                    <p className="font-semibold">Thử nghiệm thất bại</p>
+                    <p className="font-mono text-[11px] opacity-90 break-all">{testResult.error}</p>
+                  </div>
                 </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="ocr-model" className="text-xs font-medium">
-                  Mô hình OCR (Model Name)
-                </Label>
-                <Input
-                  id="ocr-model"
-                  placeholder="ggml-org/GLM-OCR-GGUF:f16"
-                  value={ocrModel}
-                  onChange={(e) => setOcrModel(e.target.value)}
-                  className="font-mono text-xs"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="ocr-mode" className="text-xs font-medium">
-                  Chế độ OCR (Quét chữ)
-                </Label>
-                <Select value={ocrMode} onValueChange={(val) => { if (val) setOcrMode(val); }}>
-                  <SelectTrigger id="ocr-mode" className="text-xs">
-                    <SelectValue placeholder="Chọn chế độ" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="auto">
-                      Tự động (Chỉ chạy OCR với trang scan / ảnh) - Khuyến nghị
-                    </SelectItem>
-                    <SelectItem value="force_ocr">
-                      Ép OCR toàn bộ (Chạy OCR với tất cả các trang)
-                    </SelectItem>
-                    <SelectItem value="disabled">
-                      Tắt OCR (Chỉ lấy văn bản số hóa gốc trong PDF)
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="ocr-prompt" className="text-xs font-medium">
-                  Chỉ thị OCR Prompt
-                </Label>
-                <button
-                  type="button"
-                  onClick={() => setOcrPrompt(DEFAULT_OCR_PROMPT)}
-                  className="text-xs text-primary hover:underline"
-                >
-                  Khôi phục mặc định
-                </button>
-              </div>
-              <Textarea
-                id="ocr-prompt"
-                rows={3}
-                value={ocrPrompt}
-                onChange={(e) => setOcrPrompt(e.target.value)}
-                className="text-xs font-sans resize-y"
-              />
-            </div>
-
-            <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/30">
-              <div className="space-y-0.5">
-                <Label htmlFor="ocr-fallback-vision" className="text-xs font-medium">
-                  Fallback sang Vision Model khi OCR lỗi
-                </Label>
-                <p className="text-[11px] text-muted-foreground">
-                  Nếu endpoint OCR chuyên dụng gặp sự cố hoặc timeout, hệ thống sẽ tự động dùng mô hình Vision đã cấu hình để cứu cánh.
-                </p>
-              </div>
-              <Switch
-                id="ocr-fallback-vision"
-                checked={ocrFallbackVision}
-                onCheckedChange={setOcrFallbackVision}
-              />
-            </div>
-          </div>
-
-          {/* PHẦN 2: PDF PARSER & HEURISTICS */}
-          <div className="space-y-4 pt-4 border-t border-border">
-            <div>
-              <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-                2. Bộ máy Trích xuất PDF & Tiền xử lý Văn bản
-              </h3>
-              <p className="text-xs text-muted-foreground">
-                Định dạng cấu trúc bảng biểu Markdown và chuẩn hóa tiêu đề pháp lý Việt Nam.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-1.5 md:col-span-2">
-                <Label htmlFor="pdf-engine" className="text-xs font-medium">
-                  Công cụ phân tích PDF (PDF Parser Engine)
-                </Label>
-                <Select value={pdfEngine} onValueChange={(val) => { if (val) setPdfEngine(val); }}>
-                  <SelectTrigger id="pdf-engine" className="text-xs">
-                    <SelectValue placeholder="Chọn engine" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="pymupdf4llm">
-                      PyMuPDF4LLM (Khuyên dùng: giữ nguyên cấu trúc bảng biểu, heading Markdown)
-                    </SelectItem>
-                    <SelectItem value="pymupdf_plain">
-                      PyMuPDF Plain Text (Trích xuất văn bản thuần fitz get_text, tốc độ nhanh)
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/30">
-                <div className="space-y-0.5">
-                  <Label htmlFor="strip-headers" className="text-xs font-medium">
-                    Tự động lọc tiêu ngữ, đầu trang & chân trang lặp lại
-                  </Label>
-                  <p className="text-[11px] text-muted-foreground">
-                    Loại bỏ &quot;CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM&quot;, số trang (trang 1/10) lặp lại trên &gt; 50% số trang để tránh nhiễu nội dung.
-                  </p>
-                </div>
-                <Switch
-                  id="strip-headers"
-                  checked={stripHeaders}
-                  onCheckedChange={setStripHeaders}
-                />
-              </div>
-
-              <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/30">
-                <div className="space-y-0.5">
-                  <Label htmlFor="enhance-headings" className="text-xs font-medium">
-                    Chuẩn hóa cấu trúc đề mục pháp lý tiếng Việt
-                  </Label>
-                  <p className="text-[11px] text-muted-foreground">
-                    Tự động nhận diện và gán thứ bậc Markdown (#, ##, ###) cho Phần, Chương, Mục, Điều, Khoản.
-                  </p>
-                </div>
-                <Switch
-                  id="enhance-headings"
-                  checked={enhanceHeadings}
-                  onCheckedChange={setEnhanceHeadings}
-                />
-              </div>
-            </div>
-          </div>
-
-          {saveError && (
-            <p className="text-xs text-destructive font-medium">{saveError}</p>
-          )}
-
-          <div className="flex justify-end pt-2">
-            <Button
-              onClick={handleSave}
-              disabled={saving}
-              className="gap-2 px-5 font-medium"
-            >
-              {saving ? (
-                <span className="material-symbols-outlined animate-spin text-base">progress_activity</span>
-              ) : (
-                <span className="material-symbols-outlined text-base">save</span>
               )}
-              Lưu cấu hình bóc tách & OCR
-            </Button>
+            </div>
+          </div>
+
+          {/* CỘT PHẢI (2): STUDIO XEM TRƯỚC (Col span 7/12) */}
+          <div className="lg:col-span-7 flex flex-col h-full space-y-3">
+            {/* Workbench Frame */}
+            <div
+              className={`rounded-xl border border-border/80 bg-card overflow-hidden shadow-xs flex flex-col transition-all duration-200 ${
+                isExpanded ? "fixed inset-4 z-50 shadow-2xl bg-background" : "min-h-[460px]"
+              }`}
+            >
+              {/* Studio Header Toolbar */}
+              <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 bg-muted/40 border-b border-border/70 text-xs select-none">
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-foreground flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-base text-primary">preview</span>
+                    Studio Xem trước
+                  </span>
+
+                  {testResult?.success && (
+                    <Badge
+                      variant="outline"
+                      className="border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 gap-1 text-[10px] h-5 font-medium"
+                    >
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      Hoàn tất
+                    </Badge>
+                  )}
+                </div>
+
+                {/* Right controls */}
+                <div className="flex items-center gap-1.5">
+                  {/* Mode switcher */}
+                  <div className="flex rounded-md border border-border/80 p-0.5 bg-background shadow-2xs">
+                    <button
+                      onClick={() => setViewMode("rendered")}
+                      className={`px-2.5 py-0.5 rounded text-[11px] font-medium transition-all ${
+                        viewMode === "rendered"
+                          ? "bg-primary text-primary-foreground shadow-xs font-semibold"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                      title="Chế độ trực quan"
+                    >
+                      Rendered
+                    </button>
+                    <button
+                      onClick={() => setViewMode("raw")}
+                      className={`px-2.5 py-0.5 rounded text-[11px] font-medium transition-all ${
+                        viewMode === "raw"
+                          ? "bg-primary text-primary-foreground shadow-xs font-semibold"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                      title="Chế độ mã nguồn văn bản"
+                    >
+                      Raw
+                    </button>
+                  </div>
+
+                  {activePage && (
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleCopy(activePage.content)}
+                        className="h-7 text-xs px-2 gap-1 text-muted-foreground hover:text-foreground"
+                        title="Sao chép nội dung trang này"
+                      >
+                        <span className="material-symbols-outlined text-sm">
+                          {copied ? "check" : "content_copy"}
+                        </span>
+                        {copied ? "Đã chép" : "Copy"}
+                      </Button>
+
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleDownloadMarkdown}
+                        className="h-7 text-xs px-2 gap-1 text-muted-foreground hover:text-foreground"
+                        title="Tải về file Markdown (.md)"
+                      >
+                        <span className="material-symbols-outlined text-sm">download</span>
+                        Tải .md
+                      </Button>
+                    </>
+                  )}
+
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setIsExpanded(!isExpanded)}
+                    className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                    title={isExpanded ? "Thu nhỏ" : "Toàn màn hình"}
+                  >
+                    <span className="material-symbols-outlined text-sm">
+                      {isExpanded ? "close_fullscreen" : "open_in_full"}
+                    </span>
+                  </Button>
+                </div>
+              </div>
+
+              {/* Telemetry bar (Stats pills) */}
+              {testResult?.success && testResult.stats && (
+                <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-1.5 bg-muted/20 border-b border-border/50 text-[11px] font-mono text-muted-foreground">
+                  <div className="flex items-center gap-3">
+                    <span className="flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[13px] text-muted-foreground">timer</span>
+                      {(testResult.stats.latency_ms / 1000).toFixed(2)}s
+                    </span>
+                    <span>•</span>
+                    <span className="flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[13px] text-muted-foreground">article</span>
+                      {testResult.stats.preview_pages_count}/{testResult.stats.total_pages} trang
+                    </span>
+                    <span>•</span>
+                    <span className="flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[13px] text-muted-foreground">format_quote</span>
+                      {testResult.stats.total_words.toLocaleString()} từ ({testResult.stats.total_chars.toLocaleString()} ký tự)
+                    </span>
+                  </div>
+
+                  <span className="px-2 py-0.2 rounded bg-background border border-border/60 text-[10px] text-foreground font-semibold">
+                    Engine: {pdfEngine}
+                  </span>
+                </div>
+              )}
+
+              {/* Multi-page / multi-sheet tabs */}
+              {testResult?.pages && testResult.pages.length > 1 && (
+                <div className="flex items-center gap-1 px-3 py-1.5 bg-muted/10 border-b border-border/50 overflow-x-auto">
+                  <span className="text-[10px] uppercase font-semibold text-muted-foreground mr-1.5 tracking-wider shrink-0">
+                    Trang:
+                  </span>
+                  {testResult.pages.map((p, idx) => (
+                    <button
+                      key={p.page_number}
+                      onClick={() => setSelectedPageIndex(idx)}
+                      className={`px-2.5 py-1 rounded-md text-xs font-medium whitespace-nowrap transition-all flex items-center gap-1 ${
+                        selectedPageIndex === idx
+                          ? "bg-primary text-primary-foreground shadow-xs font-semibold"
+                          : "bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <span>Trang {p.page_number}</span>
+                      {p.is_ocr && (
+                        <span className="text-[9px] px-1 py-0 rounded bg-blue-500/20 text-blue-300 font-mono">
+                          OCR
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Studio Canvas / Viewport */}
+              <div
+                className={`relative flex-1 p-4 overflow-y-auto transition-all ${
+                  isExpanded ? "max-h-[calc(100vh-140px)]" : "max-h-[380px]"
+                }`}
+              >
+                {testLoading ? (
+                  /* Animated High-tech Scanning State */
+                  <div className="h-full min-h-[300px] flex flex-col items-center justify-center p-6 text-center space-y-4">
+                    <div className="relative w-20 h-20 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center overflow-hidden shadow-inner">
+                      <span className="material-symbols-outlined text-4xl text-primary animate-pulse">
+                        document_scanner
+                      </span>
+                      {/* Scanning laser beam */}
+                      <div className="absolute inset-x-0 h-1 bg-gradient-to-r from-transparent via-cyan-400 to-transparent shadow-[0_0_12px_rgba(6,182,212,0.8)] animate-[scan_2s_ease-in-out_infinite]" />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs font-semibold text-foreground">
+                        Đang phân tích cấu trúc tài liệu...
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        Trích xuất bảng biểu, đề mục pháp lý và văn bản Markdown
+                      </p>
+                    </div>
+                  </div>
+                ) : testResult?.success && activePage ? (
+                  viewMode === "rendered" ? (
+                    <div className="prose prose-sm dark:prose-invert max-w-none text-xs leading-relaxed">
+                      <WikiContent markdown={displayContent} />
+                    </div>
+                  ) : (
+                    <div className="rounded-lg bg-slate-950 p-4 font-mono text-[11px] leading-relaxed text-slate-200 overflow-x-auto border border-slate-800 shadow-inner">
+                      <pre className="whitespace-pre-wrap break-words">{displayContent}</pre>
+                    </div>
+                  )
+                ) : (
+                  /* Empty State Workbench Canvas */
+                  <div className="h-full min-h-[320px] flex flex-col items-center justify-center text-center p-6 text-muted-foreground">
+                    <div className="w-14 h-14 rounded-2xl bg-muted/40 border border-border flex items-center justify-center mb-3 text-muted-foreground/60 shadow-xs">
+                      <span className="material-symbols-outlined text-3xl">find_in_page</span>
+                    </div>
+                    <p className="text-xs font-semibold text-foreground">Chưa có dữ liệu xem trước</p>
+                    <p className="text-[11px] text-muted-foreground mt-1 max-w-[280px]">
+                      Chọn hoặc kéo thả file tài liệu ở cột bên trái và bấm &quot;Bóc tách &amp; Xem trước&quot; để hiển thị kết quả tại đây.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       )}

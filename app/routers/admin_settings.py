@@ -211,19 +211,22 @@ class TestOCRResponse(BaseModel):
     latency_ms: int = 0
     chars_count: int = 0
     words_count: int = 0
+    page_number: int = 1
+    total_pages: int = 1
     error: Optional[str] = None
 
 
 @router.post("/settings/test-ocr", response_model=TestOCRResponse)
 async def test_ocr(
     file: UploadFile = File(...),
+    target_page: int = Form(1),
     override_base_url: Optional[str] = Form(None),
     override_api_key: Optional[str] = Form(None),
     override_model: Optional[str] = Form(None),
     override_prompt: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db),
 ):
-    """Run OCR on a single image or first page of a PDF for testing/preview."""
+    """Run OCR on a single image or selected page of a PDF for testing/preview."""
     import time
     from app.config import settings
     from app.services.config_service import ConfigService
@@ -235,14 +238,19 @@ async def test_ocr(
 
     image_bytes = content
     mime_type = file.content_type or "image/png"
+    total_doc_pages = 1
+    current_page_num = 1
 
     if ext == "pdf":
         try:
             import pymupdf as fitz
             doc = fitz.open(stream=content, filetype="pdf")
-            if len(doc) == 0:
+            total_doc_pages = len(doc)
+            if total_doc_pages == 0:
                 return TestOCRResponse(success=False, error="File PDF không có trang nào")
-            page = doc[0]
+            page_idx = min(max(target_page - 1, 0), total_doc_pages - 1)
+            current_page_num = page_idx + 1
+            page = doc[page_idx]
             pix = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
             image_bytes = pix.tobytes("jpg", jpg_quality=85)
             mime_type = "image/jpeg"
@@ -272,6 +280,8 @@ async def test_ocr(
                 success=False,
                 error="OCR không trả về nội dung hoặc OCR endpoint chưa được cấu hình.",
                 latency_ms=latency_ms,
+                page_number=current_page_num,
+                total_pages=total_doc_pages,
             )
 
         return TestOCRResponse(
@@ -281,10 +291,18 @@ async def test_ocr(
             latency_ms=latency_ms,
             chars_count=len(text),
             words_count=len(text.split()),
+            page_number=current_page_num,
+            total_pages=total_doc_pages,
         )
     except Exception as e:
         latency_ms = max(1, int((time.perf_counter() - start_t) * 1000))
-        return TestOCRResponse(success=False, error=str(e), latency_ms=latency_ms)
+        return TestOCRResponse(
+            success=False,
+            error=str(e),
+            latency_ms=latency_ms,
+            page_number=current_page_num,
+            total_pages=total_doc_pages,
+        )
 
 
 class PagePreviewItem(BaseModel):
@@ -318,6 +336,8 @@ async def test_extraction(
     file: UploadFile = File(...),
     max_pages: int = Form(3),
     engine: Optional[str] = Form(None),
+    pdf_parser_engine: Optional[str] = Form(None),
+    excel_parser_engine: Optional[str] = Form(None),
     ocr_mode: Optional[str] = Form(None),
     strip_headers_footers: Optional[bool] = Form(None),
     enhance_headings: Optional[bool] = Form(None),
@@ -335,7 +355,8 @@ async def test_extraction(
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
 
     cfg = ConfigService(db)
-    eff_engine = engine or await cfg.get("pdf_parser_engine") or "pymupdf4llm"
+    eff_pdf_engine = pdf_parser_engine or engine or await cfg.get("pdf_parser_engine") or "pymupdf4llm"
+    eff_excel_engine = excel_parser_engine or await cfg.get("excel_parser_engine") or "openpyxl"
     eff_ocr_mode = ocr_mode or await cfg.get("ocr_mode") or "auto"
     
     if strip_headers_footers is None:
@@ -367,7 +388,7 @@ async def test_extraction(
             pages_raw = await parser.parse(
                 file_data=content,
                 file_name=filename,
-                engine=eff_engine,
+                engine=eff_pdf_engine,
                 ocr_mode=eff_ocr_mode,
                 strip_headers_footers=eff_strip,
                 enhance_headings=eff_enhance,
@@ -377,6 +398,18 @@ async def test_extraction(
                 ocr_model=override_ocr_model,
                 db=db,
             )
+        elif ext in ("xlsx", "xls"):
+            from app.services.parsers.excel_parser import ExcelParser
+
+            parser = ExcelParser()
+            pages_raw = await parser.parse(
+                file_data=content,
+                file_name=filename,
+                engine=eff_excel_engine,
+            )
+            total_doc_pages = len(pages_raw)
+            if eff_max_pages:
+                pages_raw = pages_raw[:eff_max_pages]
         else:
             from app.services.kb_service import _extract_text_from_file
 

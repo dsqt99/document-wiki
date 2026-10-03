@@ -218,8 +218,23 @@ class PDFParser(BaseParser):
         target_page_indices = list(range(num_pages))
 
         # Step 1: Extract with chosen engine
-        extracted_via_llm = False
-        if engine == "pymupdf4llm" and pymupdf4llm is not None:
+        extracted_via_engine = False
+        if engine == "markitdown":
+            try:
+                import io
+                from markitdown import MarkItDown
+                md_converter = MarkItDown()
+                res = md_converter.convert_stream(io.BytesIO(file_data), file_extension=".pdf")
+                content = res.text_content or ""
+                if content.strip():
+                    raw_pages = [content]
+                    extracted_via_engine = True
+            except Exception as e:
+                logger.warning(
+                    f"PDFParser: markitdown failed for '{file_name}', falling back to fitz: {e}"
+                )
+
+        elif engine == "pymupdf4llm" and pymupdf4llm is not None:
             try:
                 chunks = pymupdf4llm.to_markdown(
                     doc,
@@ -229,7 +244,7 @@ class PDFParser(BaseParser):
                 )
                 if chunks and isinstance(chunks, list):
                     raw_pages = [chunk.get("text", "") for chunk in chunks]
-                    extracted_via_llm = True
+                    extracted_via_engine = True
                     logger.debug(
                         f"PDFParser: pymupdf4llm extracted {len(raw_pages)} pages for '{file_name}'"
                     )
@@ -238,7 +253,7 @@ class PDFParser(BaseParser):
                     f"PDFParser: pymupdf4llm failed for '{file_name}', falling back to fitz: {e}"
                 )
 
-        if not extracted_via_llm or len(raw_pages) != num_pages:
+        if not extracted_via_engine or len(raw_pages) != num_pages:
             raw_pages = [(doc[idx].get_text() or "") for idx in target_page_indices]
 
         # Step 2: Determine which pages require OCR based on ocr_mode
