@@ -299,105 +299,44 @@ def register_tools(mcp: FastMCP):
 
         import asyncio
 
-        from app.services.legal_route_service import route_exact_legal_query
-        from app.services.retrieval_service import expand_graph_neighbors, format_graph_neighbors_section
-        from app.services.reranker_service import RerankerService
+        from app.services.retrieval_service import (
+            expand_graph_neighbors,
+            format_graph_neighbors_section,
+            unified_search,
+        )
 
         exact_match = None
         graph_neighbors = []
+        oos_hint = ""
 
         async with async_session_factory() as session:
-            # Check exact legal route first for queries like "Điều 5 Nghị định 136/2020"
-            exact_match = await route_exact_legal_query(session, query)
-
             registry = ProviderRegistry(session)
             embedding_provider = await registry.get_embedding(task="search_query")
             query_embedding = await embedding_provider.embed(query)
 
             allowed_source_ids = await _get_allowed_source_ids(identity, session)
 
-            # Hybrid (vector + full-text) over both pools, run concurrently. RRF
-            # inside each hybrid search fuses the two arms; we then merge the two
-            # pools by their fused score (comparable because both are RRF-scaled).
-            wiki_task = wiki_service.search_pages_hybrid(
-                session,
+            search_out = await unified_search(
+                session=session,
+                query=query,
                 query_embedding=query_embedding,
-                query_text=query,
-                top_k=top_k * 2,
+                top_k=top_k,
                 allowed_kt_slugs=identity.allowed_knowledge_types,
                 department_ids=identity.department_ids,
                 project_ids=proj_uuids,
                 all_scopes=identity.is_admin,
-            )
-            source_task = wiki_service.search_source_chunks_hybrid(
-                session,
-                query_embedding=query_embedding,
-                query_text=query,
-                top_k=top_k * 2,
                 allowed_source_ids=allowed_source_ids,
+                apply_reranker=True,
+                apply_mmr=True,
+                check_out_of_scope=not identity.is_admin,
             )
-            # Out-of-scope peek — admins already see everything, so the hint only
-            # fires for non-admins. Vector-only + small fixed sample so an
-            # adversary can't enumerate the org's page list via search.
-            if not identity.is_admin:
-                oos_task = wiki_service.search_pages_semantic(
-                    session,
-                    query_embedding=query_embedding,
-                    top_k=5,
-                    department_ids=identity.department_ids,
-                    project_ids=proj_uuids,
-                    inverse_scope=True,
-                )
-                wiki_hits, source_hits, oos_hits = await asyncio.gather(
-                    wiki_task, source_task, oos_task
-                )
+
+            exact_match = search_out.get("exact_match")
+            ranked = search_out.get("ranked_results", [])
+            graph_neighbors = search_out.get("graph_neighbors", [])
+            oos_hits = search_out.get("out_of_scope_hits", [])
+            if oos_hits:
                 oos_hint = await _format_oos_hint(session, oos_hits)
-            else:
-                wiki_hits, source_hits = await asyncio.gather(wiki_task, source_task)
-                oos_hint = ""
-
-            # 1-hop Graph Neighbor Expansion on top wiki hits
-            top_page_ids = [h["page"].id for h in wiki_hits[:5] if "page" in h]
-            if top_page_ids:
-                graph_neighbors = await expand_graph_neighbors(session, top_page_ids)
-
-        # Threshold floor: drop weak vector-only hits (noise), but keep anything
-        # the lexical arm matched — an exact keyword hit is meaningful even at low
-        # cosine. Applied per pool before the cross-pool merge.
-        def _passes(hit: dict) -> bool:
-            if hit.get("fts_matched"):
-                return True
-            cos = hit.get("cosine")
-            return cos is not None and cos >= MIN_SIM_FLOOR
-
-        wiki_hits = [h for h in wiki_hits if _passes(h)]
-        source_hits = [h for h in source_hits if _passes(h)]
-
-        # Prepare candidates for reranking
-        candidates = []
-        for h in wiki_hits:
-            p = h["page"]
-            body = getattr(p, "content_md", "") or getattr(p, "content", "")
-            candidates.append({"kind": "wiki", "hit": h, "text": f"{p.title}\n{body}"})
-        for h in source_hits:
-            c = h.get("chunk")
-            text = (getattr(c, "text", "") or getattr(c, "content", "") or "") if c else ""
-            candidates.append({"kind": "source", "hit": h, "text": text})
-
-        reranker = RerankerService.get_instance()
-        if candidates and reranker and reranker.enabled:
-            reranked_docs = await reranker.rerank(query, candidates, text_key="text", top_n=top_k)
-            ranked = []
-            for cand in reranked_docs:
-                score = cand.get("rerank_score", cand["hit"].get("rrf", 0.0))
-                cand["hit"]["rerank_score"] = score
-                ranked.append((cand["kind"], score, cand["hit"]))
-        else:
-            # Unify into one ranked list by fused RRF score.
-            ranked = [("wiki", h["rrf"], h) for h in wiki_hits]
-            ranked += [("source", h["rrf"], h) for h in source_hits]
-            ranked.sort(key=lambda r: r[1], reverse=True)
-            ranked = ranked[:top_k]
 
         exact_block = ""
         if exact_match and exact_match.get("matched"):

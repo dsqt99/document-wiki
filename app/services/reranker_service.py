@@ -56,8 +56,15 @@ class RerankerService:
         documents: List[dict[str, Any]],
         text_key: str = "text",
         top_n: Optional[int] = None,
+        threshold: Optional[float] = None,
+        degrade_floor: float = 0.15,
+        apply_mmr: bool = False,
+        mmr_lambda: float = 0.7,
     ) -> List[dict[str, Any]]:
-        """Rerank candidates using remote cross-encoder or local fallback."""
+        """Rerank candidates using remote cross-encoder or local fallback,
+
+        with confidence filtering, auto-degradation floor, and MMR diversification.
+        """
         if not documents:
             return []
 
@@ -65,17 +72,39 @@ class RerankerService:
         if not self.enabled:
             return documents[:limit]
 
+        scored_docs: List[dict[str, Any]] = []
         # If remote reranker URL is configured, try calling it
         if self.base_url:
             try:
-                remote_results = await self._call_remote_reranker(query, documents, text_key=text_key)
-                if remote_results:
-                    return remote_results[:limit]
+                scored_docs = await self._call_remote_reranker(query, documents, text_key=text_key)
             except Exception as e:
                 logger.warning(f"Remote reranker call to {self.base_url} failed: {e}. Falling back to local scoring.")
 
-        # Fallback to local scoring
-        return self._local_rerank(query, documents, text_key=text_key)[:limit]
+        # Fallback to local scoring if remote call failed or returned empty
+        if not scored_docs:
+            scored_docs = self._local_rerank(query, documents, text_key=text_key)
+
+        # Apply threshold filtering with auto-degradation
+        min_thresh = threshold if threshold is not None else getattr(settings, "reranker_threshold", 0.0)
+        if min_thresh and min_thresh > 0:
+            filtered = [d for d in scored_docs if d.get("rerank_score", 0.0) >= min_thresh]
+            if not filtered and degrade_floor is not None and degrade_floor < min_thresh:
+                # Auto-degrade to degrade_floor to avoid dropping all hits
+                filtered = [d for d in scored_docs if d.get("rerank_score", 0.0) >= degrade_floor]
+            if filtered:
+                scored_docs = filtered
+
+        # MMR Diversification: prevent identical repetitive chunks from saturating context
+        if apply_mmr and len(scored_docs) > 1:
+            scored_docs = self.diversify_mmr(
+                scored_docs,
+                text_key=text_key,
+                score_key="rerank_score",
+                lambda_param=mmr_lambda,
+                top_n=limit,
+            )
+
+        return scored_docs[:limit]
 
     async def _call_remote_reranker(
         self,

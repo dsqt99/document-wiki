@@ -152,6 +152,65 @@ def format_graph_neighbors_section(neighbors: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+MIN_SIM_FLOOR = 0.35
+
+
+def merge_sequential_chunks(hits: list[dict], max_gap_chars: int = 200) -> list[dict]:
+    """Merge consecutive chunks from the same source or page into continuous passages."""
+    if not hits or len(hits) <= 1:
+        return hits
+
+    merged: list[dict] = []
+    # Group by parent id
+    by_parent: dict[Any, list[dict]] = {}
+    for h in hits:
+        parent_id = None
+        if "page" in h and h["page"]:
+            parent_id = ("page", getattr(h["page"], "id", None))
+        elif "source" in h and h["source"]:
+            parent_id = ("source", getattr(h["source"], "id", None))
+        by_parent.setdefault(parent_id, []).append(h)
+
+    for parent_id, group in by_parent.items():
+        if len(group) == 1 or parent_id is None:
+            merged.extend(group)
+            continue
+
+        # Sort by chunk_index
+        def _get_idx(item):
+            c = item.get("chunk")
+            if c and hasattr(c, "chunk_index"):
+                return c.chunk_index
+            return item.get("chunk_index", 0)
+
+        group.sort(key=_get_idx)
+        cur = group[0]
+        for nxt in group[1:]:
+            cur_idx = _get_idx(cur)
+            nxt_idx = _get_idx(nxt)
+            if nxt_idx == cur_idx + 1:
+                # Sequential chunk: merge text
+                c_cur = cur.get("chunk")
+                c_nxt = nxt.get("chunk")
+                if c_cur and c_nxt and hasattr(c_cur, "text") and hasattr(c_nxt, "text"):
+                    c_cur.text = f"{c_cur.text}\n\n{c_nxt.text}"
+                    cur["rrf"] = max(cur.get("rrf", 0.0), nxt.get("rrf", 0.0))
+                elif "chunk_text" in cur and "chunk_text" in nxt:
+                    cur["chunk_text"] = f"{cur['chunk_text']}\n\n{nxt['chunk_text']}"
+                    cur["rrf"] = max(cur.get("rrf", 0.0), nxt.get("rrf", 0.0))
+                else:
+                    merged.append(cur)
+                    cur = nxt
+            else:
+                merged.append(cur)
+                cur = nxt
+        merged.append(cur)
+
+    # Sort merged results by rrf descending
+    merged.sort(key=lambda x: x.get("rrf", 0.0), reverse=True)
+    return merged
+
+
 async def unified_search(
     session: AsyncSession,
     query: str,
@@ -161,15 +220,18 @@ async def unified_search(
     department_ids: Optional[list[uuid.UUID]] = None,
     project_ids: Optional[list[uuid.UUID]] = None,
     all_scopes: bool = False,
-    allowed_source_ids: Optional[list[uuid.UUID]] = None,
+    allowed_source_ids: Optional[Any] = None,
     apply_reranker: bool = True,
+    apply_mmr: bool = True,
+    check_out_of_scope: bool = False,
 ) -> dict[str, Any]:
-    """
-    Unified multi-stage search orchestrator:
+    """Unified multi-stage search orchestrator:
+
     1. Exact legal routing: checks for article & doc number match.
-    2. Hybrid search (vector + vi-tokenized FTS) over wiki pages & source chunks.
-    3. 1-hop graph expansion over legal knowledge graph.
-    4. Reranking & MMR diversification.
+    2. Fault-tolerant hybrid search (vector + vi-tokenized FTS) over wiki pages & source chunks.
+    3. Winning-chunk text extraction & threshold filtering.
+    4. 1-hop graph expansion over legal knowledge graph.
+    5. Cross-encoder reranking with auto-degradation floor and MMR diversification.
     """
     from app.services import wiki_service
     import asyncio
@@ -177,12 +239,13 @@ async def unified_search(
     # 1. Exact Legal Routing
     exact_route_res = await route_exact_legal_query(session, query)
 
-    # 2. Hybrid Search Arms
+    # 2. Hybrid Search Arms with Fault Tolerance
+    fetch_k = top_k * 2 if apply_reranker else top_k
     wiki_task = wiki_service.search_pages_hybrid(
         session,
         query_embedding=query_embedding,
         query_text=query,
-        top_k=top_k * 2 if apply_reranker else top_k,
+        top_k=fetch_k,
         allowed_kt_slugs=allowed_kt_slugs,
         department_ids=department_ids,
         project_ids=project_ids,
@@ -192,37 +255,103 @@ async def unified_search(
         session,
         query_embedding=query_embedding,
         query_text=query,
-        top_k=top_k * 2 if apply_reranker else top_k,
+        top_k=fetch_k,
         allowed_source_ids=allowed_source_ids,
     )
 
-    wiki_hits, source_hits = await asyncio.gather(wiki_task, source_task)
+    tasks = [wiki_task, source_task]
+    if check_out_of_scope and not all_scopes:
+        oos_task = wiki_service.search_pages_semantic(
+            session,
+            query_embedding=query_embedding,
+            top_k=5,
+            department_ids=department_ids,
+            project_ids=project_ids,
+            inverse_scope=True,
+        )
+        tasks.append(oos_task)
 
-    # 3. 1-Hop Graph Neighbor Expansion from Top Wiki Pages
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    wiki_res = results[0]
+    source_res = results[1]
+    oos_res = results[2] if len(results) > 2 else []
+
+    if isinstance(wiki_res, Exception):
+        logger.warning(f"unified_search: wiki arm failed: {wiki_res}")
+        wiki_hits = []
+    else:
+        wiki_hits = wiki_res or []
+
+    if isinstance(source_res, Exception):
+        logger.warning(f"unified_search: source arm failed: {source_res}")
+        source_hits = []
+    else:
+        source_hits = source_res or []
+
+    if isinstance(oos_res, Exception):
+        logger.warning(f"unified_search: out-of-scope arm failed: {oos_res}")
+        oos_hits = []
+    else:
+        oos_hits = oos_res or []
+
+    # 3. Confidence Threshold Floor (drop weak vector-only noise, retain lexical matches)
+    def _passes(hit: dict) -> bool:
+        if hit.get("fts_matched"):
+            return True
+        cos = hit.get("cosine")
+        return cos is not None and cos >= MIN_SIM_FLOOR
+
+    wiki_hits = [h for h in wiki_hits if _passes(h)]
+    source_hits = [h for h in source_hits if _passes(h)]
+
+    # 4. Adjacent Sequential Chunk Merging
+    source_hits = merge_sequential_chunks(source_hits)
+
+    # 5. 1-Hop Graph Neighbor Expansion from Top Wiki Pages
     top_page_ids = [h["page"].id for h in wiki_hits[:5] if "page" in h]
-    graph_neighbors = await expand_graph_neighbors(session, top_page_ids)
+    graph_neighbors = []
+    if top_page_ids:
+        try:
+            graph_neighbors = await expand_graph_neighbors(session, top_page_ids)
+        except Exception as e:
+            logger.warning(f"unified_search: graph expansion failed: {e}")
 
-    # 4. Prepare candidate texts for reranking
+    # 6. Prepare candidate texts for reranking (using WINNING CHUNKS instead of whole 50KB page)
     candidates: list[dict[str, Any]] = []
-    candidate_texts: list[str] = []
 
     for h in wiki_hits:
         p = h["page"]
-        body = getattr(p, "content_md", "") or getattr(p, "content", "")
-        text = f"{p.title}\n{body}"
+        chunk_text = h.get("chunk_text")
+        if not chunk_text:
+            body = getattr(p, "content_md", "") or getattr(p, "content", "")
+            chunk_text = body[:1500]
+        heading = h.get("heading_path") or ""
+        header = f"{p.title} — {heading}" if heading else p.title
+        text = f"[{header}]\n\n{chunk_text}"
         candidates.append({"kind": "wiki", "hit": h, "text": text})
-        candidate_texts.append(text)
 
     for h in source_hits:
-        c = h["chunk"]
-        text = c.content
+        c = h.get("chunk")
+        text = (getattr(c, "text", "") or getattr(c, "content", "") or "") if c else ""
+        s = h.get("source")
+        doc_title = (getattr(s, "title", "") or getattr(s, "file_name", "") or "") if s else ""
+        if doc_title:
+            text = f"[{doc_title}]\n\n{text}"
         candidates.append({"kind": "source", "hit": h, "text": text})
-        candidate_texts.append(text)
 
-    # 5. Rerank if enabled and candidates exist
+    # 7. Cross-encoder Rerank with auto-degrade floor and MMR diversification
     reranker = RerankerService.get_instance()
-    if apply_reranker and candidates and reranker:
-        reranked_docs = await reranker.rerank(query, candidates, text_key="text", top_n=top_k)
+    if apply_reranker and candidates and reranker and reranker.enabled:
+        reranked_docs = await reranker.rerank(
+            query=query,
+            documents=candidates,
+            text_key="text",
+            top_n=top_k,
+            threshold=0.2,
+            degrade_floor=0.15,
+            apply_mmr=apply_mmr,
+        )
         final_ranked = []
         for cand in reranked_docs:
             score = cand.get("rerank_score", cand["hit"].get("rrf", 0.0))
@@ -238,4 +367,5 @@ async def unified_search(
         "exact_match": exact_route_res,
         "ranked_results": final_ranked,
         "graph_neighbors": graph_neighbors,
+        "out_of_scope_hits": oos_hits,
     }

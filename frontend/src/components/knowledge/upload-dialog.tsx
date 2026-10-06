@@ -39,7 +39,9 @@ type Props = {
   onUploaded: () => void;
 };
 
-const ACCEPTED_EXTENSIONS = ["pdf", "docx", "xlsx", "xls", "csv", "txt", "md", "pptx"];
+// doc/ppt/rtf are converted by LibreOffice on the server; the API rejects them
+// with a clear message if LibreOffice is not installed.
+const ACCEPTED_EXTENSIONS = ["pdf", "docx", "doc", "rtf", "xlsx", "xls", "csv", "txt", "md", "pptx", "ppt"];
 const ACCEPT_STRING = ACCEPTED_EXTENSIONS.map((e) => `.${e}`).join(",");
 
 function getFileExtension(name: string): string {
@@ -69,9 +71,6 @@ function getFileIcon(ext: string): { icon: string; color: string } {
 
 function validateFile(f: File): string | null {
   const ext = getFileExtension(f.name);
-  if (ext === "doc") {
-    return `"${f.name}": Định dạng file .doc cũ không được hỗ trợ. Vui lòng chuyển đổi sang .docx hoặc .pdf trước khi tải lên.`;
-  }
   if (!ext || !ACCEPTED_EXTENSIONS.includes(ext)) {
     return `"${f.name}": Đuôi file ".${ext || "không rõ"}" không được hỗ trợ. Chỉ chấp nhận: ${ACCEPTED_EXTENSIONS.join(", ").toUpperCase()}`;
   }
@@ -305,7 +304,7 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
                       : t("knowledge.upload.dropzone", "Kéo thả tài liệu vào đây hoặc nhấp để duyệt")}
                   </p>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    {t("knowledge.upload.hint", "Chấp nhận: PDF, DOCX, XLSX, CSV, TXT, MD, PPTX (tối đa 50 MB)")}
+                    {t("knowledge.upload.hint", "Chấp nhận: PDF, DOCX, DOC, XLSX, XLS, CSV, TXT, MD, PPTX (tối đa 50 MB)")}
                   </p>
                 </div>
               </div>

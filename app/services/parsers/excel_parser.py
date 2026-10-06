@@ -9,7 +9,6 @@ Extracts data from Excel files (.xlsx, .xls) into:
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any, Optional, Union
 
@@ -17,6 +16,44 @@ import openpyxl
 from loguru import logger
 
 from app.services.parsers.base import BaseParser
+
+
+def _load_sheets(source: Union[bytes, str, Path], file_name: str) -> list[tuple[str, list[tuple]]]:
+    """Return [(sheet_name, rows)] for .xlsx (openpyxl) or legacy .xls (xlrd)."""
+    import io
+
+    if file_name.lower().endswith(".xls"):
+        import xlrd
+
+        book = (
+            xlrd.open_workbook(file_contents=source)
+            if isinstance(source, bytes)
+            else xlrd.open_workbook(str(source))
+        )
+        sheets = []
+        for sh in book.sheets():
+            rows = []
+            for r in range(sh.nrows):
+                row = []
+                for c in range(sh.ncols):
+                    v = sh.cell_value(r, c)
+                    if sh.cell_type(r, c) == xlrd.XL_CELL_EMPTY or v == "":
+                        v = None
+                    elif isinstance(v, float) and v.is_integer():
+                        v = int(v)
+                    row.append(v)
+                rows.append(tuple(row))
+            sheets.append((sh.name, rows))
+        book.release_resources()
+        return sheets
+
+    wb = openpyxl.load_workbook(
+        io.BytesIO(source) if isinstance(source, bytes) else source, data_only=True
+    )
+    try:
+        return [(name, list(wb[name].iter_rows(values_only=True))) for name in wb.sheetnames]
+    finally:
+        wb.close()
 
 
 class ExcelParser(BaseParser):
@@ -34,6 +71,7 @@ class ExcelParser(BaseParser):
     ) -> list[dict[str, Any]]:
         """Parse Excel binary data into page-like sheet markdown records."""
         import io
+
         from app.core.text_normalizer import normalize_text
 
         if engine == "markitdown":
@@ -55,12 +93,9 @@ class ExcelParser(BaseParser):
             except Exception as e:
                 logger.warning(f"ExcelParser: MarkItDown failed for '{file_name}': {e}")
 
-        wb = openpyxl.load_workbook(io.BytesIO(file_data), data_only=True)
         pages: list[dict[str, Any]] = []
 
-        for idx, sheet_name in enumerate(wb.sheetnames, start=1):
-            ws = wb[sheet_name]
-            rows = list(ws.iter_rows(values_only=True))
+        for idx, (sheet_name, rows) in enumerate(_load_sheets(file_data, file_name), start=1):
             if not rows:
                 continue
 
@@ -99,7 +134,6 @@ class ExcelParser(BaseParser):
                 "content": content,
             })
 
-        wb.close()
         if not pages:
             pages = [{"page_number": 1, "content": ""}]
         return pages
@@ -114,17 +148,14 @@ class ExcelParser(BaseParser):
         if not file_path.exists():
             raise FileNotFoundError(f"Excel file not found: {file_path}")
 
-        wb = openpyxl.load_workbook(file_path, data_only=True)
-        sheet_names = wb.sheetnames
+        sheets = _load_sheets(file_path, file_path.name)
+        sheet_names = [name for name, _ in sheets]
 
         sheets_meta: dict[str, Any] = {}
         all_chunks: list[dict[str, Any]] = []
         md_sections: list[str] = [f"# Tài liệu bảng tính: {file_path.name}\n"]
 
-        for sheet_name in sheet_names:
-            ws = wb[sheet_name]
-            rows = list(ws.iter_rows(values_only=True))
-
+        for sheet_name, rows in sheets:
             if not rows:
                 continue
 
@@ -185,8 +216,6 @@ class ExcelParser(BaseParser):
                         "row_index": r_idx,
                         "text": chunk_text,
                     })
-
-        wb.close()
 
         full_markdown = "\n".join(md_sections)
 

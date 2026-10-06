@@ -488,9 +488,11 @@ async def finalize_legal_source(session: AsyncSession, source: Source, tracker: 
 
     if not full_text.strip():
         logger.warning(f"finalize_legal_source: Source {source.id} has empty full_text")
-        source.status = "ready"
-        source.progress = 100
-        source.progress_message = "Văn bản trống, không có nội dung để trích xuất"
+        source.wiki_status = "ready"
+        source.wiki_progress = 100
+        source.wiki_progress_message = "Văn bản trống, không có nội dung để trích xuất"
+        from app.services.source_status import update_source_dual_status
+        await update_source_dual_status(session, source)
         await session.commit()
         return {"status": "ready", "pages_created": 0}
 
@@ -714,14 +716,16 @@ async def finalize_legal_source(session: AsyncSession, source: Source, tracker: 
         except Exception as e:
             logger.warning(f"Failed to regenerate index or log for {scope_type}:{scope_id}: {e}")
 
-    # 5. Mark source as ready
-    source.status = "ready"
-    source.progress = 100
-    source.progress_message = (
+    # 5. Mark wiki branch as ready and update dual status
+    source.wiki_status = "ready"
+    source.wiki_progress = 100
+    source.wiki_progress_message = (
         f"Văn bản luật: Đã bóc tách {total_articles} điều thành {total_pages} trang Wiki ({display_doc_name})"
         if total_articles
         else f"Văn bản luật: Đã tạo {total_pages} trang Wiki"
     )
+    from app.services.source_status import update_source_dual_status
+    await update_source_dual_status(session, source)
     source.auto_recover_count = 0
     await session.commit()
 

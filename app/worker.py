@@ -54,11 +54,16 @@ from app.utils.progress import ProgressTracker  # noqa: E402
 # Ingestion tasks
 # ---------------------------------------------------------------------------
 
-async def check_task_attempt_validity(session, source_id: uuid.UUID, attempt_id_str: Optional[str]) -> bool:
-    """Validate whether the task's attempt_id matches the current source.attempt_id in DB.
+async def check_task_attempt_validity(
+    session, source_id: uuid.UUID, attempt_id_str: Optional[str], branch: Optional[str] = None,
+) -> bool:
+    """Validate whether the task's attempt_id matches the current attempt in DB.
 
     If attempt_id_str is None, it defaults to valid (backward compatibility).
-    If attempt_id_str doesn't match the current source.attempt_id, it is a stale job from an older attempt.
+    branch=None checks source.attempt_id (whole-source jobs). branch="wiki"
+    checks source.wiki_attempt_id, falling back to source.attempt_id while no
+    wiki attempt was started, so retrying branch B invalidates only old
+    branch-B jobs. A mismatch means a stale job from an older attempt.
     """
     if not attempt_id_str:
         return True
@@ -68,9 +73,14 @@ async def check_task_attempt_validity(session, source_id: uuid.UUID, attempt_id_
         return False
     from app.database.models import Source
 
-    curr_attempt = (await session.execute(
-        select(Source.attempt_id).where(Source.id == source_id)
-    )).scalar_one_or_none()
+    row = (await session.execute(
+        select(Source.attempt_id, Source.wiki_attempt_id).where(Source.id == source_id)
+    )).one_or_none()
+    if row is None:
+        return True
+    curr_attempt = row.attempt_id
+    if branch == "wiki" and row.wiki_attempt_id is not None:
+        curr_attempt = row.wiki_attempt_id
     return curr_attempt is None or curr_attempt == expected
 
 
@@ -118,27 +128,291 @@ async def enqueue_post_extraction_pipeline(source_id: str, has_images: bool, att
     return job.job_id if job else None
 
 
-async def finalize_verbatim_source(session, source, tracker) -> dict:
-    """Verbatim path: index raw chunks (no LLM) and mark the source ready.
+from app.services.source_status import (  # noqa: E402  (re-exported for callers/tests)
+    compute_source_dual_status,
+    reset_branches,
+    set_branch_state,
+    start_wiki_attempt,
+    update_source_dual_status,
+    wiki_attempt_of,
+)
 
-    Skips the entire MRP wiki pipeline AND the awaiting_approval token gate —
-    verbatim indexing burns no LLM tokens, so even very long legal documents go
-    straight to ready.
+
+async def finalize_verbatim_source(session, source, tracker) -> dict:
+    """Verbatim path run synchronously (e.g. dept-change re-ingest via MRP task).
+
+    Verbatim sources have no wiki branch, so indexing raw chunks (branch A) is the
+    whole pipeline. Burns no LLM tokens, so even long legal documents go straight
+    to ready without the awaiting_approval gate.
     """
-    from app.services.verbatim_service import index_verbatim_source
+    from app.services.verbatim_service import index_source_chunks
 
     await tracker.update(60, "Indexing verbatim document (no wiki)...")
-    n_chunks = await index_verbatim_source(session, source)
-    source.status = "ready"
-    source.progress = 100
-    source.progress_message = (
-        f"Verbatim: indexed {n_chunks} chunks, no wiki" if n_chunks
-        else "Verbatim: stored, no embedding model (keyword search only)"
+    source.wiki_status = "skipped"
+    source.wiki_progress = 100
+    source.wiki_progress_message = "Skipped (verbatim source)"
+    await set_branch_state(
+        source.id, "chunk", status="processing", progress=60,
+        message="Indexing verbatim chunks...", session=session,
     )
+
+    n_chunks = await index_source_chunks(session, source)
     source.auto_recover_count = 0
-    await session.commit()
+    await set_branch_state(
+        source.id, "chunk", status="ready", progress=100,
+        message=(
+            f"Verbatim: indexed {n_chunks} chunks, no wiki" if n_chunks
+            else "Verbatim: stored, no embedding model (keyword search only)"
+        ),
+        session=session,
+    )
     logger.info(f"Source {source.id} finalized as verbatim ({n_chunks} chunks indexed)")
     return {"status": "ready", "verbatim_chunks": n_chunks}
+
+
+async def commit_and_enqueue_chunk_branch(session, source, attempt_id_str: Optional[str] = None) -> Optional[str]:
+    """Start branch A: new chunk_attempt_id, status queued, commit, then enqueue.
+
+    Committing BEFORE enqueueing guarantees the task sees full_text and the new
+    chunk_attempt_id, and that this session never writes stale chunk_* fields
+    after the task has already finished.
+    """
+    source.chunk_attempt_id = uuid.uuid4()
+    source.chunk_status = "queued"
+    source.chunk_progress = 5
+    source.chunk_progress_message = "Queued: chunk & embed raw text"
+    source.chunk_error_message = None
+    await update_source_dual_status(session, source)
+    await session.commit()
+    pool = await get_arq_pool()
+    job = await pool.enqueue_job(
+        "ingest_source_chunks_task",
+        str(source.id),
+        attempt_id_str or (str(source.attempt_id) if source.attempt_id else None),
+        str(source.chunk_attempt_id),
+    )
+    if job:
+        logger.info(f"Branch A enqueued for source {source.id}: job={job.job_id}")
+    return job.job_id if job else None
+
+
+async def ingest_source_chunks_task(
+    ctx: dict,
+    source_id: str,
+    attempt_id_str: Optional[str] = None,
+    chunk_attempt_id_str: Optional[str] = None,
+):
+    """arq task, branch A: chunk & embed full_text into source_chunk_embeddings_<dim>.
+
+    Runs concurrently with branch B (MRP / legal). Writes only chunk_* fields and
+    recomputes the aggregate status under a row lock.
+    """
+    from app.ai.tracing import flush_langfuse, trace_context
+    from app.database import async_session_factory
+    from app.database.models import Source
+    from app.models.task_failure import record_stage_timing, record_task_failure
+    from app.services.verbatim_service import index_source_chunks
+
+    sid = uuid.UUID(source_id)
+    async with trace_context(
+        "ingest_source_chunks_task",
+        trace_id=f"src_chunk_{source_id}",
+        tags=["dual_pipeline", "chunking"],
+        metadata={"source_id": source_id},
+    ):
+        try:
+            async with async_session_factory() as session:
+                source = await session.get(Source, sid)
+                if not source:
+                    logger.warning(f"ingest_source_chunks_task: source {source_id} not found")
+                    return {"status": "not_found"}
+                if not await check_task_attempt_validity(session, sid, attempt_id_str):
+                    logger.warning(f"ingest_source_chunks_task: source {source_id} attempt {attempt_id_str} is stale, skipping.")
+                    return {"status": "stale"}
+                if chunk_attempt_id_str and str(source.chunk_attempt_id or "") != chunk_attempt_id_str:
+                    logger.warning(f"ingest_source_chunks_task: source {source_id} chunk attempt {chunk_attempt_id_str} superseded, skipping.")
+                    return {"status": "stale"}
+                if not source.full_text:
+                    await set_branch_state(
+                        sid, "chunk", status="error", progress=0,
+                        message="No extracted text to chunk", error="No full_text",
+                        session=session,
+                    )
+                    return {"status": "no_text"}
+
+                await set_branch_state(
+                    sid, "chunk", status="embedding", progress=20,
+                    message="Building chunks with heading hierarchy & embedding...",
+                    session=session,
+                )
+
+                t0 = time.perf_counter()
+                n_chunks = await index_source_chunks(session, source)
+                await record_stage_timing(
+                    session, sid, "source_chunks",
+                    int((time.perf_counter() - t0) * 1000), {"chunks": n_chunks},
+                )
+
+                agg = await set_branch_state(
+                    sid, "chunk", status="ready", progress=100,
+                    message=(
+                        f"Indexed {n_chunks} raw chunks" if n_chunks
+                        else "No embedding model: keyword search only"
+                    ),
+                    session=session,
+                )
+                logger.info(f"ingest_source_chunks_task: source {source_id} indexed {n_chunks} chunks (aggregate={agg})")
+                return {"status": "ready", "chunks": n_chunks}
+        except BaseException as e:
+            logger.error(f"ingest_source_chunks_task failed for {source_id}: {e}")
+            err_msg = (str(e).strip() or type(e).__name__)[:500]
+
+            async def _mark_chunk_error(exc: BaseException = e) -> None:
+                # `e` is unbound once the except block exits; shield() may outlive it.
+                await set_branch_state(
+                    sid, "chunk", status="error", progress=0,
+                    message=f"Chunking error: {err_msg[:200]}", error=err_msg,
+                )
+                async with async_session_factory() as err_session:
+                    await record_task_failure(
+                        session=err_session,
+                        task_name="ingest_source_chunks_task",
+                        error=exc,
+                        source_id=sid,
+                        attempt_id=attempt_id_str,
+                    )
+
+            try:
+                await asyncio.shield(_mark_chunk_error())
+            except Exception:
+                pass
+            raise
+        finally:
+            flush_langfuse()
+
+
+async def backfill_source_chunks_task(ctx: dict, limit: int = 500) -> dict:
+    """arq task: start branch A for sources that have text but no raw chunks.
+
+    Covers sources ingested before the dual pipeline (migration 044 leaves them
+    with chunk_status='pending') and sources whose chunk branch failed. A source
+    whose wiki is ready stays 'ready' while its chunks are being indexed.
+    """
+    from app.database import async_session_factory
+    from app.database.models import Source
+
+    async with async_session_factory() as session:
+        ids = (
+            await session.execute(
+                select(Source.id)
+                .where(
+                    Source.chunk_status.in_(("pending", "error")),
+                    Source.status.in_(("ready", "partial")),
+                    Source.full_text.is_not(None),
+                )
+                .order_by(Source.created_at)
+                .limit(limit)
+            )
+        ).scalars().all()
+
+    enqueued = 0
+    for sid in ids:
+        async with async_session_factory() as session:
+            source = await session.get(Source, sid)
+            if not source or not (source.full_text or "").strip():
+                continue
+            try:
+                await commit_and_enqueue_chunk_branch(session, source)
+                enqueued += 1
+            except Exception as e:
+                logger.warning(f"backfill_source_chunks_task: source {sid} failed to enqueue: {e}")
+    logger.info(f"backfill_source_chunks_task: enqueued branch A for {enqueued}/{len(ids)} sources")
+    return {"candidates": len(ids), "enqueued": enqueued}
+
+
+async def mark_wiki_error(source_id: uuid.UUID, error_msg: str) -> None:
+    """Branch B failed: record it without discarding a healthy branch A."""
+    await set_branch_state(
+        source_id, "wiki", status="error", progress=0,
+        message=f"Wiki error: {error_msg[:200]}", error=error_msg,
+    )
+
+
+async def dispatch_dual_pipeline(
+    session,
+    source,
+    tracker,
+    token_count: int,
+    n_images: int = 0,
+    attempt_id_str: Optional[str] = None,
+) -> dict:
+    """After extraction: start branch A (raw chunks) and branch B (wiki) in parallel.
+
+    Branch A never waits for branch B's approval gate, so raw chunks become
+    searchable as soon as they are embedded.
+    """
+    from app.services.legal_service import finalize_legal_source, is_legal_source
+
+    source_id = str(source.id)
+    attempt = attempt_id_str or (str(source.attempt_id) if source.attempt_id else None)
+
+    # Branch B state first, so the aggregate computed when A is queued is right.
+    if source.preserve_verbatim:
+        source.wiki_status = "skipped"
+        source.wiki_progress = 100
+        source.wiki_progress_message = "Skipped (verbatim source)"
+    else:
+        source.wiki_status = "queued"
+        source.wiki_progress = 50
+        source.wiki_progress_message = "Waiting to compile wiki..."
+        # New branch-B run; committed together with branch A's state below.
+        start_wiki_attempt(source)
+    wiki_attempt = wiki_attempt_of(source)
+
+    # Branch A: commit, then enqueue.
+    await commit_and_enqueue_chunk_branch(session, source, attempt)
+
+    if source.preserve_verbatim:
+        logger.info(f"Source {source_id} is verbatim: branch B skipped")
+        return {"status": source.status, "branch_a": "queued", "branch_b": "skipped"}
+
+    # Branch B: legal documents compile into Điều-level pages without MRP.
+    if await is_legal_source(session, source):
+        await set_branch_state(
+            source.id, "wiki", status="processing", progress=50,
+            message="Parsing legal document articles...", session=session,
+        )
+        try:
+            return await finalize_legal_source(session, source, tracker)
+        except BaseException as e:
+            logger.error(f"Legal compilation failed for {source_id}: {e}")
+            await asyncio.shield(mark_wiki_error(source.id, (str(e) or type(e).__name__)[:500]))
+            raise
+
+    # Branch B: gate large documents behind human approval (A keeps running).
+    threshold = settings.auto_approve_extraction_threshold_tokens
+    if token_count > threshold:
+        agg = await set_branch_state(
+            source.id, "wiki", status="awaiting_approval", progress=55,
+            message=f"Awaiting approval for wiki compilation: {token_count:,} tokens > {threshold:,} threshold",
+            session=session,
+        )
+        logger.info(f"Source {source_id} branch B gated at awaiting_approval ({token_count} tokens); branch A continues")
+        return {"status": agg, "token_count": token_count, "images": n_images}
+
+    # Commit branch B's state BEFORE enqueueing, so a fast-failing MRP task's
+    # wiki error is never overwritten by this 'processing' write.
+    agg = await set_branch_state(
+        source.id, "wiki", status="processing", progress=55,
+        message=f"Captioning {n_images} images before extraction..." if n_images else "Extraction queued...",
+        session=session,
+    )
+    job_id = await enqueue_post_extraction_pipeline(source_id, has_images=bool(n_images), attempt_id_str=wiki_attempt)
+    if job_id:
+        source.job_id = job_id
+        await session.commit()
+    logger.info(f"Source {source_id} dual pipeline running: A=chunks, B={'caption→MRP' if n_images else 'MRP'}")
+    return {"status": agg, "token_count": token_count, "images": n_images}
 
 
 async def ingest_file_task(ctx: dict, source_id: str, attempt_id_str: Optional[str] = None):
@@ -179,6 +453,7 @@ async def ingest_file_task(ctx: dict, source_id: str, attempt_id_str: Optional[s
                 file_name = source.file_name or source.minio_key.split("/")[-1]
 
                 try:
+                    reset_branches(source, wiki_skipped=bool(source.preserve_verbatim))
                     source.status = "processing"
                     source.progress = 0
                     source.progress_message = "Starting processing..."
@@ -262,48 +537,10 @@ async def ingest_file_task(ctx: dict, source_id: str, attempt_id_str: Optional[s
                     await record_stage_timing(session, sid, "outline", out_ms, {"token_count": token_count})
                     await tracker.update(50, f"Outline: {len(source.outline_json or [])} top-level sections, ~{token_count} tokens")
 
-                    # --- Legal Document: parse into Điều-level WikiPages + vector embeddings ---
-                    from app.services.legal_service import is_legal_source, finalize_legal_source
-                    if await is_legal_source(session, source):
-                        return await finalize_legal_source(session, source, tracker)
-
-                    # --- Verbatim: skip MRP + approval gate, index raw chunks, done ---
-                    if source.preserve_verbatim:
-                        return await finalize_verbatim_source(session, source, tracker)
-
-                    # --- Step 6: Gate or auto-proceed ---
-                    threshold = settings.auto_approve_extraction_threshold_tokens
-                    if token_count > threshold:
-                        source.status = "awaiting_approval"
-                        source.progress = 55
-                        source.progress_message = (
-                            f"Awaiting human approval: {token_count:,} tokens > {threshold:,} threshold"
-                        )
-                        await session.commit()
-                        logger.info(
-                            f"Source {source_id} gated at awaiting_approval: {token_count} tokens "
-                            f"({len(images)} images extracted, captioning deferred)"
-                        )
-                        return {"status": "awaiting_approval", "token_count": token_count, "images": len(images)}
-
-                    await tracker.update(55, "Queuing compilation pipeline...")
-                    job_id = await enqueue_post_extraction_pipeline(
-                        source_id,
-                        has_images=bool(images),
-                        attempt_id_str=attempt_id_str or (str(source.attempt_id) if source.attempt_id else None),
+                    return await dispatch_dual_pipeline(
+                        session, source, tracker, token_count,
+                        n_images=len(images), attempt_id_str=attempt_id_str,
                     )
-                    source.status = "processing"
-                    source.progress = 55
-                    source.progress_message = (
-                        f"Captioning {len(images)} images before extraction..." if images
-                        else "Extraction queued..."
-                    )
-                    if job_id:
-                        source.job_id = job_id
-                    await session.commit()
-
-                    logger.info(f"Source {source_id} pre-processing done; next: {'caption→MRP' if images else 'MRP'}")
-                    return {"status": "processing", "token_count": token_count, "images": len(images)}
 
                 except BaseException as e:
                     logger.error(f"Pre-processing failed for {source_id}: {e}")
@@ -312,13 +549,16 @@ async def ingest_file_task(ctx: dict, source_id: str, attempt_id_str: Optional[s
                     error_msg = f"{err_type}: {err_msg}" if err_msg != err_type else err_type
                     progress_msg = f"Error: {error_msg[:200]}"
 
-                    async def _mark_error_file() -> None:
+                    async def _mark_error_file(exc: BaseException = e) -> None:
+                        # `e` is unbound once the except block exits; shield() may outlive it.
                         from app.database import async_session_factory as _sf
                         from app.database.models import Source as _Source
                         from app.models.task_failure import record_task_failure
                         async with _sf() as err_session:
                             src = await err_session.get(_Source, sid)
-                            if src:
+                            if src and src.chunk_status not in (None, "pending"):
+                                await mark_wiki_error(sid, error_msg)
+                            elif src:
                                 src.status = "error"
                                 src.error_message = error_msg
                                 src.progress = 0
@@ -327,7 +567,7 @@ async def ingest_file_task(ctx: dict, source_id: str, attempt_id_str: Optional[s
                             await record_task_failure(
                                 session=err_session,
                                 task_name="ingest_file_task",
-                                error=e,
+                                error=exc,
                                 source_id=sid,
                                 attempt_id=attempt_id_str,
                                 payload={"file_name": file_name} if "file_name" in locals() else None,
@@ -366,6 +606,7 @@ async def ingest_url_task(ctx: dict, source_id: str, attempt_id_str: Optional[st
                     return
 
                 try:
+                    reset_branches(source, wiki_skipped=bool(source.preserve_verbatim))
                     source.status = "processing"
                     source.progress = 0
                     await session.commit()
@@ -400,53 +641,25 @@ async def ingest_url_task(ctx: dict, source_id: str, attempt_id_str: Optional[st
                     out_ms = int((time.perf_counter() - t_out) * 1000)
                     await record_stage_timing(session, sid, "outline", out_ms, {"token_count": token_count})
 
-                    # --- Legal Document: parse into Điều-level WikiPages + vector embeddings ---
-                    from app.services.legal_service import is_legal_source, finalize_legal_source
-                    if await is_legal_source(session, source):
-                        return await finalize_legal_source(session, source, tracker)
-
-                    # --- Verbatim: skip MRP + approval gate, index raw chunks, done ---
-                    if source.preserve_verbatim:
-                        return await finalize_verbatim_source(session, source, tracker)
-
-                    threshold = settings.auto_approve_extraction_threshold_tokens
-                    if token_count > threshold:
-                        source.status = "awaiting_approval"
-                        source.progress = 55
-                        source.progress_message = (
-                            f"Awaiting human approval: {token_count:,} tokens > {threshold:,} threshold"
-                        )
-                        await session.commit()
-                        logger.info(f"URL source {source_id} gated at awaiting_approval: {token_count} tokens")
-                        return {"status": "awaiting_approval", "token_count": token_count}
-
-                    await tracker.update(55, "Queuing compilation pipeline...")
-                    job_id = await enqueue_post_extraction_pipeline(
-                        source_id,
-                        has_images=False,
-                        attempt_id_str=attempt_id_str or (str(source.attempt_id) if source.attempt_id else None),
+                    return await dispatch_dual_pipeline(
+                        session, source, tracker, token_count,
+                        n_images=0, attempt_id_str=attempt_id_str,
                     )
-                    source.status = "processing"
-                    source.progress = 55
-                    source.progress_message = "Extraction queued..."
-                    if job_id:
-                        source.job_id = job_id
-                    await session.commit()
-
-                    logger.info(f"URL source {source_id} pre-processing done, MRP task enqueued: {job_id or 'n/a'}")
-                    return {"status": "processing", "token_count": token_count}
 
                 except BaseException as e:
                     logger.error(f"URL ingestion failed for {source_id}: {e}")
                     error_msg = str(e)[:500]
 
-                    async def _mark_error_url() -> None:
+                    async def _mark_error_url(exc: BaseException = e) -> None:
+                        # `e` is unbound once the except block exits; shield() may outlive it.
                         from app.database import async_session_factory as _sf
                         from app.database.models import Source as _Source
                         from app.models.task_failure import record_task_failure
                         async with _sf() as err_session:
                             src = await err_session.get(_Source, sid)
-                            if src:
+                            if src and src.chunk_status not in (None, "pending"):
+                                await mark_wiki_error(sid, error_msg)
+                            elif src:
                                 src.status = "error"
                                 src.error_message = error_msg
                                 src.progress = 0
@@ -454,7 +667,7 @@ async def ingest_url_task(ctx: dict, source_id: str, attempt_id_str: Optional[st
                             await record_task_failure(
                                 session=err_session,
                                 task_name="ingest_url_task",
-                                error=e,
+                                error=exc,
                                 source_id=sid,
                                 attempt_id=attempt_id_str,
                             )
@@ -787,27 +1000,32 @@ async def reembed_all_pages_task(ctx: dict, job_id: str) -> None:
             job.done_pages = min(offset + len(pages), job.total_pages)
             await session.commit()
 
-    # Re-embed verbatim source chunks against the NEW spec too, so the unified
-    # search pool stays consistent after the flip. Each source re-indexes against
-    # spec.id explicitly (active spec is still the OLD one until the flip below).
+    # Re-embed raw source chunks (branch A: verbatim and regular sources) against
+    # the NEW spec too, so the unified search pool stays consistent after the flip.
+    # Each source re-indexes against spec.id explicitly (active spec is still the
+    # OLD one until the flip below).
     async with async_session_factory() as session:
-        from app.services.verbatim_service import index_verbatim_source
+        from sqlalchemy import or_
 
-        verbatim_sources = (
+        from app.services.verbatim_service import index_source_chunks
+
+        chunk_sources = (
             await session.execute(
                 select(Source).where(
-                    Source.preserve_verbatim.is_(True),
-                    Source.status == "ready",
+                    or_(
+                        Source.chunk_status == "ready",
+                        (Source.preserve_verbatim.is_(True)) & (Source.status == "ready"),
+                    )
                 )
             )
         ).scalars().all()
-        for vs in verbatim_sources:
+        for cs in chunk_sources:
             try:
-                await index_verbatim_source(session, vs, spec_id=spec.id)
+                await index_source_chunks(session, cs, spec_id=spec.id)
             except Exception as e:
-                logger.warning(f"reembed: verbatim source {vs.id} re-index failed: {e}")
-        if verbatim_sources:
-            logger.info(f"reembed: re-indexed {len(verbatim_sources)} verbatim sources")
+                logger.warning(f"reembed: source {cs.id} chunk re-index failed: {e}")
+        if chunk_sources:
+            logger.info(f"reembed: re-indexed raw chunks of {len(chunk_sources)} sources")
 
     # Atomic flip + cleanup of old model's vectors.
     async with async_session_factory() as session:
@@ -859,7 +1077,7 @@ async def ingest_map_reduce_task(ctx: dict, source_id: str, attempt_id_str: Opti
                 if not source:
                     logger.warning(f"Source {source_id} not found, it may have been deleted.")
                     return
-                if not await check_task_attempt_validity(session, sid, attempt_id_str):
+                if not await check_task_attempt_validity(session, sid, attempt_id_str, branch="wiki"):
                     logger.warning(f"ingest_map_reduce_task: source {source_id} attempt {attempt_id_str} is stale, skipping.")
                     return
                 if not source.full_text:
@@ -872,9 +1090,7 @@ async def ingest_map_reduce_task(ctx: dict, source_id: str, attempt_id_str: Opti
                         return await finalize_legal_source(session, source, tracker)
                     except BaseException as e:
                         logger.error(f"Legal indexing failed for {source_id}: {e}")
-                        source.status = "error"
-                        source.error_message = str(e)[:500]
-                        await session.commit()
+                        await asyncio.shield(mark_wiki_error(sid, (str(e) or type(e).__name__)[:500]))
                         raise
 
                 # Verbatim sources never run MRP, regardless of which task enqueued them
@@ -884,16 +1100,17 @@ async def ingest_map_reduce_task(ctx: dict, source_id: str, attempt_id_str: Opti
                         return await finalize_verbatim_source(session, source, tracker)
                     except BaseException as e:
                         logger.error(f"Verbatim indexing failed for {source_id}: {e}")
-                        source.status = "error"
-                        source.error_message = str(e)[:500]
-                        await session.commit()
+                        await asyncio.shield(set_branch_state(
+                            sid, "chunk", status="error", progress=0,
+                            message="Verbatim indexing failed", error=(str(e) or type(e).__name__)[:500],
+                        ))
                         raise
 
                 try:
-                    source.status = "processing"
-                    source.progress = 56
-                    source.progress_message = "Extracting knowledge from document..."
-                    await session.commit()
+                    await set_branch_state(
+                        sid, "wiki", status="mapping", progress=56,
+                        message="Extracting knowledge from document...", session=session,
+                    )
 
                     registry = ProviderRegistry(session)
 
@@ -908,6 +1125,7 @@ async def ingest_map_reduce_task(ctx: dict, source_id: str, attempt_id_str: Opti
                     result = await run_mrp_pipeline(
                         session=session,
                         source=source,
+                        attempt_id_str=attempt_id_str,
                         full_text=source.full_text,
                         tracker=tracker,
                         registry=registry,
@@ -924,11 +1142,11 @@ async def ingest_map_reduce_task(ctx: dict, source_id: str, attempt_id_str: Opti
                     if result.get("status") == "plan_ready":
                         src = await session.get(Source, sid)
                         if src:
-                            src.status = "plan_ready"
-                            src.progress = 80
-                            src.progress_message = "Compilation plan ready — awaiting review"
                             src.auto_recover_count = 0
-                            await session.commit()
+                            await set_branch_state(
+                                sid, "wiki", status="plan_ready", progress=80,
+                                message="Compilation plan ready — awaiting review", session=session,
+                            )
                         logger.info(f"Source {source_id} plan ready: {result.get('plan_id')}")
                     elif result.get("status") == "plan_auto_approved":
                         logger.info(f"Source {source_id} plan auto-approved, refine task enqueued")
@@ -942,22 +1160,16 @@ async def ingest_map_reduce_task(ctx: dict, source_id: str, attempt_id_str: Opti
                     error_msg = str(e)[:500]
                     progress_msg = f"Error: {str(e)[:200]}"
 
-                    async def _mark_error_mr() -> None:
+                    async def _mark_error_mr(exc: BaseException = e) -> None:
+                        # `e` is unbound once the except block exits; shield() may outlive it.
                         from app.database import async_session_factory as _sf
-                        from app.database.models import Source as _Source
                         from app.models.task_failure import record_task_failure
+                        await mark_wiki_error(sid, error_msg)
                         async with _sf() as err_session:
-                            src = await err_session.get(_Source, sid)
-                            if src:
-                                src.status = "error"
-                                src.error_message = error_msg
-                                src.progress = 0
-                                src.progress_message = progress_msg
-                                await err_session.commit()
                             await record_task_failure(
                                 session=err_session,
                                 task_name="ingest_map_reduce_task",
-                                error=e,
+                                error=exc,
                                 source_id=sid,
                                 attempt_id=attempt_id_str,
                             )
@@ -995,17 +1207,17 @@ async def ingest_refine_task(ctx: dict, source_id: str, attempt_id_str: Optional
                 if not source:
                     logger.warning(f"Source {source_id} not found, it may have been deleted.")
                     return
-                if not await check_task_attempt_validity(session, sid, attempt_id_str):
+                if not await check_task_attempt_validity(session, sid, attempt_id_str, branch="wiki"):
                     logger.warning(f"ingest_refine_task: source {source_id} attempt {attempt_id_str} is stale, skipping.")
                     return
                 if not source.full_text:
                     raise ValueError(f"Source {source_id} has no full_text")
 
                 try:
-                    source.status = "processing"
-                    source.progress = 78
-                    source.progress_message = "Writing wiki pages..."
-                    await session.commit()
+                    await set_branch_state(
+                        sid, "wiki", status="refining", progress=78,
+                        message="Writing wiki pages...", session=session,
+                    )
 
                     registry = ProviderRegistry(session)
 
@@ -1048,22 +1260,16 @@ async def ingest_refine_task(ctx: dict, source_id: str, attempt_id_str: Optional
                     error_msg = str(e)[:500]
                     progress_msg = f"Error: {str(e)[:200]}"
 
-                    async def _mark_error_refine() -> None:
+                    async def _mark_error_refine(exc: BaseException = e) -> None:
+                        # `e` is unbound once the except block exits; shield() may outlive it.
                         from app.database import async_session_factory as _sf
-                        from app.database.models import Source as _Source
                         from app.models.task_failure import record_task_failure
+                        await mark_wiki_error(sid, error_msg)
                         async with _sf() as err_session:
-                            src = await err_session.get(_Source, sid)
-                            if src:
-                                src.status = "error"
-                                src.error_message = error_msg
-                                src.progress = 0
-                                src.progress_message = progress_msg
-                                await err_session.commit()
                             await record_task_failure(
                                 session=err_session,
                                 task_name="ingest_refine_task",
-                                error=e,
+                                error=exc,
                                 source_id=sid,
                                 attempt_id=attempt_id_str,
                             )
@@ -1255,9 +1461,11 @@ async def sweep_stuck_processing_cron(ctx: dict):
         if not rows:
             return
 
+        from app.services.source_status import CHUNK_ACTIVE
+        from app.utils.progress import WIKI_ACTIVE
+
         for src in rows:
             src.auto_recover_count = (src.auto_recover_count or 0) + 1
-            src.status = "error"
             attempts = src.auto_recover_count
             cap = settings.max_auto_recover_attempts
             if attempts >= cap:
@@ -1272,7 +1480,19 @@ async def sweep_stuck_processing_cron(ctx: dict):
                     f"Worker died with no progress for >{timeout_sec // 60} min. "
                     f"Press Retry to try again ({attempts}/{cap} auto-recoveries used)."
                 )
-            src.progress_message = src.error_message
+            stuck_chunk = (src.chunk_status or "pending") in CHUNK_ACTIVE
+            stuck_wiki = (src.wiki_status or "pending") in WIKI_ACTIVE
+            if stuck_chunk or stuck_wiki:
+                if stuck_chunk:
+                    src.chunk_status = "error"
+                    src.chunk_error_message = src.error_message
+                if stuck_wiki:
+                    src.wiki_status = "error"
+                    src.wiki_error_message = src.error_message
+                src.status, src.progress, src.progress_message = compute_source_dual_status(src)
+            else:
+                src.status = "error"
+                src.progress_message = src.error_message
 
             from app.models.task_failure import record_task_failure
             await record_task_failure(
@@ -1383,7 +1603,7 @@ async def caption_images_task(ctx: dict, source_id: str, attempt_id_str: Optiona
                 if not source:
                     logger.warning(f"caption_images_task: source {source_id} not found")
                     return
-                if not await check_task_attempt_validity(session, sid, attempt_id_str):
+                if not await check_task_attempt_validity(session, sid, attempt_id_str, branch="wiki"):
                     logger.warning(f"caption_images_task: source {source_id} attempt {attempt_id_str} is stale, skipping.")
                     return
 
@@ -1566,10 +1786,10 @@ async def reassign_source_scope_task(
             except Exception as e:
                 logger.warning(f"regenerate_index failed for scope {st}/{sid_val}: {e}")
 
-        source.status = "processing"
-        source.progress = 5
-        source.progress_message = "Re-queued after scope change..."
-        await session.commit()
+        await set_branch_state(
+            sid, "wiki", status="queued", progress=5,
+            message="Re-queued after scope change...", session=session,
+        )
 
     # Now enqueue ingest_map_reduce_task
     pool = await get_arq_pool()
@@ -1694,6 +1914,8 @@ class WorkerSettings:
     functions = [
         ingest_file_task,
         ingest_url_task,
+        ingest_source_chunks_task,
+        backfill_source_chunks_task,
         arq_func(caption_images_task, timeout=3600),
         ingest_map_reduce_task,
         ingest_refine_task,

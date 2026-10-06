@@ -138,6 +138,25 @@ class Source(Base):
     progress: Mapped[int] = mapped_column(Integer, default=0)
     progress_message: Mapped[Optional[str]] = mapped_column(String(500))
     job_id: Mapped[Optional[str]] = mapped_column(String(200))
+
+    # Dual pipeline branch status tracking (Branch A: Chunking; Branch B: Wiki/Legal)
+    chunk_status: Mapped[str] = mapped_column(
+        String(50), default="pending", server_default="pending",
+        comment="Branch A status: pending | queued | extracting | chunking | embedding | ready | error | skipped",
+    )
+    chunk_progress: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    chunk_progress_message: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    chunk_attempt_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    chunk_error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    wiki_status: Mapped[str] = mapped_column(
+        String(50), default="pending", server_default="pending",
+        comment="Branch B status: pending | queued | mapping | reducing | awaiting_approval | refining | verifying | indexing | ready | error | skipped",
+    )
+    wiki_progress: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    wiki_progress_message: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    wiki_attempt_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    wiki_error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     extracted_token_count: Mapped[Optional[int]] = mapped_column(
         Integer, nullable=True,
         comment="tiktoken cl100k_base count of full_text. Used by upload gate.",

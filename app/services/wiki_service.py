@@ -581,7 +581,7 @@ async def search_pages_hybrid(
     # --- Vector arm ---
     sim = (1 - Emb.embedding.cosine_distance(query_embedding)).label("similarity")
     vec_stmt = (
-        select(WikiPage, Emb.chunk_index, Emb.heading_path, sim)
+        select(WikiPage, Emb.chunk_index, Emb.heading_path, Emb.text, sim)
         .join(Emb, Emb.page_id == WikiPage.id)
         .where(and_(*base_where))
         .order_by(Emb.embedding.cosine_distance(query_embedding))
@@ -595,7 +595,7 @@ async def search_pages_hybrid(
         tsq = _fts_query(query_text)
         tsv = _fts_expr(Emb.__tablename__)
         fts_stmt = (
-            select(WikiPage, Emb.chunk_index, Emb.heading_path)
+            select(WikiPage, Emb.chunk_index, Emb.heading_path, Emb.text)
             .join(Emb, Emb.page_id == WikiPage.id)
             .where(and_(*base_where, tsv.op("@@")(tsq)))
             .order_by(func.ts_rank(tsv, tsq).desc())
@@ -613,8 +613,19 @@ async def search_pages_hybrid(
         top_k=top_k,
         fuse=reciprocal_rank_fusion,
     )
+    chunk_by_key: dict = {}
+    for r in vec_rows:
+        chunk_by_key.setdefault((r[0].id, r[1]), (r[1], r[3]))
+    for r in fts_rows:
+        chunk_by_key.setdefault((r[0].id, r[1]), (r[1], r[3]))
     for res in results:
-        res.pop("_win_key", None)
+        win_info = chunk_by_key.get(res.pop("_win_key", None))
+        if win_info:
+            res["chunk_index"] = win_info[0]
+            res["chunk_text"] = win_info[1]
+        else:
+            res["chunk_index"] = 0
+            res["chunk_text"] = ""
     return results
 
 
@@ -714,8 +725,11 @@ async def search_source_chunks_hybrid(
 
     base_where = [
         Emb.model_spec_id == spec.id,
-        Source.preserve_verbatim.is_(True),
-        Source.status == "ready",
+        or_(
+            Source.chunk_status == "ready",
+            Source.status.in_(["ready", "partial"]),
+            Source.preserve_verbatim.is_(True),
+        ),
     ]
     if allowed_source_ids is not None:
         base_where.append(Source.id.in_([_uuid.UUID(s) for s in allowed_source_ids]))

@@ -9,7 +9,6 @@ Provider-agnostic: uses ProviderRegistry to resolve embedding/LLM/vision
 providers from app_config at runtime.
 """
 
-import asyncio
 import uuid
 from typing import Optional
 
@@ -212,6 +211,30 @@ def _inline_image_markers(pages_data: list[dict], images: list[ImageInfo]) -> No
         page["content"] = (page.get("content") or "") + f"\n\n{joined}\n"
 
 
+async def _load_doc_processing_config() -> dict:
+    """Admin 'Document Processing' settings (DB > .env > defaults) for ingest."""
+    from app.database import async_session_factory
+    from app.services.config_service import ConfigService
+
+    def _bool(v: Optional[str], default: bool) -> bool:
+        return default if v is None else str(v).strip().lower() in ("1", "true", "yes", "on")
+
+    try:
+        async with async_session_factory() as session:
+            cfg = ConfigService(session)
+            return {
+                "pdf_engine": await cfg.get("pdf_parser_engine") or "pymupdf4llm",
+                "excel_engine": await cfg.get("excel_parser_engine") or "openpyxl",
+                "ocr_mode": await cfg.get("ocr_mode") or "auto",
+                "ocr_fallback_vision": _bool(await cfg.get("ocr_fallback_vision"), True),
+                "strip_headers_footers": _bool(await cfg.get("pdf_strip_headers_footers"), True),
+                "enhance_headings": _bool(await cfg.get("pdf_enhance_headings"), True),
+            }
+    except Exception as e:
+        logger.warning(f"Document processing config unavailable, using defaults: {e}")
+        return {}
+
+
 async def _extract_text_from_file(
     file_data: bytes,
     file_name: str,
@@ -227,6 +250,18 @@ async def _extract_text_from_file(
     """
     ext = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
     pages_data: list[dict] = []
+    doc_cfg = await _load_doc_processing_config() if ext in ("pdf", "xlsx", "xls", "doc", "ppt", "rtf") else {}
+    pdf_kwargs = {
+        k: doc_cfg[src]
+        for k, src in (
+            ("engine", "pdf_engine"),
+            ("ocr_mode", "ocr_mode"),
+            ("ocr_fallback_vision", "ocr_fallback_vision"),
+            ("strip_headers_footers", "strip_headers_footers"),
+            ("enhance_headings", "enhance_headings"),
+        )
+        if src in doc_cfg
+    }
 
     if ext == "pdf":
         from app.services.parsers.pdf_parser import PDFParser
@@ -236,6 +271,7 @@ async def _extract_text_from_file(
             file_name=file_name,
             vision_provider=vision_provider,
             tracker=tracker,
+            **pdf_kwargs,
         )
 
 
@@ -248,11 +284,13 @@ async def _extract_text_from_file(
             file_name=file_name,
             vision_provider=vision_provider,
             tracker=tracker,
+            engine=doc_cfg.get("excel_engine", "openpyxl"),
         )
 
     if ext == "csv":
         try:
             import io
+
             import pandas as pd
             df = pd.read_csv(io.BytesIO(file_data))
             md = df.to_markdown(index=False)
@@ -296,6 +334,7 @@ async def _extract_text_from_file(
                     file_name=f"{file_name}.pdf",
                     vision_provider=vision_provider,
                     tracker=tracker,
+                    **pdf_kwargs,
                 )
             except Exception as conv_err:
                 logger.warning(f"LibreOffice conversion failed for '{file_name}': {conv_err}")

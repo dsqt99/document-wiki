@@ -191,11 +191,13 @@ async def run_commit_phase(
     src = await session.get(Source, source.id)
     if src:
         src.pipeline_phase = "commit"
-        src.status = "ready"
-        src.progress = 100
-        src.progress_message = "Done"
-        src.error_message = None
+        src.wiki_status = "ready"
+        src.wiki_progress = 100
+        src.wiki_progress_message = "Done"
+        src.wiki_error_message = None
         src.auto_recover_count = 0
+        from app.services.source_status import update_source_dual_status
+        await update_source_dual_status(session, src)
 
     await session.commit()
 
@@ -258,6 +260,7 @@ async def run_mrp_pipeline(
     kt_slug: Optional[str],
     kt_name: Optional[str],
     kt_desc: Optional[str],
+    attempt_id_str: Optional[str] = None,
 ) -> dict:
     """
     Orchestrate Phase 0 (Triage) → Phase 1 (MAP) → Phase 2 (REDUCE).
@@ -280,7 +283,7 @@ async def run_mrp_pipeline(
         if plan and plan.status in ("pending_review", "approved"):
             logger.info(f"MRP: source={source_id} already at plan_review, skipping MAP+REDUCE")
             if plan.status == "approved" or settings.mrp_auto_approve_plan:
-                return await _auto_trigger_refine(source_id, plan)
+                return await _auto_trigger_refine(source_id, plan, attempt_id_str)
             return {"status": "plan_ready", "plan_id": str(plan.id)}
 
     if current_phase in ("refine", "verify", "commit"):
@@ -328,12 +331,12 @@ async def run_mrp_pipeline(
     await tracker.update(80, "Compilation plan ready")
 
     if settings.mrp_auto_approve_plan:
-        return await _auto_trigger_refine(source_id, plan)
+        return await _auto_trigger_refine(source_id, plan, attempt_id_str)
 
     return {"status": "plan_ready", "plan_id": str(plan.id)}
 
 
-async def _auto_trigger_refine(source_id: uuid.UUID, plan) -> dict:
+async def _auto_trigger_refine(source_id: uuid.UUID, plan, attempt_id_str: Optional[str] = None) -> dict:
     """Auto-approve plan and enqueue ingest_refine_task."""
     from datetime import datetime, timezone
 
@@ -342,7 +345,6 @@ async def _auto_trigger_refine(source_id: uuid.UUID, plan) -> dict:
     # Mark plan as approved
     try:
         from app.database import async_session_factory
-        attempt_id_str = None
         async with async_session_factory() as sess:
             from app.database.models import Source, SourceCompilationPlan
             p = await sess.get(SourceCompilationPlan, plan.id)
@@ -352,10 +354,13 @@ async def _auto_trigger_refine(source_id: uuid.UUID, plan) -> dict:
                 p.reviewed_at = datetime.now(timezone.utc)
             src = await sess.get(Source, source_id)
             if src:
-                src.status = "processing"
-                src.progress_message = "Plan approved — compiling wiki pages..."
-                if src.attempt_id:
-                    attempt_id_str = str(src.attempt_id)
+                src.wiki_status = "refining"
+                src.wiki_progress_message = "Plan approved — compiling wiki pages..."
+                from app.services.source_status import update_source_dual_status
+                await update_source_dual_status(sess, src)
+                if not attempt_id_str:
+                    from app.services.source_status import wiki_attempt_of
+                    attempt_id_str = wiki_attempt_of(src)
             await sess.commit()
     except Exception as exc:
         logger.warning(f"MRP auto-approve state update failed: {exc}")

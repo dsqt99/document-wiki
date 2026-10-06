@@ -78,6 +78,15 @@ class SourceResponse(BaseModel):
     scope_type: str = "global"
     scope_id: Optional[uuid.UUID] = None
     preserve_verbatim: bool = False
+    # Dual pipeline: branch A (raw chunks) and branch B (wiki)
+    chunk_status: str = "pending"
+    chunk_progress: int = 0
+    chunk_progress_message: Optional[str] = None
+    chunk_error_message: Optional[str] = None
+    wiki_status: str = "pending"
+    wiki_progress: int = 0
+    wiki_progress_message: Optional[str] = None
+    wiki_error_message: Optional[str] = None
     created_at: str
     updated_at: str
 
@@ -158,6 +167,14 @@ def _to_response(source: Source, wiki_page_count: int = 0, image_count: int = 0)
         scope_type=source.scope_type or "global",
         scope_id=source.scope_id,
         preserve_verbatim=bool(source.preserve_verbatim),
+        chunk_status=source.chunk_status or "pending",
+        chunk_progress=source.chunk_progress or 0,
+        chunk_progress_message=source.chunk_progress_message,
+        chunk_error_message=source.chunk_error_message,
+        wiki_status=source.wiki_status or "pending",
+        wiki_progress=source.wiki_progress or 0,
+        wiki_progress_message=source.wiki_progress_message,
+        wiki_error_message=source.wiki_error_message,
         created_at=source.created_at.isoformat(),
         updated_at=source.updated_at.isoformat(),
     )
@@ -625,18 +642,22 @@ async def upload_source(
 ):
     file_name = file.filename or "unknown"
     ext = (file_name.rsplit(".", 1)[-1] if "." in file_name else "").lower()
-    if ext == "doc":
-        raise HTTPException(
-            400,
-            "Định dạng file .doc (Word 97-2003) không được hỗ trợ. "
-            "Vui lòng chuyển đổi file sang định dạng .docx hoặc .pdf trước khi tải lên.",
-        )
+    if ext in ("doc", "ppt", "rtf"):
+        # Legacy formats are converted to PDF by LibreOffice during ingest.
+        from app.services.parsers.libreoffice_converter import libreoffice_converter
+        if not libreoffice_converter.is_available():
+            raise HTTPException(
+                400,
+                f"Định dạng file .{ext} cần LibreOffice để chuyển đổi nhưng máy chủ chưa cài đặt. "
+                "Vui lòng chuyển đổi file sang định dạng .docx hoặc .pdf trước khi tải lên.",
+            )
 
-    # Stream-read file in 64KB chunks to calculate SHA-256 and enforce size limit
+    # Stream-read file in 64KB chunks to calculate SHA-256 and enforce size limit.
+    # The body is never held in memory: Starlette already spools it to a temp
+    # file, which is rewound and streamed to MinIO below.
     CHUNK_SIZE = 64 * 1024
-    MAX_UPLOAD_SIZE = getattr(settings, "max_upload_size_bytes", 100 * 1024 * 1024)
+    MAX_UPLOAD_SIZE = settings.max_upload_size_bytes
     hasher = hashlib.sha256()
-    chunks = []
     total_size = 0
 
     while True:
@@ -650,10 +671,8 @@ async def upload_source(
                 f"File tải lên vượt quá giới hạn dung lượng ({MAX_UPLOAD_SIZE // (1024 * 1024)}MB).",
             )
         hasher.update(chunk)
-        chunks.append(chunk)
 
     content_hash = hasher.hexdigest()
-    file_data = b"".join(chunks)
 
     # Check for duplicate non-error source by content_hash
     existing = (await db.execute(
@@ -693,7 +712,7 @@ async def upload_source(
         title=title or file.filename,
         source_type="file",
         file_name=file_name,
-        file_size=len(file_data),
+        file_size=total_size,
         content_hash=content_hash,
         attempt_id=uuid.uuid4(),
         status="pending",
@@ -721,9 +740,11 @@ async def upload_source(
     from app.services.kb_service import _guess_content_type
     from app.services.storage_service import storage_service
     minio_key = f"sources/{source.id}/original/{file_name}"
-    storage_service.upload_file(
+    await file.seek(0)
+    await storage_service.upload_stream_async(
         object_name=minio_key,
-        data=file_data,
+        stream=file.file,
+        length=total_size,
         content_type=_guess_content_type(file_name),
     )
     source.minio_key = minio_key
@@ -875,11 +896,14 @@ async def update_source(
     # If document was already ready, changing scope requires cleaning up old wiki pages
     # and re-compiling into the new scope. We delegate this to the background worker
     # so the API responds in <100ms and NEVER times out!
-    if scope_changed and source.status == "ready" and not source.preserve_verbatim:
-        source.status = "processing"
-        source.progress = 0
-        source.progress_message = "Re-queued scope reassignment..."
+    if scope_changed and source.status in ("ready", "partial") and not source.preserve_verbatim:
+        from app.services.source_status import update_source_dual_status
+        source.wiki_status = "queued"
+        source.wiki_progress = 0
+        source.wiki_progress_message = "Re-queued scope reassignment..."
+        source.wiki_error_message = None
         source.error_message = None
+        await update_source_dual_status(db, source)
         await db.flush()
 
         old_scopes_serialized = [
@@ -907,14 +931,21 @@ async def update_source(
 @router.post("/sources/{source_id}/retry", response_model=SourceResponse)
 async def retry_source(
     source_id: uuid.UUID,
+    branch: Optional[str] = Query(
+        None,
+        pattern="^(chunk|wiki|all)$",
+        description="chunk = re-run raw chunk indexing only; wiki = re-run wiki "
+        "compilation only; all = re-extract and run both. Default: failed branch(es).",
+    ),
     db: AsyncSession = Depends(get_db),
     _user: Employee = require_permission("doc:edit"),
 ):
     """
     Retry ingestion for a source whose previous attempt failed.
 
-    Only allowed when the source is in `error` status — successful sources
-    cannot be re-ingested.
+    Allowed for `error`, `partial` (one branch failed) and `plan_ready`.
+    With the dual pipeline only the failed branch is re-run by default, so a
+    healthy branch (e.g. raw chunks already searchable) is not redone.
     """
     source = (await db.execute(
         select(Source)
@@ -923,7 +954,7 @@ async def retry_source(
     )).scalar_one_or_none()
     if not source:
         raise HTTPException(status_code=404, detail="Source not found")
-    allowed_statuses = ("error", "plan_ready")
+    allowed_statuses = ("error", "partial", "plan_ready")
     if source.status not in allowed_statuses:
         raise HTTPException(
             status_code=400,
@@ -947,26 +978,62 @@ async def retry_source(
     if source.source_type == "file" and not source.minio_key:
         raise HTTPException(status_code=400, detail="Source file not found in storage")
 
+    from app.services.source_status import start_wiki_attempt, update_source_dual_status
+    from app.worker import commit_and_enqueue_chunk_branch
+
     prev_status = source.status
-    source.status = "pending"
-    source.progress = 0
-    source.progress_message = "Queued for retry..."
-    source.error_message = None
-    await db.flush()
+    has_text = bool((source.full_text or "").strip())
+    chunk_failed = source.chunk_status == "error"
+    wiki_failed = source.wiki_status == "error" or prev_status == "plan_ready"
+    legacy = (source.chunk_status or "pending") == "pending" and (source.wiki_status or "pending") == "pending"
+
+    if branch is None:
+        if not has_text or legacy or (not chunk_failed and not wiki_failed):
+            branch = "all"
+        elif chunk_failed and wiki_failed:
+            branch = "both"
+        else:
+            branch = "chunk" if chunk_failed else "wiki"
+    if branch in ("chunk", "wiki", "both") and not has_text:
+        raise HTTPException(status_code=400, detail="Source has no extracted text; retry with branch=all")
+    if branch in ("wiki", "both") and source.preserve_verbatim:
+        branch = "chunk"
 
     pool = await get_arq_pool()
-    # Route to the right task based on pipeline phase and previous status
-    pipeline_phase = source.pipeline_phase
-    if pipeline_phase in ("refine", "verify", "commit"):
-        task_name = "ingest_refine_task"
-    elif pipeline_phase in ("map", "reduce", "plan_review") or prev_status == "plan_ready":
-        task_name = "ingest_map_reduce_task"
-    else:
+    attempt = str(source.attempt_id) if source.attempt_id else None
+    job = None
+    source.error_message = None
+
+    if branch == "all":
+        # Fresh attempt: every queued job of the previous run becomes stale.
+        source.attempt_id = uuid.uuid4()
+        attempt = str(source.attempt_id)
+        source.status = "pending"
+        source.progress = 0
+        source.progress_message = "Queued for retry..."
+        await db.flush()
         task_name = "ingest_url_task" if source.source_type == "url" else "ingest_file_task"
-    retry_args = [str(source_id)]
-    if source.attempt_id:
-        retry_args.append(str(source.attempt_id))
-    job = await pool.enqueue_job(task_name, *retry_args)
+        job = await pool.enqueue_job(task_name, *([str(source_id)] + ([attempt] if attempt else [])))
+    else:
+        if branch in ("chunk", "both"):
+            await commit_and_enqueue_chunk_branch(db, source, attempt)
+        if branch in ("wiki", "both"):
+            pipeline_phase = source.pipeline_phase
+            if pipeline_phase in ("refine", "verify", "commit"):
+                task_name = "ingest_refine_task"
+            else:
+                # map/reduce/plan_review, a plan_ready re-plan, or a failure before
+                # MAP started (legal/gate): text is already extracted, restart at MAP.
+                task_name = "ingest_map_reduce_task"
+            source.wiki_status = "queued"
+            source.wiki_progress = 0
+            source.wiki_progress_message = "Queued for retry..."
+            source.wiki_error_message = None
+            # Only old branch-B jobs become stale; a running chunk branch continues.
+            wiki_attempt = start_wiki_attempt(source)
+            await update_source_dual_status(db, source)
+            await db.commit()
+            job = await pool.enqueue_job(task_name, str(source_id), wiki_attempt)
 
     if job:
         source.job_id = job.job_id
@@ -1042,12 +1109,13 @@ async def approve_extraction(
     decides to spend AI tokens on it. Enqueues caption_images_task (if images
     exist) or ingest_map_reduce_task directly.
     """
+    from app.services.source_status import wiki_attempt_of
     from app.worker import enqueue_post_extraction_pipeline
 
     source = await db.get(Source, source_id)
     if not source:
         raise HTTPException(404, "Source not found")
-    if source.status != "awaiting_approval":
+    if source.status != "awaiting_approval" and source.wiki_status != "awaiting_approval":
         raise HTTPException(
             400,
             f"Source is not awaiting approval (status={source.status})",
@@ -1057,15 +1125,17 @@ async def approve_extraction(
     job_id = await enqueue_post_extraction_pipeline(
         str(source_id),
         has_images=has_images,
-        attempt_id_str=str(source.attempt_id) if source.attempt_id else None,
+        attempt_id_str=wiki_attempt_of(source),
     )
 
-    source.status = "processing"
-    source.progress = 56
-    source.progress_message = (
+    from app.services.source_status import update_source_dual_status
+    source.wiki_status = "processing"
+    source.wiki_progress = 56
+    source.wiki_progress_message = (
         "Captioning images before extraction..." if has_images
         else "Extraction queued..."
     )
+    await update_source_dual_status(db, source)
     if job_id:
         source.job_id = job_id
 
@@ -1118,16 +1188,20 @@ async def approve_compilation_plan(
 
     source = await db.get(Source, source_id)
     if source:
-        source.status = "processing"
-        source.progress = 78
-        source.progress_message = "Plan approved — compiling wiki pages..."
+        from app.services.source_status import update_source_dual_status
+        source.wiki_status = "refining"
+        source.wiki_progress = 78
+        source.wiki_progress_message = "Plan approved — compiling wiki pages..."
+        await update_source_dual_status(db, source)
 
     await db.flush()
 
     pool = await get_arq_pool()
     refine_args = [str(source_id)]
-    if source and source.attempt_id:
-        refine_args.append(str(source.attempt_id))
+    if source:
+        from app.services.source_status import wiki_attempt_of
+        if wiki_attempt := wiki_attempt_of(source):
+            refine_args.append(wiki_attempt)
     job = await pool.enqueue_job("ingest_refine_task", *refine_args)
 
     if job and source:
@@ -1225,8 +1299,11 @@ async def reject_compilation_plan(
 
     source = await db.get(Source, source_id)
     if source:
-        source.status = "error"
-        source.error_message = f"Compilation plan rejected: {body.note}"
+        from app.services.source_status import update_source_dual_status
+        source.wiki_status = "error"
+        source.wiki_error_message = f"Compilation plan rejected: {body.note}"
+        source.error_message = source.wiki_error_message
+        await update_source_dual_status(db, source)
 
     await db.commit()
     logger.info(f"Plan rejected for source {source_id} by user {user.id}: {body.note}")

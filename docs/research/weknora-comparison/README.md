@@ -14,6 +14,7 @@
 | [05-bug-va-van-hanh.md](05-bug-va-van-hanh.md) | Bug P0/P1, bài học vận hành từ WeKnora (idempotency, dead-letter, span) | Sửa lỗi ngay |
 | [06-lo-trinh-trien-khai.md](06-lo-trinh-trien-khai.md) | Backlog theo sprint, checklist, tiêu chí nghiệm thu, rủi ro | Lập kế hoạch |
 | [07-ban-do-ma-nguon-weknora.md](07-ban-do-ma-nguon-weknora.md) | Bản đồ file WeKnora cần đọc theo từng chủ đề | Nghiên cứu sâu |
+| [08-tien-do-trien-khai.md](08-tien-do-trien-khai.md) | Tiến độ: 43 commit đã làm + dual pipeline & đầu vào tài liệu (phiên này) + khoảng trống còn lại | Theo dõi triển khai |
 
 ## Kết luận một đoạn
 
