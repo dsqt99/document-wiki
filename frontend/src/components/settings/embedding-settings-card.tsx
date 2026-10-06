@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
+import { CustomModelForm, deleteCustomModel, saveCustomModelKey } from "./custom-model-form";
 
 type EmbeddingSpec = {
   id: string;
@@ -15,6 +16,9 @@ type EmbeddingSpec = {
   cost_per_1m_tokens: number | null;
   notes: string | null;
   api_key_configured: boolean;
+  api_key_config_key: string | null;
+  custom: boolean;
+  base_url: string | null;
 };
 
 type CatalogResp = {
@@ -49,6 +53,9 @@ export function EmbeddingSettingsCard() {
   const [apiKey, setApiKey] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [backfilling, setBackfilling] = useState(false);
+  const [backfillQueued, setBackfillQueued] = useState(false);
+  const [adding, setAdding] = useState(false);
 
   useEffect(() => {
     void refresh();
@@ -57,8 +64,10 @@ export function EmbeddingSettingsCard() {
   // When the user picks a different model, prefill the input with that
   // provider's masked key (or empty if none).
   useEffect(() => {
-    const provider = catalog?.specs.find((s) => s.id === selected)?.provider;
-    setApiKey(provider ? maskedKeys[provider] ?? "" : "");
+    const spec = catalog?.specs.find((s) => s.id === selected);
+    if (!spec) setApiKey("");
+    else if (spec.custom) setApiKey(spec.api_key_configured ? "••••••••" : "");
+    else setApiKey(maskedKeys[spec.provider] ?? "");
   }, [selected, maskedKeys, catalog]);
 
   // Poll active job every 2s while one is running.
@@ -81,7 +90,7 @@ export function EmbeddingSettingsCard() {
       ]);
       setCatalog(c);
       setStatus(s);
-      setSelected((prev) => prev ?? c.active_spec_id);
+      setSelected((prev) => (prev && c.specs.some((x) => x.id === prev) ? prev : c.active_spec_id));
 
       // Extract masked embedding API keys from the general settings payload.
       // Keys follow the convention `embedding_api_key__<provider>`.
@@ -110,7 +119,7 @@ export function EmbeddingSettingsCard() {
   const canSave =
     !!selectedSpec &&
     !jobBusy &&
-    (hasNewKey || (willSwitch && selectedSpec.api_key_configured));
+    (hasNewKey || (willSwitch && (selectedSpec.custom || selectedSpec.api_key_configured)));
 
   async function handleSave() {
     if (!selectedSpec) return;
@@ -118,7 +127,9 @@ export function EmbeddingSettingsCard() {
     setError("");
     try {
       // 1. Save API key for this provider only if user typed a new one.
-      if (hasNewKey) {
+      if (hasNewKey && selectedSpec.custom) {
+        await saveCustomModelKey("embedding", selectedSpec, apiKey.trim());
+      } else if (hasNewKey) {
         await api("/api/settings", {
           method: "PUT",
           body: {
@@ -140,6 +151,36 @@ export function EmbeddingSettingsCard() {
       setError(e instanceof Error ? e.message : "Save failed");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleBackfill() {
+    setBackfilling(true);
+    setError("");
+    setBackfillQueued(false);
+    try {
+      // Returns {job_id}; the worker enqueues the per-source chunk jobs.
+      await api<{ job_id: string }>(
+        "/api/settings/embeddings/backfill-source-chunks?limit=500",
+        { method: "POST" },
+      );
+      setBackfillQueued(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Backfill failed");
+    } finally {
+      setBackfilling(false);
+    }
+  }
+
+  async function handleDelete(spec: EmbeddingSpec) {
+    if (!confirm(`Xóa model "${spec.label}"?`)) return;
+    setError("");
+    try {
+      await deleteCustomModel("embedding", spec.id);
+      if (selected === spec.id) setSelected(null);
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Delete failed");
     }
   }
 
@@ -177,7 +218,29 @@ export function EmbeddingSettingsCard() {
             {t("settings.embeddingDesc", "Choose a model and save its API key.")}
           </p>
         </div>
+        {!adding && (
+          <button
+            onClick={() => setAdding(true)}
+            disabled={!!jobBusy}
+            className="flex items-center gap-1 border border-border px-2.5 py-1.5 rounded-lg text-xs font-medium hover:bg-muted disabled:opacity-50"
+          >
+            <span className="material-symbols-outlined text-sm">add</span>
+            Thêm model
+          </button>
+        )}
       </div>
+
+      {adding && (
+        <CustomModelForm
+          kind="embedding"
+          onCancel={() => setAdding(false)}
+          onSaved={async (id) => {
+            setAdding(false);
+            setSelected(id);
+            await refresh();
+          }}
+        />
+      )}
 
       {/* Job progress */}
       {jobBusy && (
@@ -229,12 +292,35 @@ export function EmbeddingSettingsCard() {
                 onChange={() => setSelected(spec.id)}
                 disabled={!!jobBusy}
               />
-              <span className="text-sm font-medium flex-1">{spec.model_id}</span>
-              <span className="text-xs text-muted-foreground">{spec.provider}</span>
+              <span className="text-sm font-medium flex-1 min-w-0">
+                {spec.custom ? spec.label : spec.model_id}
+                {spec.custom && (
+                  <span className="block text-[11px] font-normal text-muted-foreground font-mono break-all">
+                    {spec.model_id} · {spec.base_url}
+                  </span>
+                )}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {spec.custom ? `Tự thêm · ${spec.dimension}d` : spec.provider}
+              </span>
               {isActive && (
                 <span className="text-[10px] uppercase tracking-wide bg-green-500/15 text-green-700 dark:text-green-400 px-1.5 py-0.5 rounded">
                   {t("settings.active", "Active")}
                 </span>
+              )}
+              {spec.custom && !isActive && (
+                <button
+                  type="button"
+                  disabled={!!jobBusy}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    void handleDelete(spec);
+                  }}
+                  title="Xóa model"
+                  className="text-muted-foreground hover:text-destructive disabled:opacity-50"
+                >
+                  <span className="material-symbols-outlined text-base">delete</span>
+                </button>
               )}
             </label>
           );
@@ -245,7 +331,7 @@ export function EmbeddingSettingsCard() {
       {selectedSpec && (
         <div className="mb-4 flex flex-col gap-1.5">
           <Label className="text-xs">
-            {t("settings.apiKeyFor", "API key for")} {selectedSpec.provider}
+            {t("settings.apiKeyFor", "API key for")} {selectedSpec.custom ? selectedSpec.label : selectedSpec.provider}
             {selectedSpec.api_key_configured && (
               <span className="ml-2 text-green-600 dark:text-green-400">
                 {t("settings.apiKeySaved", "✓ saved")}
@@ -278,7 +364,25 @@ export function EmbeddingSettingsCard() {
         >
           {saving ? t("settings.saving", "Saving…") : t("common.save", "Save")}
         </button>
-        {error && <p className="text-xs text-destructive">{error}</p>}
+        <button
+          disabled={backfilling || !!jobBusy}
+          onClick={handleBackfill}
+          title={t(
+            "settings.backfillChunksHint",
+            "Index raw chunks for documents uploaded before the dual pipeline",
+          )}
+          className="border border-border px-4 py-2 rounded-lg text-sm font-medium hover:bg-muted disabled:opacity-50"
+        >
+          {backfilling
+            ? t("settings.backfillingChunks", "Queuing…")
+            : t("settings.backfillChunks", "Backfill raw chunks")}
+        </button>
+        {backfillQueued && (
+          <p className="text-xs text-muted-foreground">
+            {t("settings.backfillQueued", "Backfill job queued")}
+          </p>
+        )}
+        {error &&<p className="text-xs text-destructive">{error}</p>}
       </div>
     </div>
   );

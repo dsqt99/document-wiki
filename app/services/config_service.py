@@ -32,7 +32,8 @@ def _is_sensitive(key: str) -> bool:
             "embedding_api_key", "llm_api_key", "vision_api_key", "ocr_api_key",
             "smtp_password", "webhook_secret",
         }
-        or key.startswith("embedding_api_key__")  # per-provider keys
+        or key.startswith(("embedding_api_key__", "llm_api_key__", "vision_api_key__"))  # per-provider keys
+        or key.startswith("custom_model_api_key__")  # admin-added models
     )
 
 
@@ -50,6 +51,14 @@ SENSITIVE_KEYS = frozenset({
 ACTIVE_EMBEDDING_MODEL_KEY = "active_embedding_model_spec_id"
 ACTIVE_LLM_MODEL_KEY = "active_llm_model_spec_id"
 ACTIVE_VISION_MODEL_KEY = "active_vision_model_spec_id"
+
+def llm_api_key_for(provider: str) -> str:
+    return f"llm_api_key__{provider}"
+
+
+def vision_api_key_for(provider: str) -> str:
+    return f"vision_api_key__{provider}"
+
 
 # Per-provider embedding API keys: `embedding_api_key__<provider>`. We store
 # one key per provider so admins can switch provider without losing the
@@ -86,12 +95,16 @@ ALL_CONFIG_KEYS = [
 
     # --- LLM (catalog-driven; old llm_provider/llm_model_id kept readable below) ---
     ACTIVE_LLM_MODEL_KEY,        # canonical spec_id from LLM_CATALOG
-    "llm_api_key",               # Provider API key
+    "llm_api_key__openai",       # per-provider keys for the presets
+    "llm_api_key__anthropic",
+    "llm_api_key",               # legacy single key (fallback for any provider)
     "llm_base_url",              # Custom endpoint
 
     # --- Vision (catalog-driven; old vision_provider/vision_model_id kept below) ---
     ACTIVE_VISION_MODEL_KEY,     # canonical spec_id from VISION_CATALOG
-    "vision_api_key",            # Provider API key (or empty = same as embedding)
+    "vision_api_key__openai",
+    "vision_api_key__anthropic",
+    "vision_api_key",            # legacy single key (fallback for any provider)
     "vision_base_url",           # Custom endpoint
 
     # --- Dedicated OCR Service ---

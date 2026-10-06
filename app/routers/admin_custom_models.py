@@ -1,0 +1,309 @@
+"""
+Admin-added models ("Thêm model") and OCR model selection.
+
+Endpoints:
+  GET    /api/settings/custom-models?kind=      — list admin-added models
+  POST   /api/settings/custom-models            — add / update one (base URL + model name)
+  DELETE /api/settings/custom-models?kind=&id=  — remove one (refused while active)
+  GET    /api/settings/ocr/catalog              — OCR presets + custom OCR models
+  POST   /api/settings/ocr/select               — make one the OCR model
+
+The OCR service reads the flat keys ocr_base_url / ocr_model / ocr_api_key;
+selecting a model writes those, so ocr_service needs no changes.
+"""
+
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.ai.custom_models import (
+    EMBEDDING_DIMENSIONS,
+    KINDS,
+    MAX_MODEL_ID_LEN,
+    PROTOCOLS,
+    CustomModel,
+    delete_custom,
+    get_api_key,
+    get_custom,
+    is_custom,
+    list_custom,
+    make_id,
+    save_custom,
+)
+from app.database import get_db
+from app.database.models import Employee
+from app.services.audit_service import log_audit
+from app.services.auth_service import require_permission
+
+router = APIRouter()
+
+OCR_MODEL_SPEC_KEY = "ocr_model_spec_id"
+
+# OCR goes through an OpenAI-compatible chat endpoint (ocr_service), so the
+# Claude preset uses Anthropic's OpenAI-compatible base URL.
+OCR_PRESETS: dict[str, dict] = {
+    "openai/gpt-6-luna": {
+        "provider": "openai",
+        "label": "GPT-6 Luna",
+        "base_url": "https://api.openai.com/v1",
+        "model_id": "gpt-6-luna",
+    },
+    "anthropic/claude-sonnet-5-5": {
+        "provider": "anthropic",
+        "label": "Claude Sonnet 5.5",
+        "base_url": "https://api.anthropic.com/v1/",
+        "model_id": "claude-sonnet-5-5",
+    },
+}
+
+
+# ---------------------------------------------------------------------------
+# Schemas
+# ---------------------------------------------------------------------------
+
+class CustomModelOut(BaseModel):
+    id: str
+    kind: str
+    model_id: str
+    label: str
+    base_url: str
+    protocol: str
+    dimension: Optional[int]
+    api_key_configured: bool
+
+
+class CustomModelIn(BaseModel):
+    kind: str
+    model_id: str
+    base_url: str
+    label: Optional[str] = None
+    protocol: str = "openai"
+    dimension: Optional[int] = None
+    # None or a masked value ("••••…") keeps the stored key.
+    api_key: Optional[str] = None
+
+
+class OcrModelOut(BaseModel):
+    id: str
+    provider: str
+    label: str
+    base_url: str
+    model_id: str
+    custom: bool
+    api_key_configured: bool
+
+
+class OcrCatalogOut(BaseModel):
+    active_spec_id: Optional[str]
+    specs: list[OcrModelOut]
+
+
+class OcrSelectBody(BaseModel):
+    model_spec_id: str
+    api_key: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+async def _to_out(db: AsyncSession, m: CustomModel) -> CustomModelOut:
+    return CustomModelOut(
+        id=m.id, kind=m.kind, model_id=m.model_id, label=m.label,
+        base_url=m.base_url, protocol=m.protocol, dimension=m.dimension,
+        api_key_configured=bool(await get_api_key(db, m.kind, m.id)),
+    )
+
+
+def _new_key(api_key: Optional[str]) -> Optional[str]:
+    if api_key is None or api_key.startswith("••••"):
+        return None
+    return api_key.strip()
+
+
+async def _active_ids(db: AsyncSession) -> dict[str, Optional[str]]:
+    from app.services.config_service import (
+        ACTIVE_EMBEDDING_MODEL_KEY,
+        ACTIVE_LLM_MODEL_KEY,
+        ACTIVE_VISION_MODEL_KEY,
+        ConfigService,
+    )
+
+    svc = ConfigService(db)
+    return {
+        "llm": await svc.get(ACTIVE_LLM_MODEL_KEY),
+        "vision": await svc.get(ACTIVE_VISION_MODEL_KEY),
+        "embedding": await svc.get(ACTIVE_EMBEDDING_MODEL_KEY),
+        "ocr": await svc.get(OCR_MODEL_SPEC_KEY),
+    }
+
+
+async def _apply_ocr(db: AsyncSession, spec_id: str, api_key: Optional[str]) -> None:
+    """Write the flat ocr_* keys ocr_service reads."""
+    from app.services.config_service import ConfigService, vision_api_key_for
+
+    svc = ConfigService(db)
+    if is_custom(spec_id):
+        m = await get_custom(db, "ocr", spec_id)
+        if m is None:
+            raise HTTPException(status_code=400, detail=f"Unknown OCR model {spec_id!r}")
+        base_url, model_id = m.base_url, m.model_id
+        key = await get_api_key(db, "ocr", spec_id) or "none"
+    else:
+        preset = OCR_PRESETS.get(spec_id)
+        if preset is None:
+            raise HTTPException(status_code=400, detail=f"Unknown OCR model {spec_id!r}")
+        base_url, model_id = preset["base_url"], preset["model_id"]
+        # A typed key wins; otherwise reuse the vision key of the same provider.
+        key = api_key or await svc.get(vision_api_key_for(preset["provider"]))
+        if not key:
+            raise HTTPException(
+                status_code=400,
+                detail=f"No {preset['provider']} API key. Enter the API key for this model.",
+            )
+    await svc.set("ocr_base_url", base_url)
+    await svc.set("ocr_model", model_id)
+    await svc.set("ocr_api_key", key)
+    await svc.set(OCR_MODEL_SPEC_KEY, spec_id)
+
+
+# ---------------------------------------------------------------------------
+# Custom model CRUD
+# ---------------------------------------------------------------------------
+
+@router.get("/settings/custom-models", response_model=list[CustomModelOut])
+async def list_custom_models(
+    kind: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _user: Employee = require_permission("org:settings:manage"),
+):
+    return [await _to_out(db, m) for m in await list_custom(db, kind)]
+
+
+@router.post("/settings/custom-models", response_model=CustomModelOut)
+async def save_custom_model(
+    body: CustomModelIn,
+    db: AsyncSession = Depends(get_db),
+    _user: Employee = require_permission("org:settings:manage"),
+):
+    if body.kind not in KINDS:
+        raise HTTPException(status_code=400, detail=f"kind must be one of {KINDS}")
+    if body.protocol not in PROTOCOLS:
+        raise HTTPException(status_code=400, detail=f"protocol must be one of {PROTOCOLS}")
+    if body.protocol == "anthropic" and body.kind != "llm":
+        raise HTTPException(
+            status_code=400,
+            detail="Anthropic protocol is only supported for LLM; use an OpenAI-compatible URL.",
+        )
+    model_id = body.model_id.strip()
+    base_url = body.base_url.strip()
+    if not model_id or len(model_id) > MAX_MODEL_ID_LEN:
+        raise HTTPException(status_code=400, detail=f"Model name must be 1–{MAX_MODEL_ID_LEN} characters")
+    if not base_url.startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="Base URL must start with http:// or https://")
+    dimension = None
+    if body.kind == "embedding":
+        if body.dimension not in EMBEDDING_DIMENSIONS:
+            raise HTTPException(
+                status_code=400, detail=f"dimension must be one of {EMBEDDING_DIMENSIONS}"
+            )
+        dimension = body.dimension
+
+    spec_id = make_id(body.kind, model_id, dimension)
+    model = CustomModel(
+        id=spec_id, kind=body.kind, model_id=model_id,
+        label=(body.label or "").strip() or model_id,
+        base_url=base_url, protocol=body.protocol, dimension=dimension,
+    )
+    await save_custom(db, model, _new_key(body.api_key))
+    # Keep the OCR keys in sync when the edited model is the OCR model in use.
+    if body.kind == "ocr" and (await _active_ids(db))["ocr"] == spec_id:
+        await _apply_ocr(db, spec_id, None)
+    await log_audit(
+        db, _user, "save_custom_model", "settings", "global",
+        reason=f"Saved {body.kind} model {spec_id} ({base_url})",
+    )
+    await db.commit()
+    return await _to_out(db, model)
+
+
+@router.delete("/settings/custom-models")
+async def remove_custom_model(
+    kind: str = Query(...),
+    id: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+    _user: Employee = require_permission("org:settings:manage"),
+):
+    if (await _active_ids(db)).get(kind) == id:
+        raise HTTPException(
+            status_code=409, detail="This model is in use. Switch to another model first."
+        )
+    if kind == "embedding":
+        from app.routers.admin_embeddings import _get_current_job
+
+        job = await _get_current_job(db)
+        if job is not None and job.model_spec_id == id:
+            raise HTTPException(status_code=409, detail="A re-embed job is using this model.")
+    if not await delete_custom(db, kind, id):
+        raise HTTPException(status_code=404, detail="Model not found")
+    await log_audit(
+        db, _user, "delete_custom_model", "settings", "global",
+        reason=f"Deleted {kind} model {id}",
+    )
+    await db.commit()
+    return {"deleted": id}
+
+
+# ---------------------------------------------------------------------------
+# OCR model selection
+# ---------------------------------------------------------------------------
+
+@router.get("/settings/ocr/catalog", response_model=OcrCatalogOut)
+async def get_ocr_catalog(
+    db: AsyncSession = Depends(get_db),
+    _user: Employee = require_permission("org:settings:manage"),
+):
+    from app.services.config_service import ConfigService
+
+    svc = ConfigService(db)
+    active = await svc.get(OCR_MODEL_SPEC_KEY)
+    current_model = await svc.get("ocr_model")
+    current_key = bool(await svc.get("ocr_api_key"))
+
+    if active is None:
+        # Configs from before model selection existed: match by model name.
+        active = next(
+            (sid for sid, p in OCR_PRESETS.items() if p["model_id"] == current_model), None
+        )
+
+    specs = []
+    for spec_id, p in OCR_PRESETS.items():
+        specs.append(OcrModelOut(
+            id=spec_id, provider=p["provider"], label=p["label"], base_url=p["base_url"],
+            model_id=p["model_id"], custom=False,
+            api_key_configured=current_key and active == spec_id,
+        ))
+    for m in await list_custom(db, "ocr"):
+        specs.append(OcrModelOut(
+            id=m.id, provider="custom", label=m.label, base_url=m.base_url,
+            model_id=m.model_id, custom=True,
+            api_key_configured=bool(await get_api_key(db, "ocr", m.id)),
+        ))
+    return OcrCatalogOut(active_spec_id=active, specs=specs)
+
+
+@router.post("/settings/ocr/select")
+async def select_ocr_model(
+    body: OcrSelectBody,
+    db: AsyncSession = Depends(get_db),
+    _user: Employee = require_permission("org:settings:manage"),
+):
+    await _apply_ocr(db, body.model_spec_id, _new_key(body.api_key))
+    await log_audit(
+        db, _user, "select_ocr_model", "settings", "global",
+        reason=f"OCR model set to {body.model_spec_id}",
+    )
+    await db.commit()
+    return {"active_spec_id": body.model_spec_id}

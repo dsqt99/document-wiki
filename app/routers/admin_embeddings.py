@@ -7,6 +7,7 @@ Endpoints:
   POST /api/settings/embeddings/switch     — start re-embed migration to a new model
   GET  /api/settings/embeddings/jobs/{id}  — poll job progress
   POST /api/settings/embeddings/jobs/{id}/cancel
+  POST /api/settings/embeddings/backfill-source-chunks — index raw chunks for old sources
 """
 
 import uuid
@@ -51,6 +52,9 @@ class EmbeddingSpecOut(BaseModel):
     cost_per_1m_tokens: Optional[float]
     notes: Optional[str]
     api_key_configured: bool
+    api_key_config_key: Optional[str] = None  # None for custom models
+    custom: bool = False
+    base_url: Optional[str] = None
 
 
 class EmbeddingCatalogOut(BaseModel):
@@ -105,7 +109,29 @@ async def _spec_to_out(
         cost_per_1m_tokens=spec.cost_per_1m_tokens,
         notes=spec.notes,
         api_key_configured=bool(key),
+        api_key_config_key=embedding_api_key_for(spec.provider),
     )
+
+
+async def _custom_specs_out(db: AsyncSession) -> list[EmbeddingSpecOut]:
+    from app.ai.custom_models import get_api_key, list_custom
+
+    out = []
+    for m in await list_custom(db, "embedding"):
+        spec = get_spec(m.id)
+        out.append(EmbeddingSpecOut(
+            id=spec.id,
+            provider=spec.provider,
+            model_id=spec.model_id,
+            dimension=spec.dimension,
+            label=m.label or spec.label,
+            cost_per_1m_tokens=None,
+            notes=None,
+            api_key_configured=bool(await get_api_key(db, "embedding", m.id)),
+            custom=True,
+            base_url=m.base_url,
+        ))
+    return out
 
 
 def _job_to_out(job: EmbeddingJob) -> EmbeddingJobOut:
@@ -148,6 +174,7 @@ async def get_catalog(
     registry = ProviderRegistry(db)
     active = await registry.get_active_embedding_spec_id()
     specs = [await _spec_to_out(s, db) for s in list_specs()]
+    specs += await _custom_specs_out(db)
     return EmbeddingCatalogOut(active_spec_id=active, specs=specs)
 
 
@@ -216,9 +243,16 @@ async def switch_embedding_model(
             ),
         )
 
-    # Make sure the chosen provider has an API key configured.
-    svc = ConfigService(db)
-    api_key = await svc.get(embedding_api_key_for(spec.provider))
+    from app.ai.custom_models import get_custom, is_custom
+
+    if is_custom(spec.id):
+        # Keyless local endpoints are allowed for admin-added models.
+        if await get_custom(db, "embedding", spec.id) is None:
+            raise HTTPException(status_code=400, detail=f"Unknown model {spec.id!r}")
+        api_key = "custom"
+    else:
+        # Make sure the chosen provider has an API key configured.
+        api_key = await ConfigService(db).get(embedding_api_key_for(spec.provider))
     if not api_key:
         raise HTTPException(
             status_code=400,
@@ -297,3 +331,30 @@ async def cancel_job(
     job.finished_at = datetime.utcnow()
     await db.commit()
     return _job_to_out(job)
+
+
+class SourceChunkBackfillOut(BaseModel):
+    job_id: Optional[str]
+
+
+@router.post(
+    "/settings/embeddings/backfill-source-chunks",
+    response_model=SourceChunkBackfillOut,
+)
+async def backfill_source_chunks(
+    limit: int = 500,
+    db: AsyncSession = Depends(get_db),
+    _user: Employee = require_permission("org:settings:manage"),
+):
+    """Index raw chunks (branch A) for sources that predate the dual pipeline
+    or whose chunk branch failed. Ready sources stay 'ready' meanwhile."""
+    from app.worker import get_arq_pool
+
+    await log_audit(
+        db, _user, "backfill_source_chunks", "settings", "global",
+        reason=f"Backfill raw source chunks (limit={limit})",
+    )
+    await db.commit()
+    pool = await get_arq_pool()
+    job = await pool.enqueue_job("backfill_source_chunks_task", limit)
+    return SourceChunkBackfillOut(job_id=job.job_id if job else None)

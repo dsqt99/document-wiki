@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api";
 import { WikiContent } from "@/components/wiki/wiki-content";
+import { CustomModelForm, deleteCustomModel } from "./custom-model-form";
 
 type SettingsMap = Record<string, string | null | undefined>;
 
@@ -22,11 +23,29 @@ type OCRResponse = {
   error?: string | null;
 };
 
+type OcrModel = {
+  id: string;
+  provider: string;
+  label: string;
+  base_url: string;
+  model_id: string;
+  custom: boolean;
+  api_key_configured: boolean;
+};
+
+type OcrCatalog = { active_spec_id: string | null; specs: OcrModel[] };
+
 export function OcrSettingsCard() {
-  // Config state
-  const [baseUrl, setBaseUrl] = useState("");
-  const [model, setModel] = useState("ggml-org/GLM-OCR-GGUF:f16");
-  const [apiKey, setApiKey] = useState("");
+  // Config state — the model comes from the catalog (presets + "Thêm model").
+  const [catalog, setCatalog] = useState<OcrCatalog | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  // Key typed for one model; switching models shows that model's saved key.
+  const [keyDraft, setKeyDraft] = useState<{ id: string | null; value: string }>({
+    id: null,
+    value: "",
+  });
+  const [savedKey, setSavedKey] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
 
   const [loading, setLoading] = useState(true);
@@ -54,42 +73,73 @@ export function OcrSettingsCard() {
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  useEffect(() => {
-    async function loadSettings() {
-      setLoading(true);
-      setSaveError("");
-      try {
-        const data = await api<SettingsMap>("/api/settings");
-        if (data) {
-          if (data.ocr_base_url) setBaseUrl(String(data.ocr_base_url));
-          if (data.ocr_model) setModel(String(data.ocr_model));
-          if (data.ocr_api_key) setApiKey(String(data.ocr_api_key));
-        }
-      } catch (err) {
+  function loadSettings() {
+    return Promise.all([
+      api<SettingsMap>("/api/settings"),
+      api<OcrCatalog>("/api/settings/ocr/catalog"),
+    ])
+      .then(([data, cat]) => {
+        setCatalog(cat);
+        setSavedKey(data?.ocr_api_key ? String(data.ocr_api_key) : "");
+        setSelectedId((prev) =>
+          prev && cat.specs.some((x) => x.id === prev) ? prev : cat.active_spec_id ?? cat.specs[0]?.id ?? null,
+        );
+      })
+      .catch((err) => {
         setSaveError(err instanceof Error ? err.message : "Không thể tải cấu hình OCR");
-      } finally {
-        setLoading(false);
-      }
-    }
+      })
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(() => {
     void loadSettings();
   }, []);
 
+  const selectedModel = catalog?.specs.find((x) => x.id === selectedId) ?? null;
+  const isActiveModel = !!selectedModel && selectedModel.id === catalog?.active_spec_id;
+  const baseUrl = selectedModel?.base_url ?? "";
+  const model = selectedModel?.model_id ?? "";
+  const maskedKey = !selectedModel
+    ? ""
+    : selectedModel.custom
+      ? selectedModel.api_key_configured
+        ? "••••••••"
+        : ""
+      : isActiveModel
+        ? savedKey
+        : "";
+  const apiKey = keyDraft.id === selectedId ? keyDraft.value : maskedKey;
+  const setApiKey = (value: string) => setKeyDraft({ id: selectedId, value });
+  // Only a typed key is sent; the masked "••••" value means "keep the stored key".
+  const newApiKey = apiKey.trim() && !apiKey.includes("•") ? apiKey.trim() : undefined;
+
+  async function handleDeleteModel(m: OcrModel) {
+    if (!confirm(`Xóa model "${m.label}"?`)) return;
+    try {
+      await deleteCustomModel("ocr", m.id);
+      if (selectedId === m.id) setSelectedId(null);
+      await loadSettings();
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Xóa model thất bại");
+    }
+  }
+
   async function handleSave() {
+    if (!selectedModel) return;
     setSaving(true);
     setSaveSuccess(false);
     setSaveError("");
 
     try {
-      await api("/api/settings", {
-        method: "PUT",
+      await api("/api/settings/ocr/select", {
+        method: "POST",
         body: {
-          settings: {
-            ocr_base_url: baseUrl.trim(),
-            ocr_model: model.trim(),
-            ocr_api_key: apiKey.trim(),
-          },
+          model_spec_id: selectedModel.id,
+          api_key: selectedModel.custom ? undefined : newApiKey,
         },
       });
+      setKeyDraft({ id: null, value: "" });
+      await loadSettings();
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err) {
@@ -110,7 +160,7 @@ export function OcrSettingsCard() {
           body: {
             base_url: baseUrl.trim() || undefined,
             model: model.trim() || undefined,
-            api_key: apiKey.trim() || undefined,
+            api_key: newApiKey,
           },
         }
       );
@@ -161,7 +211,7 @@ export function OcrSettingsCard() {
     formData.append("target_page", String(targetPage));
     if (baseUrl.trim()) formData.append("override_base_url", baseUrl.trim());
     if (model.trim()) formData.append("override_model", model.trim());
-    if (apiKey.trim()) formData.append("override_api_key", apiKey.trim());
+    if (newApiKey) formData.append("override_api_key", newApiKey);
 
     try {
       const res = await api<OCRResponse>("/api/settings/test-ocr", {
@@ -276,7 +326,7 @@ export function OcrSettingsCard() {
                   <Button
                     size="sm"
                     onClick={handleSave}
-                    disabled={saving}
+                    disabled={saving || !selectedModel}
                     className="gap-1.5 text-xs font-medium h-7 px-3 shadow-xs active:scale-[0.98]"
                   >
                     {saving ? (
@@ -284,50 +334,88 @@ export function OcrSettingsCard() {
                     ) : (
                       <span className="material-symbols-outlined text-xs">save</span>
                     )}
-                    Lưu
+                    Lưu model
                   </Button>
                 </div>
               </div>
 
               <div className="space-y-3">
                 <div className="space-y-1.5">
-                  <Label htmlFor="ocr-base-url" className="text-xs font-medium text-foreground">
-                    OCR Base URL
-                  </Label>
-                  <Input
-                    id="ocr-base-url"
-                    placeholder="https://unsloth.anm05.com/v1"
-                    value={baseUrl}
-                    onChange={(e) => setBaseUrl(e.target.value)}
-                    className="font-mono text-xs h-9 bg-background"
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
                     <Label htmlFor="ocr-model" className="text-xs font-medium text-foreground">
                       Mô hình (Model)
                     </Label>
-                    <Input
-                      id="ocr-model"
-                      placeholder="ggml-org/GLM-OCR-GGUF:f16"
-                      value={model}
-                      onChange={(e) => setModel(e.target.value)}
-                      className="font-mono text-xs h-9 bg-background"
-                    />
+                    {!adding && (
+                      <button
+                        type="button"
+                        onClick={() => setAdding(true)}
+                        className="flex items-center gap-0.5 text-xs text-primary hover:underline"
+                      >
+                        <span className="material-symbols-outlined text-sm">add</span>
+                        Thêm model
+                      </button>
+                    )}
                   </div>
+                  <div className="flex items-center gap-1.5">
+                    <select
+                      id="ocr-model"
+                      value={selectedId ?? ""}
+                      onChange={(e) => setSelectedId(e.target.value)}
+                      className="h-9 flex-1 min-w-0 rounded-md border border-input bg-background px-2 text-xs"
+                    >
+                      {catalog?.specs.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.label}
+                          {m.custom ? " (tự thêm)" : ""}
+                          {m.id === catalog.active_spec_id ? " — đang dùng" : ""}
+                        </option>
+                      ))}
+                    </select>
+                    {selectedModel?.custom && !isActiveModel && (
+                      <button
+                        type="button"
+                        onClick={() => void handleDeleteModel(selectedModel)}
+                        title="Xóa model"
+                        className="text-muted-foreground hover:text-destructive"
+                      >
+                        <span className="material-symbols-outlined text-base">delete</span>
+                      </button>
+                    )}
+                  </div>
+                  {selectedModel && (
+                    <p className="text-[11px] text-muted-foreground font-mono break-all">
+                      {selectedModel.model_id} · {selectedModel.base_url}
+                    </p>
+                  )}
+                </div>
 
+                {adding && (
+                  <CustomModelForm
+                    kind="ocr"
+                    onCancel={() => setAdding(false)}
+                    onSaved={async (id) => {
+                      setAdding(false);
+                      setSelectedId(id);
+                      await loadSettings();
+                    }}
+                  />
+                )}
+
+                {selectedModel && !selectedModel.custom && (
                   <div className="space-y-1.5">
                     <Label htmlFor="ocr-api-key" className="text-xs font-medium text-foreground">
-                      API Key
+                      API Key {selectedModel.provider}
                     </Label>
                     <div className="relative">
                       <Input
                         id="ocr-api-key"
                         type={showApiKey ? "text" : "password"}
-                        placeholder="sk-..."
+                        placeholder="Bỏ trống để dùng API key Vision cùng nhà cung cấp"
                         value={apiKey}
                         onChange={(e) => setApiKey(e.target.value)}
+                        onFocus={() => {
+                          if (apiKey.includes("•")) setApiKey("");
+                        }}
                         className="font-mono text-xs h-9 bg-background pr-8"
                       />
                       <button
@@ -342,7 +430,7 @@ export function OcrSettingsCard() {
                       </button>
                     </div>
                   </div>
-                </div>
+                )}
 
                 {/* Connection Ping Feedback Banner */}
                 {connResult && (

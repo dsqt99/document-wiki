@@ -92,7 +92,7 @@ export default function SettingsPage() {
           icon="psychology"
           catalogUrl="/api/settings/llm/catalog"
           switchUrl="/api/settings/llm/switch"
-          apiKeyConfigKey="llm_api_key"
+          kind="llm"
           renderMeta={llmMeta}
         />
 
@@ -102,7 +102,7 @@ export default function SettingsPage() {
           icon="visibility"
           catalogUrl="/api/settings/vision/catalog"
           switchUrl="/api/settings/vision/switch"
-          apiKeyConfigKey="vision_api_key"
+          kind="vision"
           renderMeta={visionMeta}
         />
 

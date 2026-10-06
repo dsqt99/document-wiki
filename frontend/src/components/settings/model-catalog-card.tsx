@@ -4,6 +4,12 @@ import { useEffect, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api } from "@/lib/api";
+import {
+  CustomModelForm,
+  deleteCustomModel,
+  saveCustomModelKey,
+  type CustomModelKind,
+} from "./custom-model-form";
 
 // Shape shared by LLMSpecOut and VisionSpecOut on the backend. Cards pick which
 // fields to display via the `renderMeta` prop so this component stays generic.
@@ -14,6 +20,11 @@ export type ModelSpec = {
   label: string;
   notes: string | null;
   api_key_configured: boolean;
+  // app_config key for a preset's (per-provider) API key; null for custom models.
+  api_key_config_key: string | null;
+  custom: boolean;
+  base_url: string | null;
+  protocol: string | null;
   // LLM-specific
   context_window_tokens?: number;
   max_output_tokens?: number;
@@ -37,7 +48,7 @@ export function ModelCatalogCard({
   icon,
   catalogUrl,
   switchUrl,
-  apiKeyConfigKey,
+  kind,
   renderMeta,
 }: {
   title: string;
@@ -45,13 +56,18 @@ export function ModelCatalogCard({
   icon: string;
   catalogUrl: string;
   switchUrl: string;
-  apiKeyConfigKey: string; // e.g. "llm_api_key" or "vision_api_key"
+  kind: CustomModelKind;
   renderMeta?: (spec: ModelSpec) => React.ReactNode;
 }) {
   const [catalog, setCatalog] = useState<CatalogResp | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
-  const [maskedKey, setMaskedKey] = useState<string>("");
-  const [apiKey, setApiKey] = useState<string>("");
+  const [settings, setSettings] = useState<Record<string, unknown>>({});
+  const [adding, setAdding] = useState(false);
+  // Key typed for one model; switching models shows that model's saved key.
+  const [keyDraft, setKeyDraft] = useState<{ id: string | null; value: string }>({
+    id: null,
+    value: "",
+  });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
@@ -68,23 +84,48 @@ export function ModelCatalogCard({
         api<Record<string, unknown>>("/api/settings"),
       ]);
       setCatalog(c);
-      const v = settings[apiKeyConfigKey];
-      const masked = typeof v === "string" ? v : "";
-      setMaskedKey(masked);
-      setApiKey(masked);
-      setSelected((prev) => prev ?? c.active_spec_id ?? c.specs[0]?.id ?? null);
+      setSettings(settings);
+      setSelected((prev) =>
+        prev && c.specs.some((s) => s.id === prev) ? prev : c.active_spec_id ?? c.specs[0]?.id ?? null,
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : `Failed to load ${title}`);
     }
   }
 
   const selectedSpec = catalog?.specs.find((s) => s.id === selected) ?? null;
+  // Masked saved key of the selected model ("••••…" = saved server-side).
+  const keyName = selectedSpec?.api_key_config_key;
+  const maskedValue = keyName ? settings[keyName] : undefined;
+  const maskedKey =
+    typeof maskedValue === "string" && maskedValue
+      ? maskedValue
+      : selectedSpec?.api_key_configured
+        ? "••••••••"
+        : "";
+
+  const apiKey = keyDraft.id === selected ? keyDraft.value : maskedKey;
+  const setApiKey = (value: string) => setKeyDraft({ id: selected, value });
+
   const isActiveSelected = selectedSpec?.id === catalog?.active_spec_id;
   const willSwitch = !!selectedSpec && !isActiveSelected;
   const isMaskedKey = apiKey.includes("•");
   const hasNewKey = apiKey.trim().length > 0 && !isMaskedKey;
   const canSave =
-    !!selectedSpec && (hasNewKey || (willSwitch && selectedSpec.api_key_configured));
+    !!selectedSpec &&
+    (hasNewKey || (willSwitch && (selectedSpec.custom || selectedSpec.api_key_configured)));
+
+  async function handleDelete(spec: ModelSpec) {
+    if (!confirm(`Xóa model "${spec.label}"?`)) return;
+    setError("");
+    try {
+      await deleteCustomModel(kind, spec.id);
+      if (selected === spec.id) setSelected(null);
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Delete failed");
+    }
+  }
 
   async function handleSave() {
     if (!selectedSpec) return;
@@ -93,10 +134,14 @@ export function ModelCatalogCard({
     setSaved(false);
     try {
       if (hasNewKey) {
-        await api("/api/settings", {
-          method: "PUT",
-          body: { settings: { [apiKeyConfigKey]: apiKey.trim() } },
-        });
+        if (selectedSpec.custom) {
+          await saveCustomModelKey(kind, selectedSpec, apiKey.trim());
+        } else if (selectedSpec.api_key_config_key) {
+          await api("/api/settings", {
+            method: "PUT",
+            body: { settings: { [selectedSpec.api_key_config_key]: apiKey.trim() } },
+          });
+        }
       }
       if (willSwitch) {
         await api(switchUrl, {
@@ -104,6 +149,7 @@ export function ModelCatalogCard({
           body: { model_spec_id: selectedSpec.id },
         });
       }
+      setKeyDraft({ id: null, value: "" });
       await refresh();
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
@@ -132,7 +178,28 @@ export function ModelCatalogCard({
           <h3 className="text-base font-semibold text-foreground">{title}</h3>
           <p className="text-xs text-muted-foreground">{description}</p>
         </div>
+        {!adding && (
+          <button
+            onClick={() => setAdding(true)}
+            className="flex items-center gap-1 border border-border px-2.5 py-1.5 rounded-lg text-xs font-medium hover:bg-muted"
+          >
+            <span className="material-symbols-outlined text-sm">add</span>
+            Thêm model
+          </button>
+        )}
       </div>
+
+      {adding && (
+        <CustomModelForm
+          kind={kind}
+          onCancel={() => setAdding(false)}
+          onSaved={async (id) => {
+            setAdding(false);
+            setSelected(id);
+            await refresh();
+          }}
+        />
+      )}
 
       {/* Model list */}
       <div className="flex flex-col gap-2 mb-4">
@@ -158,7 +225,7 @@ export function ModelCatalogCard({
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-sm font-medium">{spec.label}</span>
                   <span className="text-[10px] uppercase tracking-wide text-muted-foreground bg-secondary/40 px-1.5 py-0.5 rounded">
-                    {spec.provider}
+                    {spec.custom ? "Tự thêm" : spec.provider}
                   </span>
                   {isActive && (
                     <span className="text-[10px] uppercase tracking-wide bg-green-500/15 text-green-700 dark:text-green-400 px-1.5 py-0.5 rounded">
@@ -166,25 +233,42 @@ export function ModelCatalogCard({
                     </span>
                   )}
                 </div>
-                {renderMeta && (
-                  <div className="text-[11px] text-muted-foreground mt-1">
-                    {renderMeta(spec)}
-                  </div>
+                {spec.custom ? (
+                  <p className="text-[11px] text-muted-foreground mt-1 font-mono break-all">
+                    {spec.model_id} · {spec.base_url}
+                  </p>
+                ) : (
+                  renderMeta && (
+                    <div className="text-[11px] text-muted-foreground mt-1">{renderMeta(spec)}</div>
+                  )
                 )}
                 {spec.notes && (
                   <p className="text-[11px] text-muted-foreground/80 mt-1 italic">{spec.notes}</p>
                 )}
               </div>
+              {spec.custom && !isActive && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    void handleDelete(spec);
+                  }}
+                  title="Xóa model"
+                  className="text-muted-foreground hover:text-destructive"
+                >
+                  <span className="material-symbols-outlined text-base">delete</span>
+                </button>
+              )}
             </label>
           );
         })}
       </div>
 
-      {/* API key — single per capability */}
+      {/* API key — per provider for presets, per model for custom models */}
       {selectedSpec && (
         <div className="mb-4 flex flex-col gap-1.5">
           <Label className="text-xs">
-            API key
+            API key {selectedSpec.custom ? selectedSpec.label : selectedSpec.provider}
             {selectedSpec.api_key_configured && (
               <span className="ml-2 text-green-600 dark:text-green-400">✓ saved</span>
             )}
