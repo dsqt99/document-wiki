@@ -326,8 +326,43 @@ def parse_legal_metadata(text: str, file_name: str = "") -> dict[str, Any]:
     return meta
 
 
-def split_legal_text_by_articles(full_text: str, doc_title: str) -> dict[str, Any]:
+import hashlib
+
+
+def build_legal_doc_slug(
+    doc_title: str,
+    doc_number: Optional[str] = None,
+    source_id: Optional[Any] = None,
+) -> str:
+    """Build a deterministic, unique slug for a legal document.
+
+    If doc_number is provided (e.g., '136/2020/NĐ-CP'), slugifies the doc_number.
+    Otherwise, uses slugify(doc_title)[:40] combined with an 8-char hash of source_id.
+    """
+    if doc_number:
+        clean_num = slugify(doc_number).strip("-")
+        if clean_num:
+            return clean_num
+
+    base = slugify(doc_title or "van-ban-luat")[:40].rstrip("-") or "van-ban-luat"
+    if source_id:
+        sid_str = str(source_id).replace("-", "")[:8]
+        return f"{base}-{sid_str}"
+
+    h = hashlib.sha256((doc_title or "").encode("utf-8")).hexdigest()[:8]
+    return f"{base}-{h}"
+
+
+def split_legal_text_by_articles(
+    full_text: str,
+    doc_title: str = "",
+    doc_slug: Optional[str] = None,
+) -> dict[str, Any]:
     """Parse Vietnamese legal document text into preamble and individual articles.
+
+    Uses LegalHierarchyParser state machine to accurately extract hierarchical structure
+    (Part, Chapter, Section, Article, Clause, Point) and avoid false-positive splits
+    inside quoted modification blocks.
 
     Returns:
         dict with:
@@ -338,30 +373,38 @@ def split_legal_text_by_articles(full_text: str, doc_title: str) -> dict[str, An
                 - 'title': extracted title string
                 - 'content_md': verbatim article text
                 - 'slug': unique page slug
+                - 'part_num': optional part number (Phần)
+                - 'chapter_num': optional chapter number (Chương)
+                - 'chapter_title': optional chapter title
+                - 'section_num': optional section number (Mục)
+                - 'clauses': list of parsed clauses and points
     """
     if not full_text:
         return {"preamble": "", "articles": []}
 
-    matches = list(ARTICLE_RE.finditer(full_text))
-    doc_slug = slugify(doc_title or "van-ban-luat")[:60].rstrip("-") or "van-ban-luat"
+    if not doc_slug:
+        doc_slug = build_legal_doc_slug(doc_title)
 
-    if not matches:
+    from app.services.legal_hierarchy_parser import LegalHierarchyParser
+
+    parser = LegalHierarchyParser()
+    doc_tree = parser.parse(full_text)
+    all_articles = doc_tree.get_all_articles()
+    if not all_articles:
         return {
             "preamble": full_text.strip(),
             "articles": [],
         }
 
-    preamble = full_text[: matches[0].start()].strip()
+    preamble = doc_tree.preamble
     articles: list[dict[str, Any]] = []
     seen_slugs: set[str] = {doc_slug}
 
-    for i, m in enumerate(matches):
-        start_idx = m.start()
-        end_idx = matches[i + 1].start() if i + 1 < len(matches) else len(full_text)
-        art_num = m.group(2).strip()
-        raw_heading = re.sub(r'[*#_“"”]', '', m.group(1)).strip()
-        art_title = re.sub(r'[*#_“"”]', '', m.group(3) or '').strip()
-        art_content = full_text[start_idx:end_idx].strip()
+    for art in all_articles:
+        art_num = art.number
+        raw_heading = f"Điều {art.number}. {art.title}" if art.title else f"Điều {art.number}"
+        art_title = art.title
+        art_content = art.content
 
         # Build unique slug for this article (dieu-X-doc-slug)
         base_slug = f"dieu-{art_num.lower()}-{doc_slug}"
@@ -383,6 +426,17 @@ def split_legal_text_by_articles(full_text: str, doc_title: str) -> dict[str, An
             "title": art_title,
             "content_md": art_content,
             "slug": art_slug,
+            "chapter_num": art.chapter_num,
+            "chapter_title": art.chapter_title,
+            "section_num": art.section_num,
+            "clauses": [
+                {
+                    "num": c.number,
+                    "content_md": c.content,
+                    "points": [{"letter": p.letter, "content_md": p.content} for p in c.points],
+                }
+                for c in art.clauses
+            ],
         })
 
     return {
@@ -434,9 +488,11 @@ async def finalize_legal_source(session: AsyncSession, source: Source, tracker: 
 
     if not full_text.strip():
         logger.warning(f"finalize_legal_source: Source {source.id} has empty full_text")
-        source.status = "ready"
-        source.progress = 100
-        source.progress_message = "Văn bản trống, không có nội dung để trích xuất"
+        source.wiki_status = "ready"
+        source.wiki_progress = 100
+        source.wiki_progress_message = "Văn bản trống, không có nội dung để trích xuất"
+        from app.services.source_status import update_source_dual_status
+        await update_source_dual_status(session, source)
         await session.commit()
         return {"status": "ready", "pages_created": 0}
 
@@ -448,13 +504,16 @@ async def finalize_legal_source(session: AsyncSession, source: Source, tracker: 
         source.title = display_doc_name
     await session.commit()
 
+    # Build unique, deterministic slug for this document
+    doc_number = meta.get("doc_number")
+    doc_slug = build_legal_doc_slug(doc_title, doc_number=doc_number, source_id=source.id)
+
     # Extract articles
-    parsed = split_legal_text_by_articles(full_text, doc_title)
+    parsed = split_legal_text_by_articles(full_text, doc_title, doc_slug=doc_slug)
     preamble = parsed["preamble"]
     articles = parsed["articles"]
 
-    scope_type = source.scope_type or "global"
-    scope_id = source.scope_id
+    wiki_scopes = await wiki_service.resolve_wiki_scopes(session, source)
 
     # Get knowledge type slug
     kt_slug = "legal"
@@ -462,8 +521,6 @@ async def finalize_legal_source(session: AsyncSession, source: Source, tracker: 
         kt = await session.get(KnowledgeType, source.knowledge_type_id)
         if kt and kt.slug:
             kt_slug = kt.slug
-
-    doc_slug = slugify(doc_title)[:60].rstrip("-") or "van-ban-luat"
 
     # Setup embedding provider
     registry = ProviderRegistry(session)
@@ -514,71 +571,90 @@ async def finalize_legal_source(session: AsyncSession, source: Source, tracker: 
         or (preamble[:280].replace("\n", " ").strip() if preamble else f"Tổng quan văn bản quy phạm pháp luật {display_doc_name}")
     )
 
-    overview_page = await wiki_service.upsert_page(
-        session,
-        slug=doc_slug,
-        title=f"{display_doc_name} - Tổng quan & Căn cứ ban hành",
-        page_type="concept",
-        content_md=overview_content,
-        summary=overview_summary,
-        knowledge_type_slugs=[kt_slug],
-        source_ids=[source.id],
-        scope_type=scope_type,
-        scope_id=scope_id,
-        status="mature",
-    )
-    pages_to_index.append(overview_page)
-
-    # 2. Create/update each Điều as a separate WikiPage (Verbatim content with citation)
-    for idx, art in enumerate(articles):
-        art_slug = art["slug"]
-        heading = art["heading"]
-        art_num = art["num"]
-        art_title = art["title"]
-        verbatim_content = art["content_md"]
-
-        page_title = (
-            f"Điều {art_num}: {art_title} - {display_doc_name}"
-            if art_title
-            else f"{heading} - {display_doc_name}"
-        )
-
-        citation_lines = [
-            f"> **Căn cứ pháp lý**: Điều {art_num} — {display_doc_name}",
-        ]
-        if meta.get("official_title"):
-            citation_lines.append(f"> **Trích yếu**: {meta['official_title']}")
-        citation_lines.append(f"> **Toàn văn văn bản**: [[{doc_slug}|{display_doc_name}]]")
-        citation_header = "\n".join(citation_lines)
-
-        page_content = f"{citation_header}\n\n{verbatim_content}\n"
-
-        first_para = ""
-        for line in verbatim_content.splitlines():
-            line_s = line.strip()
-            if line_s and not line_s.lower().startswith("điều ") and not line_s.startswith(("#", "*", ">")):
-                first_para = line_s
-                break
-        page_summary = f"Điều {art_num}" + (f": {art_title}" if art_title else "")
-        if first_para:
-            page_summary += f" — {first_para[:180]}"
-
-        art_page = await wiki_service.upsert_page(
+    for scope_type, scope_id in wiki_scopes:
+        overview_page = await wiki_service.upsert_page(
             session,
-            slug=art_slug,
-            title=page_title,
+            slug=doc_slug,
+            title=f"{display_doc_name} - Tổng quan & Căn cứ ban hành",
             page_type="concept",
-            content_md=page_content,
-            summary=page_summary,
+            content_md=overview_content,
+            summary=overview_summary,
             knowledge_type_slugs=[kt_slug],
             source_ids=[source.id],
             scope_type=scope_type,
             scope_id=scope_id,
             status="mature",
         )
-        pages_to_index.append(art_page)
+        pages_to_index.append(overview_page)
+
+        art_page_map: dict[str, uuid.UUID] = {}
+        # 2. Create/update each Điều as a separate WikiPage (Verbatim content with citation)
+        for idx, art in enumerate(articles):
+            art_slug = art["slug"]
+            heading = art["heading"]
+            art_num = art["num"]
+            art_title = art["title"]
+            verbatim_content = art["content_md"]
+
+            page_title = (
+                f"Điều {art_num}: {art_title} - {display_doc_name}"
+                if art_title
+                else f"{heading} - {display_doc_name}"
+            )
+
+            citation_lines = [
+                f"> **Căn cứ pháp lý**: Điều {art_num} — {display_doc_name}",
+            ]
+            if meta.get("official_title"):
+                citation_lines.append(f"> **Trích yếu**: {meta['official_title']}")
+            citation_lines.append(f"> **Toàn văn văn bản**: [[{doc_slug}|{display_doc_name}]]")
+            citation_header = "\n".join(citation_lines)
+
+            page_content = f"{citation_header}\n\n{verbatim_content}\n"
+
+            first_para = ""
+            for line in verbatim_content.splitlines():
+                line_s = line.strip()
+                if line_s and not line_s.lower().startswith("điều ") and not line_s.startswith(("#", "*", ">")):
+                    first_para = line_s
+                    break
+            page_summary = f"Điều {art_num}" + (f": {art_title}" if art_title else "")
+            if first_para:
+                page_summary += f" — {first_para[:180]}"
+
+            art_page = await wiki_service.upsert_page(
+                session,
+                slug=art_slug,
+                title=page_title,
+                page_type="concept",
+                content_md=page_content,
+                summary=page_summary,
+                knowledge_type_slugs=[kt_slug],
+                source_ids=[source.id],
+                scope_type=scope_type,
+                scope_id=scope_id,
+                status="mature",
+            )
+            art_page_map[art_slug] = art_page.id
+            pages_to_index.append(art_page)
 
     await session.commit()
+
+    # 2.5 Ingest Legal Knowledge Graph (Units & Relations)
+    try:
+        await tracker.update(68, "Đang bóc tách cây phả hệ pháp luật & trích xuất quan hệ...")
+        await ingest_legal_graph(
+            session=session,
+            source=source,
+            articles=articles,
+            preamble=preamble,
+            doc_number=meta.get("doc_number"),
+            art_page_map=art_page_map,
+        )
+        from app.services.legal_relation_extractor import relink_legal_relations
+        await relink_legal_relations(session, source_id=source.id)
+    except Exception as e:
+        logger.warning(f"Failed to ingest legal graph for source {source.id}: {e}")
 
     # 3. Compute vector embeddings (Page-level and Chunk-level)
     total_pages = len(pages_to_index)
@@ -627,26 +703,29 @@ async def finalize_legal_source(session: AsyncSession, source: Source, tracker: 
     else:
         logger.info("No active embedding model configured — skipping semantic vector index.")
 
-    # 4. Regenerate wiki index and append log
+    # 4. Regenerate wiki index and append log for each scope
     await tracker.update(96, "Đang cập nhật danh mục Wiki Index...")
-    try:
-        await wiki_service.regenerate_index(session, scope_type=scope_type, scope_id=scope_id)
-        log_msg = (
-            f"Văn bản luật: Đã nhập '{display_doc_name}' "
-            f"— tạo {total_pages} trang Wiki (1 Tổng quan + {total_articles} Điều)"
-        )
-        await wiki_service.append_log(session, log_msg, scope_type=scope_type, scope_id=scope_id)
-    except Exception as e:
-        logger.warning(f"Failed to regenerate index or log: {e}")
+    for scope_type, scope_id in wiki_scopes:
+        try:
+            await wiki_service.regenerate_index(session, scope_type=scope_type, scope_id=scope_id)
+            log_msg = (
+                f"Văn bản luật: Đã nhập '{display_doc_name}' "
+                f"— tạo {len(articles) + 1} trang Wiki (1 Tổng quan + {total_articles} Điều)"
+            )
+            await wiki_service.append_log(session, log_msg, scope_type=scope_type, scope_id=scope_id)
+        except Exception as e:
+            logger.warning(f"Failed to regenerate index or log for {scope_type}:{scope_id}: {e}")
 
-    # 5. Mark source as ready
-    source.status = "ready"
-    source.progress = 100
-    source.progress_message = (
+    # 5. Mark wiki branch as ready and update dual status
+    source.wiki_status = "ready"
+    source.wiki_progress = 100
+    source.wiki_progress_message = (
         f"Văn bản luật: Đã bóc tách {total_articles} điều thành {total_pages} trang Wiki ({display_doc_name})"
         if total_articles
         else f"Văn bản luật: Đã tạo {total_pages} trang Wiki"
     )
+    from app.services.source_status import update_source_dual_status
+    await update_source_dual_status(session, source)
     source.auto_recover_count = 0
     await session.commit()
 
@@ -659,3 +738,221 @@ async def finalize_legal_source(session: AsyncSession, source: Source, tracker: 
         "total_pages": total_pages,
         "articles": total_articles,
     }
+
+
+async def ingest_legal_graph(
+    session: AsyncSession,
+    source: Source,
+    articles: list[dict[str, Any]],
+    preamble: str = "",
+    doc_number: Optional[str] = None,
+    art_page_map: Optional[dict[str, uuid.UUID]] = None,
+) -> dict[str, int]:
+    """Populate LegalUnit hierarchy and extract LegalRelation graph for a legal source."""
+    from app.database.models import LegalUnit, LegalRelation, LegalUnitType, LegalRelationType
+    from app.services.legal_relation_extractor import LegalRelationExtractor
+    from sqlalchemy import delete
+
+    # 1. Clean up existing units for idempotency
+    await session.execute(delete(LegalUnit).where(LegalUnit.source_id == source.id))
+
+    units_count = 0
+    relations_count = 0
+    extractor = LegalRelationExtractor()
+    first_unit = None
+
+    for art in articles:
+        art_num = art.get("num") or art.get("number", "")
+        art_title = art.get("title", "")
+        art_content = art.get("content_md") or art.get("content", "")
+        slug = art.get("slug", "")
+        wiki_page_id = (art_page_map or {}).get(slug)
+
+        art_unit = LegalUnit(
+            id=uuid.uuid4(),
+            source_id=source.id,
+            wiki_page_id=wiki_page_id,
+            unit_type=LegalUnitType.ARTICLE,
+            unit_number=str(art_num),
+            title=art_title,
+            full_path=f"Điều {art_num}" + (f": {art_title}" if art_title else ""),
+            content=art_content,
+            doc_number=doc_number,
+        )
+        session.add(art_unit)
+        units_count += 1
+        if first_unit is None:
+            first_unit = art_unit
+
+        # Clauses
+        for clause in art.get("clauses", []):
+            cl_num = clause.get("num") or clause.get("number", "")
+            cl_content = clause.get("content_md") or clause.get("content", "")
+            clause_unit = LegalUnit(
+                id=uuid.uuid4(),
+                source_id=source.id,
+                unit_type=LegalUnitType.CLAUSE,
+                unit_number=str(cl_num),
+                full_path=f"{art_unit.full_path} > Khoản {cl_num}",
+                content=cl_content,
+                parent_unit_id=art_unit.id,
+                doc_number=doc_number,
+            )
+            session.add(clause_unit)
+            units_count += 1
+
+            # Points
+            for point in clause.get("points", []):
+                p_let = point.get("letter") or point.get("num", "")
+                p_content = point.get("content_md") or point.get("content", "")
+                point_unit = LegalUnit(
+                    id=uuid.uuid4(),
+                    source_id=source.id,
+                    unit_type=LegalUnitType.POINT,
+                    unit_number=str(p_let),
+                    full_path=f"{clause_unit.full_path} > Điểm {p_let}",
+                    content=p_content,
+                    parent_unit_id=clause_unit.id,
+                    doc_number=doc_number,
+                )
+                session.add(point_unit)
+                units_count += 1
+
+        # Extract relations from article content
+        art_relations = extractor.extract_from_text(art_content, default_doc_number=doc_number)
+        for rel in art_relations:
+            rel_model = LegalRelation(
+                id=uuid.uuid4(),
+                source_unit_id=art_unit.id,
+                target_doc_number=rel.target_doc_number,
+                target_article_number=rel.target_article_number,
+                target_clause_number=rel.target_clause_number,
+                relation_type=rel.relation_type,
+                quote_context=rel.quote_context,
+                is_effective=True,
+            )
+            session.add(rel_model)
+            relations_count += 1
+
+    # Extract legal basis from preamble
+    if preamble and first_unit:
+        basis_relations = extractor.extract_preamble_basis(preamble)
+        for rel in basis_relations:
+            rel_model = LegalRelation(
+                id=uuid.uuid4(),
+                source_unit_id=first_unit.id,
+                target_doc_number=rel.target_doc_number,
+                relation_type=rel.relation_type,
+                quote_context=rel.quote_context,
+                is_effective=True,
+            )
+            session.add(rel_model)
+            relations_count += 1
+
+    return {"units_count": units_count, "relations_count": relations_count}
+
+
+async def get_legal_context_with_hierarchy(
+    session: AsyncSession,
+    unit_id: uuid.UUID,
+) -> dict[str, Any]:
+    """Retrieve a legal unit along with its enclosing Article/Chapter context for RAG retrieval."""
+    from app.database.models import LegalUnit, LegalUnitType
+
+    unit = await session.get(LegalUnit, unit_id)
+    if not unit:
+        return {}
+
+    parent_art = None
+    if unit.unit_type in (LegalUnitType.CLAUSE, LegalUnitType.POINT):
+        curr = unit
+        while curr and curr.parent_unit_id:
+            parent = getattr(curr, "parent", None) or await session.get(LegalUnit, curr.parent_unit_id)
+            if parent and parent.unit_type == LegalUnitType.ARTICLE:
+                parent_art = parent
+                break
+            curr = parent
+
+    return {
+        "unit_id": str(unit.id),
+        "unit_type": unit.unit_type,
+        "unit_number": unit.unit_number,
+        "full_path": unit.full_path,
+        "content": unit.content,
+        "doc_number": unit.doc_number,
+        "parent_article": {
+            "id": str(parent_art.id),
+            "number": parent_art.unit_number,
+            "title": parent_art.title,
+            "content": parent_art.content,
+        } if parent_art else None,
+    }
+
+
+async def get_legal_unit_validity_warnings(
+    session: AsyncSession,
+    unit_id: uuid.UUID,
+) -> list[dict[str, Any]]:
+    """Check if a legal unit has been amended, supplemented, replaced, or repealed."""
+    from app.database.models import LegalRelation, LegalRelationType
+
+    query = (
+        select(LegalRelation)
+        .where(
+            LegalRelation.target_unit_id == unit_id,
+            LegalRelation.is_effective.is_(True),
+            LegalRelation.relation_type.in_([
+                LegalRelationType.SUA_DOI,
+                LegalRelationType.BO_SUNG,
+                LegalRelationType.THAY_THE,
+                LegalRelationType.BAI_BO,
+            ]),
+        )
+    )
+    res = await session.execute(query)
+    relations = res.scalars().all()
+
+    warnings: list[dict[str, Any]] = []
+    for rel in relations:
+        source_u = getattr(rel, "source_unit", None)
+        modifying_doc = (source_u.doc_number if source_u else None) or rel.target_doc_number or "văn bản mới"
+        modifying_art = source_u.unit_number if source_u else None
+
+        warnings.append({
+            "relation_id": str(rel.id),
+            "relation_type": rel.relation_type.value if hasattr(rel.relation_type, "value") else str(rel.relation_type),
+            "modifying_doc_number": modifying_doc,
+            "modifying_article_number": modifying_art,
+            "quote_context": rel.quote_context,
+        })
+    return warnings
+
+
+def format_legal_validity_warning_callout(warnings: list[dict[str, Any]]) -> str:
+    """Format legal validity warnings as a GitHub-style markdown alert box."""
+    if not warnings:
+        return ""
+
+    lines = ["> [!WARNING]", "> **CẢNH BÁO HIỆU LỰC PHÁP LÝ**:"]
+    for w in warnings:
+        rel_type = w.get("relation_type", "")
+        doc = w.get("modifying_doc_number", "")
+        art = w.get("modifying_article_number")
+        art_ref = f" (Điều {art})" if art else ""
+
+        if rel_type == "sua_doi":
+            msg = f"Quy định này đã được **sửa đổi, bổ sung** bởi {doc}{art_ref}."
+        elif rel_type == "bo_sung":
+            msg = f"Quy định này đã được **bổ sung** bởi {doc}{art_ref}."
+        elif rel_type == "bai_bo":
+            msg = f"Quy định này đã bị **bãi bỏ** bởi {doc}{art_ref}."
+        elif rel_type == "thay_the":
+            msg = f"Quy định này đã bị **thay thế** bởi {doc}{art_ref}."
+        else:
+            msg = f"Quy định này chịu tác động bởi văn bản {doc}{art_ref}."
+
+        lines.append(f"> - {msg}")
+        if w.get("quote_context"):
+            lines.append(f">   *Trích dẫn*: \"{w['quote_context'][:150]}...\"")
+
+    return "\n".join(lines)

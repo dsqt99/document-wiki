@@ -67,10 +67,30 @@ def _get_vision_class(provider: ProviderType) -> type[VisionProvider]:
     if provider == ProviderType.GOOGLE:
         from app.ai.providers.google import GoogleVision
         return GoogleVision
-    elif provider == ProviderType.OPENAI:
+    elif provider in (ProviderType.OPENAI, ProviderType.ANTHROPIC):
+        # Claude vision goes through Anthropic's OpenAI-compatible endpoint
+        # (base_url set by _load_vision_config).
         from app.ai.providers.openai_provider import OpenAIVision
         return OpenAIVision
     raise ValueError(f"Unsupported vision provider: {provider}")
+
+
+# Anthropic's OpenAI-compatible endpoint, used for Claude vision/OCR calls.
+ANTHROPIC_OPENAI_BASE_URL = "https://api.anthropic.com/v1/"
+
+# Used when the stored active LLM/vision spec no longer exists (preset removed
+# from the catalog, custom model deleted).
+DEFAULT_LLM_SPEC_ID = "openai/gpt-6-luna"
+DEFAULT_VISION_SPEC_ID = "openai/gpt-6-luna"
+
+
+def _legacy_key_fits(provider: str, key: Optional[str]) -> bool:
+    """The legacy single llm_api_key / vision_api_key predates per-provider
+    keys; only reuse it for the provider it plausibly belongs to."""
+    if not key:
+        return False
+    is_anthropic_key = key.startswith("sk-ant-")
+    return is_anthropic_key if provider == "anthropic" else not is_anthropic_key
 
 
 # ---------------------------------------------------------------------------
@@ -121,9 +141,14 @@ class ProviderRegistry:
 
         svc = ConfigService(self.db)
         spec_id = await svc.get(ACTIVE_EMBEDDING_MODEL_KEY)
-        if spec_id and spec_id in EMBEDDING_CATALOG:
+        if spec_id and (spec_id in EMBEDDING_CATALOG or await self._custom_exists("embedding", spec_id)):
             return spec_id
         return None
+
+    async def _custom_exists(self, kind: str, spec_id: str) -> bool:
+        from app.ai.custom_models import get_custom, is_custom
+
+        return is_custom(spec_id) and await get_custom(self.db, kind, spec_id) is not None
 
     async def get_llm(self) -> LLMProvider:
         """Get the configured LLM provider."""
@@ -138,13 +163,18 @@ class ProviderRegistry:
 
         svc = ConfigService(self.db)
         spec_id = await svc.get(ACTIVE_LLM_MODEL_KEY)
-        if spec_id and spec_id in LLM_CATALOG:
+        if spec_id and (spec_id in LLM_CATALOG or await self._custom_exists("llm", spec_id)):
             return spec_id
         # Backward-compat: derive from legacy provider+model_id pair.
         legacy_provider = await svc.get("llm_provider")
         legacy_model = await svc.get("llm_model_id")
         if legacy_provider and legacy_model:
-            return derive_spec_id(legacy_provider, legacy_model)
+            derived = derive_spec_id(legacy_provider, legacy_model)
+            if derived:
+                return derived
+        if spec_id:
+            logger.warning(f"Active LLM {spec_id!r} no longer exists; using {DEFAULT_LLM_SPEC_ID}")
+            return DEFAULT_LLM_SPEC_ID
         return None
 
     async def get_vision(self) -> Optional[VisionProvider]:
@@ -167,12 +197,17 @@ class ProviderRegistry:
 
         svc = ConfigService(self.db)
         spec_id = await svc.get(ACTIVE_VISION_MODEL_KEY)
-        if spec_id and spec_id in VISION_CATALOG:
+        if spec_id and (spec_id in VISION_CATALOG or await self._custom_exists("vision", spec_id)):
             return spec_id
         legacy_provider = await svc.get("vision_provider")
         legacy_model = await svc.get("vision_model_id")
         if legacy_provider and legacy_model:
-            return derive_spec_id(legacy_provider, legacy_model)
+            derived = derive_spec_id(legacy_provider, legacy_model)
+            if derived:
+                return derived
+        if spec_id:
+            logger.warning(f"Active vision model {spec_id!r} no longer exists; using {DEFAULT_VISION_SPEC_ID}")
+            return DEFAULT_VISION_SPEC_ID
         return None
 
     async def test_all(self) -> dict[str, tuple[bool, str]]:
@@ -202,6 +237,22 @@ class ProviderRegistry:
         return results
 
     # --- Internal ---
+
+    async def _custom_endpoint(
+        self, kind: str, spec_id: str
+    ) -> Optional[tuple[ProviderType, str, str]]:
+        """(provider, base_url, api_key) of an admin-added model, else None."""
+        from app.ai.custom_models import get_api_key, get_custom, is_custom
+
+        if not is_custom(spec_id):
+            return None
+        model = await get_custom(self.db, kind, spec_id)
+        if model is None:
+            raise ValueError(f"Custom model {spec_id!r} was deleted. Pick another model in Settings.")
+        api_key = await get_api_key(self.db, kind, spec_id)
+        # Local OpenAI-compatible servers often need no auth, but the SDK
+        # refuses an empty key.
+        return ProviderType(model.protocol), model.base_url, api_key or "none"
 
     async def _load_embedding_config(
         self, spec_id: Optional[str] = None
@@ -234,20 +285,29 @@ class ProviderRegistry:
             )
 
         spec = get_spec(spec_id)  # raises UnknownEmbeddingModel if catalog miss
-        api_key = (
-            await svc.get(embedding_api_key_for(spec.provider))
-            or await svc.get("embedding_api_key")  # legacy fallback
-            or ""
-        )
-        base_url = await svc.get("embedding_base_url")
+        extra: dict = {"spec_id": spec.id}
+        custom = await self._custom_endpoint("embedding", spec.id)
+        if custom:
+            provider, base_url, api_key = custom
+            # Many OpenAI-compatible servers reject the `dimensions` param;
+            # the admin-declared dimension is the model's native size.
+            extra["send_dimensions"] = False
+        else:
+            provider = ProviderType(spec.provider)
+            api_key = (
+                await svc.get(embedding_api_key_for(spec.provider))
+                or await svc.get("embedding_api_key")  # legacy fallback
+                or ""
+            )
+            base_url = await svc.get("embedding_base_url")
 
         return ProviderConfig(
-            provider=ProviderType(spec.provider),
+            provider=provider,
             api_key=api_key,
             model_id=spec.model_id,
             base_url=base_url,
             dimensions=spec.dimension,
-            extra={"spec_id": spec.id},
+            extra=extra,
         )
 
     async def _load_llm_config(self) -> ProviderConfig:
@@ -258,7 +318,7 @@ class ProviderRegistry:
         Raises ValueError if no LLM is configured at all.
         """
         from app.ai.llm_catalog import get_spec
-        from app.services.config_service import ConfigService
+        from app.services.config_service import ConfigService, llm_api_key_for
 
         svc = ConfigService(self.db)
         spec_id = await self.get_active_llm_spec_id()
@@ -266,11 +326,19 @@ class ProviderRegistry:
             raise ValueError("No active LLM. Pick one in Settings → LLM.")
         spec = get_spec(spec_id)
 
-        api_key = await svc.get("llm_api_key") or ""
-        base_url = await svc.get("llm_base_url")
+        custom = await self._custom_endpoint("llm", spec.id)
+        if custom:
+            provider, base_url, api_key = custom
+        else:
+            provider = ProviderType(spec.provider)
+            api_key = await svc.get(llm_api_key_for(spec.provider))
+            if not api_key:
+                legacy = await svc.get("llm_api_key")
+                api_key = legacy if _legacy_key_fits(spec.provider, legacy) else ""
+            base_url = None
 
         return ProviderConfig(
-            provider=ProviderType(spec.provider),
+            provider=provider,
             api_key=api_key,
             model_id=spec.model_id,
             base_url=base_url,
@@ -281,7 +349,7 @@ class ProviderRegistry:
     async def _load_vision_config(self) -> ProviderConfig:
         """Build a ProviderConfig for the active vision model from VISION_CATALOG."""
         from app.ai.vision_catalog import get_spec
-        from app.services.config_service import ConfigService
+        from app.services.config_service import ConfigService, vision_api_key_for
 
         svc = ConfigService(self.db)
         spec_id = await self.get_active_vision_spec_id()
@@ -289,11 +357,19 @@ class ProviderRegistry:
             raise ValueError("No active vision model. Pick one in Settings → Vision.")
         spec = get_spec(spec_id)
 
-        api_key = await svc.get("vision_api_key") or ""
-        base_url = await svc.get("vision_base_url")
+        custom = await self._custom_endpoint("vision", spec.id)
+        if custom:
+            provider, base_url, api_key = custom
+        else:
+            provider = ProviderType(spec.provider)
+            api_key = await svc.get(vision_api_key_for(spec.provider))
+            if not api_key:
+                legacy = await svc.get("vision_api_key")
+                api_key = legacy if _legacy_key_fits(spec.provider, legacy) else ""
+            base_url = ANTHROPIC_OPENAI_BASE_URL if provider == ProviderType.ANTHROPIC else None
 
         return ProviderConfig(
-            provider=ProviderType(spec.provider),
+            provider=provider,
             api_key=api_key,
             model_id=spec.model_id,
             base_url=base_url,

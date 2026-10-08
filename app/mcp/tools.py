@@ -15,6 +15,8 @@ All tools verify the employee's MCP token and enforce knowledge_type scope:
 from typing import Optional
 
 from fastmcp import FastMCP
+from loguru import logger
+from sqlalchemy import select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mcp.logging import current_identity, logged_tool
@@ -297,6 +299,16 @@ def register_tools(mcp: FastMCP):
 
         import asyncio
 
+        from app.services.retrieval_service import (
+            expand_graph_neighbors,
+            format_graph_neighbors_section,
+            unified_search,
+        )
+
+        exact_match = None
+        graph_neighbors = []
+        oos_hint = ""
+
         async with async_session_factory() as session:
             registry = ProviderRegistry(session)
             embedding_provider = await registry.get_embedding(task="search_query")
@@ -304,65 +316,43 @@ def register_tools(mcp: FastMCP):
 
             allowed_source_ids = await _get_allowed_source_ids(identity, session)
 
-            # Hybrid (vector + full-text) over both pools, run concurrently. RRF
-            # inside each hybrid search fuses the two arms; we then merge the two
-            # pools by their fused score (comparable because both are RRF-scaled).
-            wiki_task = wiki_service.search_pages_hybrid(
-                session,
+            search_out = await unified_search(
+                session=session,
+                query=query,
                 query_embedding=query_embedding,
-                query_text=query,
                 top_k=top_k,
                 allowed_kt_slugs=identity.allowed_knowledge_types,
                 department_ids=identity.department_ids,
                 project_ids=proj_uuids,
                 all_scopes=identity.is_admin,
-            )
-            source_task = wiki_service.search_source_chunks_hybrid(
-                session,
-                query_embedding=query_embedding,
-                query_text=query,
-                top_k=top_k,
                 allowed_source_ids=allowed_source_ids,
+                apply_reranker=True,
+                apply_mmr=True,
+                check_out_of_scope=not identity.is_admin,
             )
-            # Out-of-scope peek — admins already see everything, so the hint only
-            # fires for non-admins. Vector-only + small fixed sample so an
-            # adversary can't enumerate the org's page list via search.
-            if not identity.is_admin:
-                oos_task = wiki_service.search_pages_semantic(
-                    session,
-                    query_embedding=query_embedding,
-                    top_k=5,
-                    department_ids=identity.department_ids,
-                    project_ids=proj_uuids,
-                    inverse_scope=True,
-                )
-                wiki_hits, source_hits, oos_hits = await asyncio.gather(
-                    wiki_task, source_task, oos_task
-                )
+
+            exact_match = search_out.get("exact_match")
+            ranked = search_out.get("ranked_results", [])
+            graph_neighbors = search_out.get("graph_neighbors", [])
+            oos_hits = search_out.get("out_of_scope_hits", [])
+            if oos_hits:
                 oos_hint = await _format_oos_hint(session, oos_hits)
-            else:
-                wiki_hits, source_hits = await asyncio.gather(wiki_task, source_task)
-                oos_hint = ""
 
-        # Threshold floor: drop weak vector-only hits (noise), but keep anything
-        # the lexical arm matched — an exact keyword hit is meaningful even at low
-        # cosine. Applied per pool before the cross-pool merge.
-        def _passes(hit: dict) -> bool:
-            if hit.get("fts_matched"):
-                return True
-            cos = hit.get("cosine")
-            return cos is not None and cos >= MIN_SIM_FLOOR
-
-        wiki_hits = [h for h in wiki_hits if _passes(h)]
-        source_hits = [h for h in source_hits if _passes(h)]
-
-        # Unify into one ranked list by fused RRF score.
-        ranked: list = [("wiki", h["rrf"], h) for h in wiki_hits]
-        ranked += [("source", h["rrf"], h) for h in source_hits]
-        ranked.sort(key=lambda r: r[1], reverse=True)
-        ranked = ranked[:top_k]
+        exact_block = ""
+        if exact_match and exact_match.get("matched"):
+            exact_block = (
+                "🎯 **KẾT QUẢ TRA CỨU CHÍNH XÁC VĂN BẢN QUY PHẠM PHÁP LUẬT**:\n"
+                f"- **Văn bản**: {exact_match.get('doc_number', '')} — {exact_match.get('full_path', '')}\n"
+                f"- **Tiêu đề**: {exact_match.get('title') or ''}\n"
+                f"- **Nội dung**:\n{exact_match.get('content', '')}\n"
+            )
+            if exact_match.get("validity_callout"):
+                exact_block += f"\n{exact_match['validity_callout']}\n"
+            exact_block += "\n---\n"
 
         if not ranked:
+            if exact_block:
+                return exact_block
             base = f"No knowledge base matches found for: \"{query}\""
             if oos_hint:
                 return f"{base}\n\n{oos_hint}"
@@ -373,12 +363,17 @@ def register_tools(mcp: FastMCP):
             return f"{base}/wiki/source/{source_id}" if base else f"/wiki/source/{source_id}"
 
         def _score_label(hit: dict) -> str:
+            if "rerank_score" in hit:
+                return f"⚡ rerank {hit['rerank_score']:.2f}"
             cos = hit.get("cosine")
             if cos is not None:
                 return f"{cos:.0%}"
             return "🔑 từ khóa"  # FTS-only match, no cosine
 
-        lines = [f"**KB search — {len(ranked)} result(s) for: \"{query}\"**\n"]
+        lines = []
+        if exact_block:
+            lines.append(exact_block)
+        lines.append(f"**KB search — {len(ranked)} result(s) for: \"{query}\"**\n")
         for kind, _score, hit in ranked:
             score_label = _score_label(hit)
             if kind == "wiki":
@@ -411,6 +406,10 @@ def register_tools(mcp: FastMCP):
                     f"Link: {_portal_link(source.id)}_"
                 )
             lines.append(entry)
+
+        if graph_neighbors:
+            lines.append("")
+            lines.append(format_graph_neighbors_section(graph_neighbors))
 
         if oos_hint:
             lines.append("")
@@ -526,7 +525,24 @@ def register_tools(mcp: FastMCP):
                 session, slug, page.scope_type, page.scope_id,
             )
 
-        body = page.content_md or ""
+            # Check legal validity warnings if this is a legal article page
+            validity_callout = ""
+            try:
+                from app.database.models import LegalUnit
+                from app.services.legal_service import (
+                    get_legal_unit_validity_warnings,
+                    format_legal_validity_warning_callout,
+                )
+                unit_res = await session.execute(sa_select(LegalUnit).where(LegalUnit.wiki_page_id == page.id))
+                legal_unit = unit_res.scalar_one_or_none()
+                if legal_unit:
+                    warnings = await get_legal_unit_validity_warnings(session, legal_unit.id)
+                    if warnings:
+                        validity_callout = format_legal_validity_warning_callout(warnings) + "\n\n"
+            except Exception:
+                pass
+
+        body = validity_callout + (page.content_md or "")
         outlinks = sorted({s for s in outlinks if s != slug})
         if outlinks:
             body = body.rstrip() + "\n\n## Outlinks\n" + "\n".join(
@@ -537,6 +553,89 @@ def register_tools(mcp: FastMCP):
                 f"- `{s}`" for s in sorted(backlinks)
             )
         return body
+
+    @kb_tool(mcp, requires=ANY_AUTHENTICATED)
+    @logged_tool("get_legal_relations_graph")
+    async def get_legal_relations_graph(
+        doc_number: Optional[str] = None,
+        article_number: Optional[str] = None,
+        slug: Optional[str] = None,
+    ) -> str:
+        """
+        Query legal relations graph for a document or article (e.g. amendments, repeals, citations).
+        
+        Args:
+            doc_number: Official document number (e.g. "136/2020/NĐ-CP").
+            article_number: Article number (e.g. "5", "5a").
+            slug: Optional WikiPage slug for the article.
+            
+        Returns:
+            Structured summary of all modifying, amending, repealing, and cited relations.
+        """
+        identity, err = await _get_identity()
+        if err:
+            return err
+        assert identity is not None
+
+        from app.database import async_session_factory
+        from app.database.models import LegalUnit, LegalRelation, WikiPage
+        from app.services.legal_service import (
+            get_legal_unit_validity_warnings,
+            format_legal_validity_warning_callout,
+        )
+
+        async with async_session_factory() as session:
+            unit = None
+            if slug:
+                page_stmt = sa_select(WikiPage).where(WikiPage.slug == slug)
+                page = (await session.execute(page_stmt)).scalar_one_or_none()
+                if page:
+                    unit_stmt = sa_select(LegalUnit).where(LegalUnit.wiki_page_id == page.id)
+                    unit = (await session.execute(unit_stmt)).scalar_one_or_none()
+
+            if not unit and doc_number and article_number:
+                unit_stmt = sa_select(LegalUnit).where(
+                    LegalUnit.doc_number.ilike(doc_number),
+                    LegalUnit.unit_number.ilike(article_number),
+                )
+                unit = (await session.execute(unit_stmt)).scalar_one_or_none()
+
+            if not unit and doc_number:
+                rel_stmt = sa_select(LegalRelation).where(
+                    LegalRelation.target_doc_number.ilike(doc_number)
+                ).limit(50)
+                relations = (await session.execute(rel_stmt)).scalars().all()
+                if not relations:
+                    return f"Không tìm thấy quan hệ pháp lý nào liên quan đến văn bản `{doc_number}`."
+                lines = [f"### Quan hệ pháp lý của văn bản `{doc_number}` ({len(relations)} quan hệ):\n"]
+                for r in relations:
+                    r_type = r.relation_type.value if hasattr(r.relation_type, "value") else str(r.relation_type)
+                    lines.append(f"- **{r_type}**: Điều {r.target_article_number or '?'} ({r.quote_context or 'N/A'})")
+                return "\n".join(lines)
+
+            if not unit:
+                return "Vui lòng cung cấp `doc_number` và `article_number`, hoặc `slug` hợp lệ."
+
+            warnings = await get_legal_unit_validity_warnings(session, unit.id)
+            warning_callout = format_legal_validity_warning_callout(warnings)
+
+            out_stmt = sa_select(LegalRelation).where(LegalRelation.source_unit_id == unit.id)
+            out_rels = (await session.execute(out_stmt)).scalars().all()
+
+            lines = [f"## Đồ thị pháp lý: {unit.full_path} ({unit.doc_number or 'Chưa rõ số hiệu'})"]
+            if warning_callout:
+                lines.append("\n" + warning_callout)
+
+            if out_rels:
+                lines.append("\n### Quan hệ tác động / dẫn chiếu ra ngoài:")
+                for r in out_rels:
+                    r_type = r.relation_type.value if hasattr(r.relation_type, "value") else str(r.relation_type)
+                    lines.append(f"- **{r_type}** -> {r.target_doc_number or ''} Điều {r.target_article_number or ''}: {r.quote_context or ''}")
+
+            if not warnings and not out_rels:
+                lines.append("\n_Không có quan hệ sửa đổi hoặc dẫn chiếu đặc biệt ghi nhận cho điều này._")
+
+            return "\n".join(lines)
 
     @kb_tool(mcp, requires=ANY_AUTHENTICATED)
     @logged_tool("list_wiki_pages")
@@ -2053,3 +2152,89 @@ def register_tools(mcp: FastMCP):
             await session.commit()
 
         return f"Page `{slug}` created at v{page.version}."
+
+    # =========================================================================
+    # Spreadsheet / Tabular Analytics via DuckDB
+    # =========================================================================
+
+    @kb_tool(mcp, requires=ANY_AUTHENTICATED)
+    @logged_tool("query_table", query_arg="sql_query")
+    async def query_table(
+        source_id: str,
+        sql_query: str,
+        max_rows: int = 50,
+    ) -> str:
+        """
+        Execute a safe, read-only SQL query against an uploaded spreadsheet (Excel or CSV).
+
+        Args:
+            source_id: UUID of the source spreadsheet document.
+            sql_query: SQL SELECT query (e.g. `SELECT name, rank FROM can_bo WHERE unit = 'Đội 1'`).
+                       Sheet names are registered as tables (unaccented, lowercase, underscores).
+            max_rows: Maximum rows to return (default: 50, max: 100).
+
+        Returns:
+            Markdown table of query results or an informative error message.
+        """
+        identity, err = await _get_identity()
+        if err:
+            return err
+        assert identity is not None
+
+        import uuid
+        from app.database import async_session_factory
+        from app.database.models import Source
+        from app.services.storage_service import storage_service
+        from app.services.table_query_service import TableQueryService
+
+        try:
+            source_uuid = uuid.UUID(source_id)
+        except ValueError:
+            return f"Invalid source_id format: '{source_id}'."
+
+        max_rows = min(max(1, max_rows), 100)
+
+        async with async_session_factory() as session:
+            source = await session.get(Source, source_uuid)
+            if not source:
+                return f"Source '{source_id}' not found."
+
+            if not source.minio_key:
+                return f"Source '{source_id}' has no stored file."
+
+            # Verify permissions/scope
+            allowed_ids = await _get_allowed_source_ids(identity, session)
+            if allowed_ids is not None and source.id not in allowed_ids:
+                return f"Access denied to source '{source_id}'."
+
+            file_bytes = storage_service.download_file(source.minio_key)
+            if not file_bytes:
+                return f"Failed to retrieve file content for source '{source_id}'."
+
+            file_name = source.file_name or "table.xlsx"
+
+        query_service = TableQueryService(default_max_rows=max_rows)
+        res = query_service.query_excel_bytes(
+            file_bytes=file_bytes,
+            file_name=file_name,
+            sql_query=sql_query,
+            max_rows=max_rows,
+        )
+
+        if not res["success"]:
+            return f"❌ Lỗi truy vấn bảng: {res['error']}"
+
+        cols = res["columns"]
+        rows = res["rows"]
+        if not rows:
+            return f"Truy vấn thành công nhưng không có dòng nào thỏa mãn: `{sql_query}`"
+
+        lines = [
+            f"**Kết quả truy vấn bảng tính ({len(rows)} dòng) từ `{file_name}`**:\n",
+            "| " + " | ".join(cols) + " |",
+            "| " + " | ".join(["---"] * len(cols)) + " |",
+        ]
+        for r in rows:
+            lines.append("| " + " | ".join(str(r.get(c, "")) for c in cols) + " |")
+
+        return "\n".join(lines)

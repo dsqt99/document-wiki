@@ -55,7 +55,7 @@ class OpenAIEmbedding(EmbeddingProvider):
             "input": text,
         }
         # text-embedding-3-* supports custom dimensions
-        if self.config.dimensions:
+        if self.config.dimensions and self.config.extra.get("send_dimensions", True):
             kwargs["dimensions"] = self.dimensions
 
         try:
@@ -99,7 +99,7 @@ class OpenAIEmbedding(EmbeddingProvider):
                 "model": self.config.model_id,
                 "input": batch,
             }
-            if self.config.dimensions:
+            if self.config.dimensions and self.config.extra.get("send_dimensions", True):
                 kwargs["dimensions"] = self.dimensions
 
             try:
@@ -160,7 +160,7 @@ class OpenAILLM(LLMProvider):
 
     def _is_reasoning_or_gpt5(self) -> bool:
         mid = (self.config.model_id or "").lower()
-        return any(p in mid for p in ("gpt-5", "o1", "o3", "o4"))
+        return any(p in mid for p in ("gpt-5", "gpt-6", "o1", "o3", "o4"))
 
     async def generate(
         self,
@@ -334,7 +334,7 @@ class OpenAIVision(VisionProvider):
 
     def _is_reasoning_or_gpt5(self) -> bool:
         mid = (self.config.model_id or "").lower()
-        return any(p in mid for p in ("gpt-5", "o1", "o3", "o4"))
+        return any(p in mid for p in ("gpt-5", "gpt-6", "o1", "o3", "o4"))
 
     async def analyze_image(
         self,

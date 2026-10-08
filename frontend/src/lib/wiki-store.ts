@@ -16,7 +16,14 @@ interface WikiStoreState {
   expandedDocuments: Set<string>;
   expandedScopes: Set<string>;
   search: string;
+  /** Reading-page tree: restrict to one source document ("" = all) */
+  docFilter: string;
+  /** Reading-page tree: collapsed section keys */
+  collapsedSections: Set<string>;
   sidebarScrollTop: number;
+  // Reading layout: collapsed page tree / right info panel (kept across pages)
+  treeCollapsed: boolean;
+  infoCollapsed: boolean;
 
   // Data Cache
   pagesCache: Map<string, WikiPageSummary[]>;
@@ -32,7 +39,11 @@ export const wikiStore: WikiStoreState = {
   expandedDocuments: new Set<string>(),
   expandedScopes: new Set<string>(["global"]),
   search: "",
+  docFilter: "",
+  collapsedSections: new Set<string>(),
   sidebarScrollTop: 0,
+  treeCollapsed: false,
+  infoCollapsed: false,
 
   pagesCache: new Map(),
   sourcesCache: null,
@@ -99,9 +110,33 @@ export function useWikiStore() {
     notifyWikiStore();
   }, []);
 
+  const setTreeCollapsed = React.useCallback((val: boolean) => {
+    wikiStore.treeCollapsed = val;
+    notifyWikiStore();
+  }, []);
+
+  const setInfoCollapsed = React.useCallback((val: boolean) => {
+    wikiStore.infoCollapsed = val;
+    notifyWikiStore();
+  }, []);
+
+  const setDocFilter = React.useCallback((val: string) => {
+    wikiStore.docFilter = val;
+    notifyWikiStore();
+  }, []);
+
+  const toggleSection = React.useCallback((key: string) => {
+    const next = new Set(wikiStore.collapsedSections);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    wikiStore.collapsedSections = next;
+    notifyWikiStore();
+  }, []);
+
   const resetFilters = React.useCallback(() => {
     wikiStore.categoryFilter = "all";
     wikiStore.search = "";
+    wikiStore.docFilter = "";
     notifyWikiStore();
   }, []);
 
@@ -112,11 +147,19 @@ export function useWikiStore() {
     expandedDocuments: wikiStore.expandedDocuments,
     expandedScopes: wikiStore.expandedScopes,
     sidebarScrollTop: wikiStore.sidebarScrollTop,
+    treeCollapsed: wikiStore.treeCollapsed,
+    infoCollapsed: wikiStore.infoCollapsed,
+    docFilter: wikiStore.docFilter,
+    collapsedSections: wikiStore.collapsedSections,
+    setDocFilter,
+    toggleSection,
     setCategoryFilter,
     setGroupByDocument,
     setSearch,
     setExpandedDocuments,
     setExpandedScopes,
+    setTreeCollapsed,
+    setInfoCollapsed,
     resetFilters,
   };
 }

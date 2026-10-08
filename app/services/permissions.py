@@ -90,6 +90,61 @@ ROLE_PERMISSIONS_MAP: dict[str, list[str]] = {
     "admin": ALL_PERMISSIONS,
 }
 
+# Runtime override cache loaded from database (ConfigService)
+ROLE_PERMISSIONS_OVERRIDE: dict[str, list[str]] = {}
+
+SYSTEM_ROLES = [
+    {
+        "id": "viewer",
+        "name": "Viewer (Người xem)",
+        "description": "Chỉ đọc tài liệu, wiki và AI skills trong phạm vi phòng ban được phân công và tài liệu chung.",
+    },
+    {
+        "id": "contributor",
+        "name": "Contributor (Người đóng góp)",
+        "description": "Đọc và tải lên tài liệu mới, đề xuất chỉnh sửa trang wiki và tạo AI skills cho phòng ban.",
+    },
+    {
+        "id": "knowledge_manager",
+        "name": "Knowledge Manager (Quản trị tri thức)",
+        "description": "Toàn quyền quản trị tài liệu, duyệt bài viết wiki, quản trị AI skills, phòng ban và nhân viên.",
+    },
+    {
+        "id": "admin",
+        "name": "System Admin (Quản trị viên)",
+        "description": "Toàn quyền tối cao trong hệ thống, bao gồm cấu hình AI Model, OCR, Settings và phân quyền.",
+    },
+]
+
+
+def get_effective_role_permissions() -> dict[str, list[str]]:
+    """Return effective mapping for all system roles, merging base with custom overrides."""
+    result = {role: list(perms) for role, perms in ROLE_PERMISSIONS_MAP.items()}
+    for role, perms in ROLE_PERMISSIONS_OVERRIDE.items():
+        if role != "admin":  # admin role is immutable
+            result[role] = list(perms)
+    return result
+
+
+def load_role_permissions_override(custom_json: str | None) -> None:
+    """Load role permissions override from JSON string."""
+    import json
+    global ROLE_PERMISSIONS_OVERRIDE
+    if not custom_json or not custom_json.strip():
+        ROLE_PERMISSIONS_OVERRIDE = {}
+        return
+    try:
+        data = json.loads(custom_json)
+        if isinstance(data, dict):
+            ROLE_PERMISSIONS_OVERRIDE = {
+                role: [p for p in perms if p in ALL_PERMISSIONS]
+                for role, perms in data.items()
+                if role != "admin" and isinstance(perms, list)
+            }
+    except Exception:
+        ROLE_PERMISSIONS_OVERRIDE = {}
+
+
 # ---------------------------------------------------------------------------
 # Permission groups (for UI rendering)
 # ---------------------------------------------------------------------------

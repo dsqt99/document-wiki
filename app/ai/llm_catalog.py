@@ -1,9 +1,9 @@
 """
 LLM model catalog — code-level whitelist of supported text-generation models.
 
-Single source of truth for which LLMs the system supports. Admins pick from
-this catalog in the settings UI; they cannot type free-form model IDs, which
-previously caused:
+Presets the system ships with. Admins pick from these or add their own model
+(base URL + model name, see app/ai/custom_models.py). Free-form IDs used to be
+banned outright because they caused:
 
   1. Misspelled model_id → API call fails or silently routes to a fallback.
   2. Unknown context window → writer used a 60k-char fallback budget even for
@@ -39,119 +39,29 @@ class LLMModelSpec:
 # the writer uses ~60% of this for source text, so wrong values silently
 # truncate documents.
 LLM_CATALOG: dict[str, LLMModelSpec] = {
-    # --- Anthropic Claude 4.x ---
-    "anthropic/claude-opus-4-7": LLMModelSpec(
-        id="anthropic/claude-opus-4-7",
-        provider="anthropic",
-        model_id="claude-opus-4-7",
-        context_window_tokens=1_000_000,
-        max_output_tokens=32_000,
+    "openai/gpt-6-luna": LLMModelSpec(
+        id="openai/gpt-6-luna",
+        provider="openai",
+        model_id="gpt-6-luna",
+        context_window_tokens=400_000,
+        max_output_tokens=128_000,
         supports_tools=True,
         supports_vision=True,
-        label="Claude Opus 4.7 (1M)",
-        cost_per_1m_input_tokens=15.0,
-        cost_per_1m_output_tokens=75.0,
-        notes="Highest-quality Anthropic model. Use for complex wiki compilation.",
+        label="GPT-6 Luna",
+        cost_per_1m_input_tokens=None,
+        cost_per_1m_output_tokens=None,
     ),
-    "anthropic/claude-sonnet-4-6": LLMModelSpec(
-        id="anthropic/claude-sonnet-4-6",
+    "anthropic/claude-sonnet-5-5": LLMModelSpec(
+        id="anthropic/claude-sonnet-5-5",
         provider="anthropic",
-        model_id="claude-sonnet-4-6",
+        model_id="claude-sonnet-5-5",
         context_window_tokens=1_000_000,
         max_output_tokens=64_000,
         supports_tools=True,
         supports_vision=True,
-        label="Claude Sonnet 4.6 (1M)",
-        cost_per_1m_input_tokens=3.0,
-        cost_per_1m_output_tokens=15.0,
-        notes="Balanced cost/quality. Recommended default.",
-    ),
-    # --- Google Gemini ---
-    "google/gemini-3.1-pro": LLMModelSpec(
-        id="google/gemini-3.1-pro",
-        provider="google",
-        model_id="gemini-3.1-pro",
-        context_window_tokens=1_000_000,
-        max_output_tokens=65_000,
-        supports_tools=True,
-        supports_vision=True,
-        label="Gemini 3.1 Pro (1M)",
-        cost_per_1m_input_tokens=1.25,
-        cost_per_1m_output_tokens=10.0,
-        notes="High-context Gemini. Strong on long-doc reasoning.",
-    ),
-    "google/gemini-3.5-flash": LLMModelSpec(
-        id="google/gemini-3.5-flash",
-        provider="google",
-        model_id="gemini-3.5-flash",
-        context_window_tokens=1_048_576,
-        max_output_tokens=65_536,
-        supports_tools=True,
-        supports_vision=True,
-        label="Gemini 3.5 Flash (1M)",
-        cost_per_1m_input_tokens=0.5,
-        cost_per_1m_output_tokens=3.0,
-        notes=(
-            "Frontier-class performance, highly efficient multimodal + agentic Flash model. "
-            "Supports thinking and computer use."
-        ),
-    ),
-    "google/gemini-3.1-flash-lite": LLMModelSpec(
-        id="google/gemini-3.1-flash-lite",
-        provider="google",
-        model_id="gemini-3.1-flash-lite",
-        context_window_tokens=1_048_576,
-        max_output_tokens=65_536,
-        supports_tools=True,
-        supports_vision=True,
-        label="Gemini 3.1 Flash-Lite (1M)",
-        cost_per_1m_input_tokens=0.25,
-        cost_per_1m_output_tokens=1.50,  # includes thinking tokens
-        notes=(
-            "Most cost-efficient 1M-context Gemini. Optimized for high-volume "
-            "agentic tasks, translation, simple extraction. Supports thinking. "
-            "Audio input charged at $0.50/1M."
-        ),
-    ),
-    # --- OpenAI ---
-    "openai/gpt-5.6-sol": LLMModelSpec(
-        id="openai/gpt-5.6-sol",
-        provider="openai",
-        model_id="gpt-5.6-sol",
-        context_window_tokens=1_050_000,
-        max_output_tokens=128_000,
-        supports_tools=True,
-        supports_vision=True,
-        label="GPT-5.6 Sol (1M)",
-        cost_per_1m_input_tokens=4.00,
-        cost_per_1m_output_tokens=20.00,
-        notes="Frontier model for complex reasoning, coding, and wiki compilation.",
-    ),
-    "openai/gpt-5.6-terra": LLMModelSpec(
-        id="openai/gpt-5.6-terra",
-        provider="openai",
-        model_id="gpt-5.6-terra",
-        context_window_tokens=1_050_000,
-        max_output_tokens=128_000,
-        supports_tools=True,
-        supports_vision=True,
-        label="GPT-5.6 Terra (1M)",
-        cost_per_1m_input_tokens=2.00,
-        cost_per_1m_output_tokens=12.00,
-        notes="Balanced intelligence and cost. Equivalent to mini model tier.",
-    ),
-    "openai/gpt-5.6-luna": LLMModelSpec(
-        id="openai/gpt-5.6-luna",
-        provider="openai",
-        model_id="gpt-5.6-luna",
-        context_window_tokens=1_050_000,
-        max_output_tokens=128_000,
-        supports_tools=True,
-        supports_vision=True,
-        label="GPT-5.6 Luna (1M)",
-        cost_per_1m_input_tokens=0.20,
-        cost_per_1m_output_tokens=1.20,
-        notes="Cost-sensitive, high-volume workloads. Fastest GPT-5.6 model.",
+        label="Claude Sonnet 5.5",
+        cost_per_1m_input_tokens=None,
+        cost_per_1m_output_tokens=None,
     ),
 }
 
@@ -161,6 +71,18 @@ class UnknownLLMModel(KeyError):
 
 
 def get_spec(spec_id: str) -> LLMModelSpec:
+    from app.ai.custom_models import is_custom, parse_id
+
+    if is_custom(spec_id):
+        # Admin-added model (see app/ai/custom_models.py). Context window is
+        # unknown, so use a conservative default for the writer's budget.
+        _, model_id = parse_id(spec_id)
+        return LLMModelSpec(
+            id=spec_id, provider="custom", model_id=model_id,
+            context_window_tokens=128_000, max_output_tokens=8_192,
+            supports_tools=True, supports_vision=False, label=model_id,
+            cost_per_1m_input_tokens=None, cost_per_1m_output_tokens=None,
+        )
     try:
         return LLM_CATALOG[spec_id]
     except KeyError as e:

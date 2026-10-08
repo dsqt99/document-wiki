@@ -34,42 +34,7 @@ class EmbeddingModelSpec:
 # `wiki_page_embeddings_<dim>` table in the database. Currently supported
 # dimensions: 768, 1024, 1536, 3072.
 EMBEDDING_CATALOG: dict[str, EmbeddingModelSpec] = {
-    # --- Google Gemini ---
-    # Both Gemini embedding models support flexible output dim (128–3072).
-    # We pin to 3072 (highest recommended) so the schema column type matches.
-    # If you want the cheaper 1536/768 tiers, add a second spec entry — the
-    # provider call already passes `output_dimensionality` from spec.dimension.
-    "google/gemini-embedding-001": EmbeddingModelSpec(
-        id="google/gemini-embedding-001",
-        provider="google",
-        model_id="gemini-embedding-001",
-        dimension=3072,
-        max_input_tokens=2048,
-        label="Gemini Embedding 001 (3072d)",
-        cost_per_1m_tokens=0.15,
-        notes="Text-only. Stable since June 2025. Strong multilingual incl. Vietnamese.",
-    ),
-    "google/gemini-embedding-2": EmbeddingModelSpec(
-        id="google/gemini-embedding-2",
-        provider="google",
-        model_id="gemini-embedding-2",
-        dimension=3072,
-        max_input_tokens=8192,
-        label="Gemini Embedding 2 (3072d, multimodal)",
-        cost_per_1m_tokens=0.15,
-        notes="Multimodal (text, image, video, audio, PDF). 8K input window. Stable Apr 2026.",
-    ),
     # --- OpenAI ---
-    "openai/text-embedding-3-small": EmbeddingModelSpec(
-        id="openai/text-embedding-3-small",
-        provider="openai",
-        model_id="text-embedding-3-small",
-        dimension=1536,
-        max_input_tokens=8191,
-        label="OpenAI text-embedding-3-small (1536d)",
-        cost_per_1m_tokens=0.02,
-        notes="Best price/performance on OpenAI side.",
-    ),
     "openai/text-embedding-3-large": EmbeddingModelSpec(
         id="openai/text-embedding-3-large",
         provider="openai",
@@ -93,6 +58,17 @@ class UnknownEmbeddingModel(KeyError):
 
 
 def get_spec(spec_id: str) -> EmbeddingModelSpec:
+    from app.ai.custom_models import EMBEDDING_DIMENSIONS, is_custom, parse_id
+
+    if is_custom(spec_id):
+        # Admin-added model: "custom/<dim>/<model_id>" (see app/ai/custom_models.py).
+        dimension, model_id = parse_id(spec_id)
+        if dimension in EMBEDDING_DIMENSIONS:
+            return EmbeddingModelSpec(
+                id=spec_id, provider="custom", model_id=model_id, dimension=dimension,
+                max_input_tokens=8191, label=f"{model_id} ({dimension}d)",
+                cost_per_1m_tokens=None,
+            )
     try:
         return EMBEDDING_CATALOG[spec_id]
     except KeyError as e:

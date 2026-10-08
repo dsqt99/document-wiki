@@ -15,9 +15,17 @@ export type Source = {
   title: string;
   file_name?: string;
   source_type?: string;
-  status: "ready" | "processing" | "error" | "pending" | "plan_ready" | "awaiting_approval" | string;
+  status: "ready" | "processing" | "error" | "partial" | "pending" | "plan_ready" | "awaiting_approval" | string;
   progress?: number;
   progress_message?: string;
+  error_message?: string;
+  // Dual pipeline: branch A = raw chunks, branch B = wiki
+  chunk_status?: string;
+  chunk_progress?: number;
+  chunk_error_message?: string;
+  wiki_status?: string;
+  wiki_progress?: number;
+  wiki_error_message?: string;
   page_count?: number;
   wiki_page_count?: number;
   extracted_token_count?: number;

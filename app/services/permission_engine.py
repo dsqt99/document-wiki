@@ -218,14 +218,18 @@ def build_skill_filter(user: Employee, action: str = "read"):
 # ---------------------------------------------------------------------------
 
 def _get_user_permissions(user: Employee) -> set[str]:
-    """Extract effective permissions from user's fixed system role."""
-    from app.services.permissions import ALL_PERMISSIONS, ROLE_PERMISSIONS_MAP
+    """Extract effective permissions from user's fixed system role with custom overrides."""
+    from app.services.permissions import (
+        ALL_PERMISSIONS,
+        get_effective_role_permissions,
+    )
     
     if user.role == "admin" or getattr(user, "global_role", None) == "admin":
         return set(ALL_PERMISSIONS)
 
     g_role = getattr(user, "global_role", "viewer") or "viewer"
-    stored = ROLE_PERMISSIONS_MAP.get(g_role, ROLE_PERMISSIONS_MAP["viewer"])
+    effective_map = get_effective_role_permissions()
+    stored = effective_map.get(g_role, effective_map.get("viewer", []))
 
     return set(stored)
 

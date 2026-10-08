@@ -9,6 +9,7 @@ export function StatusDot({ source }: { source: Source }) {
     ready: "bg-green-500",
     processing: "bg-yellow-500",
     error: "bg-destructive",
+    partial: "bg-amber-500",
     pending: "bg-muted-foreground",
     plan_ready: "bg-blue-500",
     awaiting_approval: "bg-orange-500",
@@ -25,6 +26,8 @@ export function StatusDot({ source }: { source: Source }) {
         return t("knowledge.status.processing", "Processing");
       case "error":
         return t("knowledge.status.error", "Error");
+      case "partial":
+        return t("knowledge.status.partial", "Partial");
       case "pending":
         return t("knowledge.status.pending", "Pending");
       case "plan_ready":
@@ -34,6 +37,14 @@ export function StatusDot({ source }: { source: Source }) {
       default:
         return st;
     }
+  };
+
+  const branchLabel = (st?: string) => {
+    if (!st) return "-";
+    if (st === "ready") return "✓";
+    if (st === "error") return "✗";
+    if (st === "skipped") return "—";
+    return "…";
   };
 
   return (
@@ -52,7 +63,14 @@ export function StatusDot({ source }: { source: Source }) {
           {source.progress_message}
         </span>
       )}
-      {status === "error" && source.progress_message && (
+      {source.chunk_status && source.chunk_status !== "pending" && !source.preserve_verbatim && (
+        <span className="text-[10px] text-muted-foreground">
+          {t("knowledge.branch.chunks", "Chunks")}: {branchLabel(source.chunk_status)}
+          {" · "}
+          {t("knowledge.branch.wiki", "Wiki")}: {branchLabel(source.wiki_status)}
+        </span>
+      )}
+      {(status === "error" || status === "partial") && source.progress_message && (
         <span className="text-[10px] text-destructive truncate max-w-[150px]" title={source.progress_message}>
           {source.progress_message}
         </span>

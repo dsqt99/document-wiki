@@ -59,6 +59,8 @@ uv.lock
 # Reference
 .rtk/
 
+temp_uploads/
+
 # Ai Client
 .claude/
 
@@ -68,5 +70,6 @@ nginx/
 # data
 arkon-data/
 
-# test
-tests/
+# WeKnora reference repo
+WeKnora/
+

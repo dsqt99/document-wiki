@@ -5,8 +5,7 @@ import Link from "next/link";
 import { api } from "@/lib/api";
 import { WikiGraphData, WikiPageDetail } from "@/types/wiki";
 import { WikiGraphMini } from "./wiki-graph";
-import { WikiTypeBadge } from "./wiki-type-badge";
-import { ScopeBadge } from "@/components/shared/scope-badge";
+import { getCachedPages } from "@/lib/wiki-store";
 
 type Props = {
   slug: string;
@@ -19,16 +18,16 @@ type Props = {
 
 function LinkItem({
   slug,
-  direction,
+  title,
   linkSuffix = "",
   onSelectPage,
 }: {
   slug: string;
-  direction: "back" | "forward";
+  title?: string;
   linkSuffix?: string;
   onSelectPage?: (slug: string) => void;
 }) {
-  const label = slug.split("/").pop() ?? slug;
+  const label = title || (slug.split("/").pop() ?? slug).replace(/-/g, " ");
   return (
     <Link
       href={`/wiki/${slug}${linkSuffix}`}
@@ -38,27 +37,21 @@ function LinkItem({
           onSelectPage(slug);
         }
       }}
-      className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors group"
+      className="block px-2 py-1 rounded-md text-[13px] leading-snug text-foreground/80 hover:bg-accent/50 hover:text-primary transition-colors"
+      title={slug}
     >
-      <span className="material-symbols-outlined text-xs text-muted-foreground group-hover:text-primary transition-colors">
-        {direction === "back" ? "arrow_back" : "arrow_forward"}
-      </span>
-      <span className="truncate" title={slug}>
-        {label}
-      </span>
+      <span className="line-clamp-2">{label}</span>
     </Link>
   );
 }
 
 function Section({
   title,
-  icon,
   count,
   defaultOpen = true,
   children,
 }: {
   title: string;
-  icon: string;
   count: number;
   defaultOpen?: boolean;
   children: React.ReactNode;
@@ -69,16 +62,15 @@ function Section({
     <div>
       <button
         onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center gap-2 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors"
+        className="w-full flex items-center gap-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
       >
-        <span className="material-symbols-outlined text-xs">{icon}</span>
         {title}
-        <span className="ml-auto tabular-nums">{count}</span>
-        <span className="material-symbols-outlined text-xs">
+        <span className="tabular-nums text-foreground/70">{count}</span>
+        <span className="material-symbols-outlined ml-auto" style={{ fontSize: 16 }}>
           {open ? "expand_less" : "expand_more"}
         </span>
       </button>
-      {open && <div className="space-y-0.5">{children}</div>}
+      {open && <div className="space-y-px pb-2">{children}</div>}
     </div>
   );
 }
@@ -92,114 +84,47 @@ export function WikiSidebarRight({ slug, page, linkSuffix = "", onSelectPage }: 
       .catch(() => setGraphData(null));
   }, [slug]);
 
+  // Titles from the page list the tree already loaded (falls back to the slug).
+  const titles = React.useMemo(() => {
+    const m = new Map<string, string>();
+    for (const p of getCachedPages("/api/wiki/pages") ?? []) m.set(p.slug, p.title);
+    return m;
+  }, []);
+
+  const hasLinks = page.backlinks.length > 0 || page.outlinks.length > 0;
+
   return (
     <div className="w-72 shrink-0 border-l border-border bg-card/30 flex flex-col overflow-hidden h-full">
-      {/* Header */}
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
-        <span className="material-symbols-outlined text-sm text-muted-foreground">
-          info
-        </span>
-        <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-          Page Info
-        </span>
-      </div>
-
-      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
-        {/* Metadata section */}
-        <div className="space-y-3">
-          {/* Type + Scope */}
-          <div className="flex flex-wrap items-center gap-1.5">
-            <WikiTypeBadge type={page.page_type} />
-            <ScopeBadge scopeType={page.scope_type ?? "global"} scopeId={page.scope_id} />
-          </div>
-
-          {/* Version & Date */}
-          <div className="grid grid-cols-2 gap-2 text-xs">
-            <div>
-              <p className="text-muted-foreground/60 mb-0.5">Version</p>
-              <p className="text-foreground font-medium">v{page.version}</p>
-            </div>
-            <div>
-              <p className="text-muted-foreground/60 mb-0.5">Updated</p>
-              <p className="text-foreground font-medium">
-                {new Date(page.updated_at).toLocaleDateString("en-US", {
-                  month: "short",
-                  day: "numeric",
-                  year: "numeric",
-                })}
-              </p>
-            </div>
-          </div>
-
-          {/* Knowledge Types */}
-          {page.knowledge_type_slugs.length > 0 && (
-            <div>
-              <p className="text-xs text-muted-foreground/60 mb-1.5">Knowledge Types</p>
-              <div className="flex flex-wrap gap-1">
-                {page.knowledge_type_slugs.map((kt) => (
-                  <span
-                    key={kt}
-                    className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-accent/60 text-accent-foreground border border-border"
-                  >
-                    {kt}
-                  </span>
+      <div className="flex-1 overflow-y-auto px-4 pt-3 pb-4 space-y-5">
+        <section>
+          <p className="text-xs font-bold uppercase tracking-wider text-foreground mb-1.5">Liên kết</p>
+          {hasLinks ? (
+            <>
+              <Section title="Liên kết trỏ đến" count={page.backlinks.length}>
+                {page.backlinks.map((s) => (
+                  <LinkItem key={s} slug={s} title={titles.get(s)} linkSuffix={linkSuffix} onSelectPage={onSelectPage} />
                 ))}
-              </div>
-            </div>
+              </Section>
+              <Section title="Liên kết đi ra" count={page.outlinks.length}>
+                {page.outlinks.map((s) => (
+                  <LinkItem key={s} slug={s} title={titles.get(s)} linkSuffix={linkSuffix} onSelectPage={onSelectPage} />
+                ))}
+              </Section>
+            </>
+          ) : (
+            <p className="text-xs text-muted-foreground py-1">Chưa có liên kết.</p>
           )}
+        </section>
 
-          {/* Source origin link (if page was generated from a source document) */}
-          {page.source_ids && page.source_ids.length > 0 && (
-            <div>
-              <p className="text-muted-foreground/60 text-xs mb-1">Origin Document</p>
-              <Link
-                href={`/sources`}
-                className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors"
-              >
-                <span className="material-symbols-outlined text-xs">open_in_new</span>
-                View in Knowledge Base
-              </Link>
+        {graphData && graphData.nodes.length > 1 && (
+          <section>
+            <p className="text-xs font-bold uppercase tracking-wider text-foreground mb-2">Sơ đồ cục bộ</p>
+            <div className="rounded-xl overflow-hidden border border-border bg-background">
+              <WikiGraphMini slug={slug} nodes={graphData.nodes} edges={graphData.edges} />
             </div>
-          )}
-        </div>
-
-        <hr className="border-border" />
-
-        {/* Connections */}
-        {(page.backlinks.length > 0 || page.outlinks.length > 0) ? (
-          <>
-            <Section title="Backlinks" icon="arrow_back" count={page.backlinks.length}>
-              {page.backlinks.map((s) => (
-                <LinkItem key={s} slug={s} direction="back" linkSuffix={linkSuffix} onSelectPage={onSelectPage} />
-              ))}
-            </Section>
-            <Section title="Outlinks" icon="arrow_forward" count={page.outlinks.length}>
-              {page.outlinks.map((s) => (
-                <LinkItem key={s} slug={s} direction="forward" linkSuffix={linkSuffix} onSelectPage={onSelectPage} />
-              ))}
-            </Section>
-          </>
-        ) : (
-          <p className="text-xs text-muted-foreground py-1">No connections yet.</p>
+          </section>
         )}
       </div>
-
-      {/* Mini graph pinned to bottom */}
-      {graphData && graphData.nodes.length > 1 && (
-        <div className="shrink-0 border-t border-border p-4 bg-card/40">
-          <div className="flex items-center gap-2 pb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            <span className="material-symbols-outlined text-xs">hub</span>
-            Local Graph
-          </div>
-          <div className="rounded-xl overflow-hidden border border-border shadow-sm">
-            <WikiGraphMini
-              slug={slug}
-              nodes={graphData.nodes}
-              edges={graphData.edges}
-            />
-          </div>
-        </div>
-      )}
     </div>
   );
 }

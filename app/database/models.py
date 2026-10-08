@@ -64,6 +64,27 @@ WIKI_DRAFT_STATUSES: tuple[str, ...] = (
 )
 
 
+class LegalUnitType(str, PyEnum):
+    """Hierarchical level of a legal unit in Vietnamese legislation."""
+    PART = "part"          # Phần
+    CHAPTER = "chapter"    # Chương
+    SECTION = "section"    # Mục
+    ARTICLE = "article"    # Điều
+    CLAUSE = "clause"      # Khoản
+    POINT = "point"        # Điểm
+
+
+class LegalRelationType(str, PyEnum):
+    """Type of legal relationship between legal units/documents."""
+    SUA_DOI = "sua_doi"      # Sửa đổi
+    BO_SUNG = "bo_sung"      # Bổ sung
+    THAY_THE = "thay_the"    # Thay thế
+    BAI_BO = "bai_bo"        # Bãi bỏ
+    HUONG_DAN = "huong_dan"  # Hướng dẫn chi tiết / quy định chi tiết
+    CAN_CU = "can_cu"        # Căn cứ ban hành
+    DAN_CHIEU = "dan_chieu"  # Dẫn chiếu quy định khác
+
+
 class Base(DeclarativeBase):
     """Base class for all models."""
     pass
@@ -104,11 +125,38 @@ class Source(Base):
     minio_key: Mapped[Optional[str]] = mapped_column(String(500))
     file_name: Mapped[Optional[str]] = mapped_column(String(500))
     file_size: Mapped[Optional[int]] = mapped_column(Integer)
+    content_hash: Mapped[Optional[str]] = mapped_column(
+        String(64), nullable=True, index=True,
+        comment="SHA-256 hash of file content stream for deduplication",
+    )
+    attempt_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), nullable=True, default=uuid.uuid4,
+        comment="Attempt UUID regenerated on every retry/reparse for task idempotency",
+    )
     status: Mapped[str] = mapped_column(String(50), default="pending")
     error_message: Mapped[Optional[str]] = mapped_column(Text)
     progress: Mapped[int] = mapped_column(Integer, default=0)
     progress_message: Mapped[Optional[str]] = mapped_column(String(500))
     job_id: Mapped[Optional[str]] = mapped_column(String(200))
+
+    # Dual pipeline branch status tracking (Branch A: Chunking; Branch B: Wiki/Legal)
+    chunk_status: Mapped[str] = mapped_column(
+        String(50), default="pending", server_default="pending",
+        comment="Branch A status: pending | queued | extracting | chunking | embedding | ready | error | skipped",
+    )
+    chunk_progress: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    chunk_progress_message: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    chunk_attempt_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    chunk_error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    wiki_status: Mapped[str] = mapped_column(
+        String(50), default="pending", server_default="pending",
+        comment="Branch B status: pending | queued | mapping | reducing | awaiting_approval | refining | verifying | indexing | ready | error | skipped",
+    )
+    wiki_progress: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    wiki_progress_message: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    wiki_attempt_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    wiki_error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     extracted_token_count: Mapped[Optional[int]] = mapped_column(
         Integer, nullable=True,
         comment="tiktoken cl100k_base count of full_text. Used by upload gate.",
@@ -1371,4 +1419,133 @@ class StatsDailyRollup(Base):
         Index("ix_stats_rollup_date", "date"),
         Index("ix_stats_rollup_metric", "metric_key", "date"),
     )
+
+
+# ---------------------------------------------------------------------------
+# Legal Knowledge Graph — Units & Relational Network
+# ---------------------------------------------------------------------------
+
+class LegalUnit(Base):
+    """
+    Granular structural unit of a legal document (Part, Chapter, Section, Article, Clause, Point).
+    Linked directly to the source and optionally to the corresponding WikiPage.
+    Supports hierarchical tree structure via self-referential parent_unit_id.
+    """
+    __tablename__ = "legal_units"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    source_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("sources.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    wiki_page_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("wiki_pages.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    unit_type: Mapped[LegalUnitType] = mapped_column(
+        String(20), nullable=False, index=True,
+        comment="part, chapter, section, article, clause, point",
+    )
+    unit_number: Mapped[str] = mapped_column(
+        String(50), nullable=False, index=True,
+        comment="e.g. '1', '5a', 'I', 'a'",
+    )
+    title: Mapped[Optional[str]] = mapped_column(
+        String(500), nullable=True,
+        comment="Heading title of the unit if available",
+    )
+    full_path: Mapped[str] = mapped_column(
+        String(500), nullable=False, default="",
+        comment="Hierarchical path: 'Chương I > Điều 1 > Khoản 2 > Điểm a'",
+    )
+    content: Mapped[str] = mapped_column(
+        Text, nullable=False, default="",
+        comment="Verbatim text content of this unit",
+    )
+    parent_unit_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("legal_units.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    doc_number: Mapped[Optional[str]] = mapped_column(
+        String(100), nullable=True, index=True,
+        comment="Doc number of enclosing document e.g. 136/2020/NĐ-CP",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    # Relationships
+    source = relationship("Source", backref="legal_units")
+    wiki_page = relationship("WikiPage", backref="legal_units")
+    parent = relationship("LegalUnit", remote_side=[id], backref="children")
+    outgoing_relations = relationship(
+        "LegalRelation",
+        foreign_keys="LegalRelation.source_unit_id",
+        backref="source_unit",
+        cascade="all, delete-orphan",
+    )
+    incoming_relations = relationship(
+        "LegalRelation",
+        foreign_keys="LegalRelation.target_unit_id",
+        backref="target_unit",
+    )
+
+    __table_args__ = (
+        Index("ix_legal_units_lookup", "doc_number", "unit_type", "unit_number"),
+    )
+
+
+class LegalRelation(Base):
+    """
+    Directed legal relationship between units or from a unit to external documents.
+    Captures amendment, guidance, citation, repeal, replacement.
+    """
+    __tablename__ = "legal_relations"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    source_unit_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("legal_units.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    target_unit_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("legal_units.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    target_doc_number: Mapped[Optional[str]] = mapped_column(
+        String(100), nullable=True, index=True,
+        comment="Target doc number e.g. 136/2020/NĐ-CP",
+    )
+    target_article_number: Mapped[Optional[str]] = mapped_column(
+        String(50), nullable=True, index=True,
+        comment="Target article number e.g. '5', '5a'",
+    )
+    target_clause_number: Mapped[Optional[str]] = mapped_column(
+        String(50), nullable=True,
+        comment="Target clause number e.g. '1', '2'",
+    )
+    relation_type: Mapped[LegalRelationType] = mapped_column(
+        String(30), nullable=False, index=True,
+        comment="sua_doi, bo_sung, thay_the, bai_bo, huong_dan, can_cu, dan_chieu",
+    )
+    quote_context: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True,
+        comment="Extracted sentence or clause mentioning this relationship",
+    )
+    is_effective: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False, index=True,
+        comment="Whether this relation is currently legally effective",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_legal_relations_target_lookup", "target_doc_number", "target_article_number"),
+    )
+
 

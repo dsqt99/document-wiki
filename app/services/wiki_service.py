@@ -61,6 +61,42 @@ def _scope_filter_with_dept(department_ids: Optional[list[uuid.UUID]] = None):
     return _scope_filter("global")
 
 
+async def resolve_wiki_scopes(session: AsyncSession, source) -> list[tuple[str, Optional[uuid.UUID]]]:
+    """Return the list of (scope_type, scope_id) tuples to commit wiki pages into.
+
+    Project scope takes priority. If source has department assignments, one scope
+    per department. Falls back to global.
+
+    Reads scope_type / scope_id fresh from DB rather than from the in-memory
+    `source` object: PATCH /sources/{id} may have changed scope while the
+    worker held a stale copy (session uses expire_on_commit=False).
+    """
+    from app.database.models import Source as SourceModel
+    from app.database.models import SourceDepartment
+
+    row = (await session.execute(
+        select(SourceModel.scope_type, SourceModel.scope_id).where(SourceModel.id == source.id)
+    )).one_or_none()
+    if row is None:
+        # Fall back to in-memory source object if DB query returned nothing (e.g. in mock tests)
+        scope_type = getattr(source, "scope_type", None) or "global"
+        scope_id = getattr(source, "scope_id", None)
+        return [(scope_type, scope_id)]
+
+    scope_type, scope_id = row
+    if scope_type == "project":
+        return [("project", scope_id)]
+    rows = (await session.execute(
+        select(SourceDepartment.department_id).where(SourceDepartment.source_id == source.id)
+    )).all()
+    dept_ids = [r[0] for r in rows]
+    if dept_ids:
+        return [("department", did) for did in dept_ids]
+    if scope_type == "department" and scope_id:
+        return [("department", scope_id)]
+    return [("global", None)]
+
+
 def _scope_filter_for_identity(
     department_ids: Optional[list[uuid.UUID]] = None,
     project_ids: Optional[list[uuid.UUID]] = None,
@@ -387,8 +423,10 @@ def _fts_expr(table_name: str, column: str = "text"):
 
 
 def _fts_query(query_text: str):
-    """websearch_to_tsquery over the accent-folded query."""
-    return func.websearch_to_tsquery(_FTS_CONFIG, func.f_unaccent(query_text))
+    """websearch_to_tsquery over the accent-folded and Vietnamese compound-tokenized query."""
+    from app.core.vi_tokenizer import tokenize_vi
+    tokenized = tokenize_vi(query_text)
+    return func.websearch_to_tsquery(_FTS_CONFIG, func.f_unaccent(tokenized))
 
 
 async def search_pages_semantic(
@@ -543,7 +581,7 @@ async def search_pages_hybrid(
     # --- Vector arm ---
     sim = (1 - Emb.embedding.cosine_distance(query_embedding)).label("similarity")
     vec_stmt = (
-        select(WikiPage, Emb.chunk_index, Emb.heading_path, sim)
+        select(WikiPage, Emb.chunk_index, Emb.heading_path, Emb.text, sim)
         .join(Emb, Emb.page_id == WikiPage.id)
         .where(and_(*base_where))
         .order_by(Emb.embedding.cosine_distance(query_embedding))
@@ -557,7 +595,7 @@ async def search_pages_hybrid(
         tsq = _fts_query(query_text)
         tsv = _fts_expr(Emb.__tablename__)
         fts_stmt = (
-            select(WikiPage, Emb.chunk_index, Emb.heading_path)
+            select(WikiPage, Emb.chunk_index, Emb.heading_path, Emb.text)
             .join(Emb, Emb.page_id == WikiPage.id)
             .where(and_(*base_where, tsv.op("@@")(tsq)))
             .order_by(func.ts_rank(tsv, tsq).desc())
@@ -575,8 +613,19 @@ async def search_pages_hybrid(
         top_k=top_k,
         fuse=reciprocal_rank_fusion,
     )
+    chunk_by_key: dict = {}
+    for r in vec_rows:
+        chunk_by_key.setdefault((r[0].id, r[1]), (r[1], r[3]))
+    for r in fts_rows:
+        chunk_by_key.setdefault((r[0].id, r[1]), (r[1], r[3]))
     for res in results:
-        res.pop("_win_key", None)
+        win_info = chunk_by_key.get(res.pop("_win_key", None))
+        if win_info:
+            res["chunk_index"] = win_info[0]
+            res["chunk_text"] = win_info[1]
+        else:
+            res["chunk_index"] = 0
+            res["chunk_text"] = ""
     return results
 
 
@@ -676,8 +725,11 @@ async def search_source_chunks_hybrid(
 
     base_where = [
         Emb.model_spec_id == spec.id,
-        Source.preserve_verbatim.is_(True),
-        Source.status == "ready",
+        or_(
+            Source.chunk_status == "ready",
+            Source.status.in_(["ready", "partial"]),
+            Source.preserve_verbatim.is_(True),
+        ),
     ]
     if allowed_source_ids is not None:
         base_where.append(Source.id.in_([_uuid.UUID(s) for s in allowed_source_ids]))

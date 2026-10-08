@@ -2,13 +2,14 @@
 Admin model-selection router for LLM and Vision capabilities.
 
 Endpoints:
-  GET  /api/settings/llm/catalog       — supported LLM models + active spec
+  GET  /api/settings/llm/catalog       — preset + admin-added LLMs + active spec
   POST /api/settings/llm/switch        — set the active LLM spec
-  GET  /api/settings/vision/catalog    — supported vision models + active spec
+  GET  /api/settings/vision/catalog    — preset + admin-added vision models + active spec
   POST /api/settings/vision/switch     — set the active vision spec
 
-Mirrors the embedding catalog endpoints in admin_embeddings.py so the
-settings UI can use the same dropdown pattern for all three capabilities.
+Presets come from the code catalogs; admin-added models ("custom/...") from
+app/ai/custom_models.py (managed by admin_custom_models.py). Preset API keys
+are stored per provider (`llm_api_key__<provider>`), custom keys per model.
 """
 
 from typing import Optional
@@ -42,6 +43,12 @@ class LLMSpecOut(BaseModel):
     cost_per_1m_output_tokens: Optional[float]
     notes: Optional[str]
     api_key_configured: bool
+    # app_config key the UI saves this model's API key under; None for custom
+    # models (their key is saved with the model itself).
+    api_key_config_key: Optional[str] = None
+    custom: bool = False
+    base_url: Optional[str] = None
+    protocol: Optional[str] = None
 
 
 class LLMCatalogOut(BaseModel):
@@ -59,6 +66,10 @@ class VisionSpecOut(BaseModel):
     cost_per_image: Optional[float]
     notes: Optional[str]
     api_key_configured: bool
+    api_key_config_key: Optional[str] = None
+    custom: bool = False
+    base_url: Optional[str] = None
+    protocol: Optional[str] = None
 
 
 class VisionCatalogOut(BaseModel):
@@ -71,6 +82,61 @@ class SwitchBody(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+async def _preset_key_configured(db: AsyncSession, kind: str, provider: str) -> bool:
+    from app.ai.registry import _legacy_key_fits
+    from app.services.config_service import ConfigService
+
+    svc = ConfigService(db)
+    if await svc.get(f"{kind}_api_key__{provider}"):
+        return True
+    return _legacy_key_fits(provider, await svc.get(f"{kind}_api_key"))
+
+
+async def _catalog_entries(db: AsyncSession, kind: str, specs, get_spec) -> list[dict]:
+    """Preset specs followed by custom specs, as dicts of spec fields plus
+    the key/custom metadata shared by both output schemas."""
+    from dataclasses import asdict
+
+    from app.ai.custom_models import get_api_key, list_custom
+
+    out = []
+    for s in specs:
+        out.append({
+            **asdict(s),
+            "api_key_configured": await _preset_key_configured(db, kind, s.provider),
+            "api_key_config_key": f"{kind}_api_key__{s.provider}",
+        })
+    for m in await list_custom(db, kind):
+        spec = get_spec(m.id)
+        out.append({
+            **asdict(spec),
+            "label": m.label or m.model_id,
+            "api_key_configured": bool(await get_api_key(db, kind, m.id)),
+            "custom": True,
+            "base_url": m.base_url,
+            "protocol": m.protocol,
+        })
+    return out
+
+
+async def _check_switchable(db: AsyncSession, kind: str, spec) -> None:
+    from app.ai.custom_models import get_custom, is_custom
+
+    if is_custom(spec.id):
+        if await get_custom(db, kind, spec.id) is None:
+            raise HTTPException(status_code=400, detail=f"Unknown model {spec.id!r}")
+        return  # keyless local endpoints are allowed
+    if not await _preset_key_configured(db, kind, spec.provider):
+        raise HTTPException(
+            status_code=400,
+            detail=f"No {spec.provider} API key configured. Save the API key first, then switch.",
+        )
+
+
+# ---------------------------------------------------------------------------
 # LLM endpoints
 # ---------------------------------------------------------------------------
 
@@ -79,33 +145,12 @@ async def get_llm_catalog(
     db: AsyncSession = Depends(get_db),
     _user: Employee = require_permission("org:settings:manage"),
 ):
-    from app.ai.llm_catalog import list_specs
+    from app.ai.llm_catalog import get_spec, list_specs
     from app.ai.registry import ProviderRegistry
-    from app.services.config_service import ConfigService
 
-    registry = ProviderRegistry(db)
-    active = await registry.get_active_llm_spec_id()
-    svc = ConfigService(db)
-    api_key_configured = bool(await svc.get("llm_api_key"))
-
-    specs = [
-        LLMSpecOut(
-            id=s.id,
-            provider=s.provider,
-            model_id=s.model_id,
-            context_window_tokens=s.context_window_tokens,
-            max_output_tokens=s.max_output_tokens,
-            supports_tools=s.supports_tools,
-            supports_vision=s.supports_vision,
-            label=s.label,
-            cost_per_1m_input_tokens=s.cost_per_1m_input_tokens,
-            cost_per_1m_output_tokens=s.cost_per_1m_output_tokens,
-            notes=s.notes,
-            api_key_configured=api_key_configured,
-        )
-        for s in list_specs()
-    ]
-    return LLMCatalogOut(active_spec_id=active, specs=specs)
+    active = await ProviderRegistry(db).get_active_llm_spec_id()
+    entries = await _catalog_entries(db, "llm", list_specs(), get_spec)
+    return LLMCatalogOut(active_spec_id=active, specs=[LLMSpecOut(**e) for e in entries])
 
 
 @router.post("/settings/llm/switch")
@@ -121,15 +166,9 @@ async def switch_llm_model(
         spec = get_spec(body.model_spec_id)
     except UnknownLLMModel as e:
         raise HTTPException(status_code=400, detail=str(e))
+    await _check_switchable(db, "llm", spec)
 
-    svc = ConfigService(db)
-    if not await svc.get("llm_api_key"):
-        raise HTTPException(
-            status_code=400,
-            detail="No LLM API key configured. Save the API key first, then switch.",
-        )
-
-    await svc.set(ACTIVE_LLM_MODEL_KEY, spec.id)
+    await ConfigService(db).set(ACTIVE_LLM_MODEL_KEY, spec.id)
     await log_audit(
         db, _user, "switch_llm_model", "settings", "global",
         reason=f"Switching active LLM to {spec.id}",
@@ -148,29 +187,11 @@ async def get_vision_catalog(
     _user: Employee = require_permission("org:settings:manage"),
 ):
     from app.ai.registry import ProviderRegistry
-    from app.ai.vision_catalog import list_specs
-    from app.services.config_service import ConfigService
+    from app.ai.vision_catalog import get_spec, list_specs
 
-    registry = ProviderRegistry(db)
-    active = await registry.get_active_vision_spec_id()
-    svc = ConfigService(db)
-    api_key_configured = bool(await svc.get("vision_api_key"))
-
-    specs = [
-        VisionSpecOut(
-            id=s.id,
-            provider=s.provider,
-            model_id=s.model_id,
-            max_image_size_mb=s.max_image_size_mb,
-            label=s.label,
-            cost_per_1m_input_tokens=s.cost_per_1m_input_tokens,
-            cost_per_image=s.cost_per_image,
-            notes=s.notes,
-            api_key_configured=api_key_configured,
-        )
-        for s in list_specs()
-    ]
-    return VisionCatalogOut(active_spec_id=active, specs=specs)
+    active = await ProviderRegistry(db).get_active_vision_spec_id()
+    entries = await _catalog_entries(db, "vision", list_specs(), get_spec)
+    return VisionCatalogOut(active_spec_id=active, specs=[VisionSpecOut(**e) for e in entries])
 
 
 @router.post("/settings/vision/switch")
@@ -186,15 +207,9 @@ async def switch_vision_model(
         spec = get_spec(body.model_spec_id)
     except UnknownVisionModel as e:
         raise HTTPException(status_code=400, detail=str(e))
+    await _check_switchable(db, "vision", spec)
 
-    svc = ConfigService(db)
-    if not await svc.get("vision_api_key"):
-        raise HTTPException(
-            status_code=400,
-            detail="No vision API key configured. Save the API key first, then switch.",
-        )
-
-    await svc.set(ACTIVE_VISION_MODEL_KEY, spec.id)
+    await ConfigService(db).set(ACTIVE_VISION_MODEL_KEY, spec.id)
     await log_audit(
         db, _user, "switch_vision_model", "settings", "global",
         reason=f"Switching active vision model to {spec.id}",

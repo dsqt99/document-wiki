@@ -48,6 +48,12 @@ export type WikiGraphNode = {
 export type WikiGraphEdge = {
   from: string;
   to: string;
+  type?: string;
+  label?: string;
+  predicate?: string;
+  weight?: number;
+  evidence?: string | null;
+  target_doc_number?: string | null;
   // d3-force replaces string refs with node objects after simulation init
   source?: WikiGraphNode | string;
   target?: WikiGraphNode | string;

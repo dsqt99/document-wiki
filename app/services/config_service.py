@@ -29,10 +29,11 @@ def _is_sensitive(key: str) -> bool:
     """A key is sensitive if it stores raw credentials/API keys."""
     return (
         key in {
-            "embedding_api_key", "llm_api_key", "vision_api_key",
+            "embedding_api_key", "llm_api_key", "vision_api_key", "ocr_api_key",
             "smtp_password", "webhook_secret",
         }
-        or key.startswith("embedding_api_key__")  # per-provider keys
+        or key.startswith(("embedding_api_key__", "llm_api_key__", "vision_api_key__"))  # per-provider keys
+        or key.startswith("custom_model_api_key__")  # admin-added models
     )
 
 
@@ -42,6 +43,7 @@ SENSITIVE_KEYS = frozenset({
     "embedding_api_key",
     "llm_api_key",
     "vision_api_key",
+    "ocr_api_key",
 })
 
 # Active model selection (canonical spec_id from the respective catalog).
@@ -50,11 +52,37 @@ ACTIVE_EMBEDDING_MODEL_KEY = "active_embedding_model_spec_id"
 ACTIVE_LLM_MODEL_KEY = "active_llm_model_spec_id"
 ACTIVE_VISION_MODEL_KEY = "active_vision_model_spec_id"
 
+def llm_api_key_for(provider: str) -> str:
+    return f"llm_api_key__{provider}"
+
+
+def vision_api_key_for(provider: str) -> str:
+    return f"vision_api_key__{provider}"
+
+
 # Per-provider embedding API keys: `embedding_api_key__<provider>`. We store
 # one key per provider so admins can switch provider without losing the
 # previously configured key. Encrypted at rest.
 def embedding_api_key_for(provider: str) -> str:
     return f"embedding_api_key__{provider}"
+
+
+DEFAULT_CONFIG_VALUES: dict[str, str] = {
+    "ocr_prompt": (
+        "Trích xuất TOÀN BỘ văn bản từ hình ảnh trang tài liệu này một cách chính xác tuyệt đối.\n"
+        "Yêu cầu nghiêm ngặt:\n"
+        "1. Giữ nguyên số hiệu văn bản, tiêu đề, dấu câu, ngày tháng, các cụm từ viết tắt ngành (CAND, CSGT, PCCC, ANTT, QĐ, NĐ, TT...).\n"
+        "2. Tái tạo chính xác cấu trúc bảng biểu dạng Markdown Table (| Cột 1 | Cột 2 |).\n"
+        "3. Tái tạo cấu trúc thứ bậc đề mục: Phần, Chương, Mục, Điều, Khoản, Điểm.\n"
+        "4. Tuyệt đối không thêm lời bình, không tóm tắt hay tự ý suy diễn từ ngữ."
+    ),
+    "ocr_mode": "auto",
+    "ocr_fallback_vision": "true",
+    "pdf_parser_engine": "pymupdf4llm",
+    "excel_parser_engine": "openpyxl",
+    "pdf_strip_headers_footers": "true",
+    "pdf_enhance_headings": "true",
+}
 
 
 # All config keys that can be managed via UI
@@ -67,13 +95,31 @@ ALL_CONFIG_KEYS = [
 
     # --- LLM (catalog-driven; old llm_provider/llm_model_id kept readable below) ---
     ACTIVE_LLM_MODEL_KEY,        # canonical spec_id from LLM_CATALOG
-    "llm_api_key",               # Provider API key
+    "llm_api_key__openai",       # per-provider keys for the presets
+    "llm_api_key__anthropic",
+    "llm_api_key",               # legacy single key (fallback for any provider)
     "llm_base_url",              # Custom endpoint
 
     # --- Vision (catalog-driven; old vision_provider/vision_model_id kept below) ---
     ACTIVE_VISION_MODEL_KEY,     # canonical spec_id from VISION_CATALOG
-    "vision_api_key",            # Provider API key (or empty = same as embedding)
+    "vision_api_key__openai",
+    "vision_api_key__anthropic",
+    "vision_api_key",            # legacy single key (fallback for any provider)
     "vision_base_url",           # Custom endpoint
+
+    # --- Dedicated OCR Service ---
+    "ocr_base_url",
+    "ocr_api_key",
+    "ocr_model",
+    "ocr_prompt",
+    "ocr_mode",
+    "ocr_fallback_vision",
+
+    # --- Document Processing & Parsing ---
+    "pdf_parser_engine",
+    "excel_parser_engine",
+    "pdf_strip_headers_footers",
+    "pdf_enhance_headings",
 
     # --- Deprecated LLM/Vision free-form keys (read-only for backward compat) ---
     "llm_provider",
@@ -83,6 +129,7 @@ ALL_CONFIG_KEYS = [
 
     # --- System ---
     "session_timeout_minutes",
+    "role_permissions_custom",
 
     # --- Deprecated embedding keys (kept readable for one release; do not write) ---
     "embedding_provider",
@@ -145,8 +192,12 @@ class ConfigService:
         # 2. Fallback to env/settings
         from app.config import settings
         env_value = getattr(settings, key, None)
-        if env_value is not None:
+        if env_value is not None and str(env_value).strip() != "":
             return str(env_value)
+
+        # 3. Fallback to default
+        if key in DEFAULT_CONFIG_VALUES:
+            return DEFAULT_CONFIG_VALUES[key]
 
         return None
 

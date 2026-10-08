@@ -9,7 +9,6 @@ Provider-agnostic: uses ProviderRegistry to resolve embedding/LLM/vision
 providers from app_config at runtime.
 """
 
-import asyncio
 import uuid
 from typing import Optional
 
@@ -168,6 +167,7 @@ def _guess_content_type(file_name: str) -> str:
         "md": "text/markdown",
         "csv": "text/csv",
         "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     }.get(ext, "application/octet-stream")
 
 
@@ -211,6 +211,30 @@ def _inline_image_markers(pages_data: list[dict], images: list[ImageInfo]) -> No
         page["content"] = (page.get("content") or "") + f"\n\n{joined}\n"
 
 
+async def _load_doc_processing_config() -> dict:
+    """Admin 'Document Processing' settings (DB > .env > defaults) for ingest."""
+    from app.database import async_session_factory
+    from app.services.config_service import ConfigService
+
+    def _bool(v: Optional[str], default: bool) -> bool:
+        return default if v is None else str(v).strip().lower() in ("1", "true", "yes", "on")
+
+    try:
+        async with async_session_factory() as session:
+            cfg = ConfigService(session)
+            return {
+                "pdf_engine": await cfg.get("pdf_parser_engine") or "pymupdf4llm",
+                "excel_engine": await cfg.get("excel_parser_engine") or "openpyxl",
+                "ocr_mode": await cfg.get("ocr_mode") or "auto",
+                "ocr_fallback_vision": _bool(await cfg.get("ocr_fallback_vision"), True),
+                "strip_headers_footers": _bool(await cfg.get("pdf_strip_headers_footers"), True),
+                "enhance_headings": _bool(await cfg.get("pdf_enhance_headings"), True),
+            }
+    except Exception as e:
+        logger.warning(f"Document processing config unavailable, using defaults: {e}")
+        return {}
+
+
 async def _extract_text_from_file(
     file_data: bytes,
     file_name: str,
@@ -226,153 +250,102 @@ async def _extract_text_from_file(
     """
     ext = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
     pages_data: list[dict] = []
+    doc_cfg = await _load_doc_processing_config() if ext in ("pdf", "xlsx", "xls", "doc", "ppt", "rtf") else {}
+    pdf_kwargs = {
+        k: doc_cfg[src]
+        for k, src in (
+            ("engine", "pdf_engine"),
+            ("ocr_mode", "ocr_mode"),
+            ("ocr_fallback_vision", "ocr_fallback_vision"),
+            ("strip_headers_footers", "strip_headers_footers"),
+            ("enhance_headings", "enhance_headings"),
+        )
+        if src in doc_cfg
+    }
 
     if ext == "pdf":
-        import fitz
-        doc = fitz.open(stream=file_data, filetype="pdf")
-        empty_pages: list[tuple[int, int]] = []  # (index, page_number)
+        from app.services.parsers.pdf_parser import PDFParser
+        parser = PDFParser()
+        return await parser.parse(
+            file_data=file_data,
+            file_name=file_name,
+            vision_provider=vision_provider,
+            tracker=tracker,
+            **pdf_kwargs,
+        )
 
-        for i, page in enumerate(doc):  # type: ignore[arg-type]
-            text = (page.get_text() or "").strip()
-            pages_data.append({"content": text, "page_number": i + 1})
-            if not text:
-                empty_pages.append((i, i + 1))
-
-        # --- OCR for empty pages (Dedicated GLM-OCR model first, Vision Provider fallback) ---
-        from app.services.ocr_service import ocr_service
-
-        if empty_pages and (ocr_service.is_configured or vision_provider):
-            ocr_prompt = (
-                "Extract ALL text from this document page exactly as written. "
-                "Preserve the original layout, headings, tables, and formatting "
-                "as closely as possible using markdown. If the page contains a "
-                "table, reproduce it as a markdown table. If there is no text "
-                "at all, respond with an empty string."
-            )
-            total_empty = len(empty_pages)
-            logger.info(
-                f"OCR processing: {total_empty}/{len(pages_data)} empty pages in '{file_name}'. "
-                f"Dedicated OCR configured: {ocr_service.is_configured}, Vision provider available: {bool(vision_provider)}"
-            )
-
-            # Pre-render page images (alpha=False, JPEG quality 85 for speed & low network bandwidth)
-            page_images: list[tuple[int, int, bytes]] = []
-            for idx, page_num in empty_pages:
-                try:
-                    page = doc[idx]
-                    pix = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
-                    img_bytes = pix.tobytes("jpg", jpg_quality=85)
-                    page_images.append((idx, page_num, img_bytes))
-                except Exception as render_err:
-                    logger.warning(f"Failed to render page {page_num} of '{file_name}': {render_err}")
-
-            # Process OCR with concurrency (5 concurrent requests to avoid rate limits while speeding up 5x)
-            sem = asyncio.Semaphore(5)
-            completed_count = 0
-            progress_lock = asyncio.Lock()
-
-            async def _process_page_ocr(idx: int, page_num: int, img_bytes: bytes) -> None:
-                nonlocal completed_count
-                async with sem:
-                    ocr_text: Optional[str] = None
-
-                    # Step 1: Try dedicated OCR model (GLM-OCR) first
-                    if ocr_service.is_configured:
-                        try:
-                            ocr_text = await ocr_service.ocr_image(
-                                img_bytes, mime_type="image/jpeg", prompt=ocr_prompt,
-                            )
-                            if ocr_text and ocr_text.strip():
-                                logger.info(f"GLM-OCR page {page_num}: {len(ocr_text)} chars")
-                        except Exception as ocr_err:
-                            logger.warning(f"GLM-OCR failed on page {page_num} of '{file_name}': {ocr_err}")
-                            ocr_text = None
-
-                    # Step 2: Fallback to Vision Provider if dedicated OCR didn't produce text
-                    if (not ocr_text or not ocr_text.strip()) and vision_provider:
-                        logger.info(f"Vision OCR processing page {page_num}/{len(pages_data)} of '{file_name}'")
-                        try:
-                            ocr_text = await vision_provider.analyze_image(
-                                img_bytes, mime_type="image/jpeg", prompt=ocr_prompt,
-                            )
-                            if ocr_text and ocr_text.strip():
-                                logger.debug(f"Vision provider OCR page {page_num}: {len(ocr_text)} chars")
-                        except Exception as vis_err:
-                            logger.warning(f"Vision provider OCR failed on page {page_num} of '{file_name}': {vis_err}")
-
-                    if ocr_text and ocr_text.strip():
-                        pages_data[idx]["content"] = ocr_text.strip()
-
-                    async with progress_lock:
-                        completed_count += 1
-                        if tracker:
-                            try:
-                                prog = 15 + int(10 * completed_count / total_empty)
-                                await tracker.update(
-                                    prog,
-                                    f"Vision OCR: {completed_count}/{total_empty} trang...",
-                                )
-                            except Exception:
-                                pass
-
-            await asyncio.gather(
-                *[_process_page_ocr(idx, pnum, img_b) for idx, pnum, img_b in page_images],
-                return_exceptions=True,
-            )
-
-        doc.close()
-        return pages_data
 
     # --- Excel / Spreadsheet extraction ---
-    if ext in ("xlsx", "xls", "csv"):
+    if ext in ("xlsx", "xls"):
+        from app.services.parsers.excel_parser import ExcelParser
+        parser = ExcelParser()
+        return await parser.parse(
+            file_data=file_data,
+            file_name=file_name,
+            vision_provider=vision_provider,
+            tracker=tracker,
+            engine=doc_cfg.get("excel_engine", "openpyxl"),
+        )
+
+    if ext == "csv":
         try:
             import io
-            import pandas as pd
 
-            pages_data = []
-            if ext == "csv":
-                df = pd.read_csv(io.BytesIO(file_data))
-                md = df.to_markdown(index=False)
-                pages_data.append({"content": md or "", "page_number": 1})
-            else:
-                # Read all sheets
-                xls = pd.ExcelFile(io.BytesIO(file_data))
-                for sheet_idx, sheet_name in enumerate(xls.sheet_names):
-                    try:
-                        df = pd.read_excel(xls, sheet_name=sheet_name)
-                        if df.empty:
-                            continue
-                        header = f"## Sheet: {sheet_name}\n\n"
-                        md = df.to_markdown(index=False)
-                        pages_data.append({
-                            "content": header + (md or ""),
-                            "page_number": sheet_idx + 1,
-                        })
-                    except Exception as e:
-                        logger.warning(f"Failed to read sheet '{sheet_name}': {e}")
-            if pages_data:
-                return pages_data
-            # Fall through if all sheets empty
+            import pandas as pd
+            df = pd.read_csv(io.BytesIO(file_data))
+            md = df.to_markdown(index=False)
+            return [{"content": md or "", "page_number": 1}]
         except Exception as e:
-            logger.warning(f"Spreadsheet extraction failed for '{file_name}': {e}")
-            # Fall through to content_core
+            logger.warning(f"CSV extraction failed for '{file_name}': {e}")
 
     if ext == "docx":
-        import io
+        from app.services.parsers.docx_parser import DocxParser
+        parser = DocxParser()
+        return await parser.parse(
+            file_data=file_data,
+            file_name=file_name,
+            vision_provider=vision_provider,
+            tracker=tracker,
+        )
 
-        import mammoth
-        try:
-            result = mammoth.extract_raw_text(io.BytesIO(file_data))
-            return [{"content": result.value or "", "page_number": 1}]
-        except Exception:
-            pass  # fall through to content_core
+
+    if ext == "pptx":
+        from app.services.parsers.pptx_parser import PPTXParser
+        parser = PPTXParser()
+        return await parser.parse(
+            file_data=file_data,
+            file_name=file_name,
+            vision_provider=vision_provider,
+            tracker=tracker,
+        )
 
     if ext in ("txt", "md"):
         return [{"content": file_data.decode("utf-8", errors="ignore"), "page_number": 1}]
 
-    if ext == "doc":
-        logger.warning("Extraction skipped: .doc format (Word 97-2003) is not supported.")
-        raise ValueError("Định dạng file .doc (Word 97-2003) không được hỗ trợ. Vui lòng chuyển đổi sang .docx hoặc .pdf.")
+    if ext in ("doc", "ppt", "rtf"):
+        from app.services.parsers.libreoffice_converter import libreoffice_converter
+        if libreoffice_converter.is_available():
+            try:
+                pdf_bytes = await libreoffice_converter.convert_to_pdf(file_data, ext)
+                from app.services.parsers.pdf_parser import PDFParser
+                parser = PDFParser()
+                return await parser.parse(
+                    file_data=pdf_bytes,
+                    file_name=f"{file_name}.pdf",
+                    vision_provider=vision_provider,
+                    tracker=tracker,
+                    **pdf_kwargs,
+                )
+            except Exception as conv_err:
+                logger.warning(f"LibreOffice conversion failed for '{file_name}': {conv_err}")
+                raise ValueError(f"Không thể chuyển đổi file .{ext} sang PDF: {conv_err}")
+        else:
+            logger.warning(f"Extraction skipped: .{ext} format requires LibreOffice headless converter.")
+            raise ValueError(
+                f"Định dạng file .{ext} yêu cầu LibreOffice để chuyển đổi tự động nhưng hệ thống chưa cài đặt. "
+                "Vui lòng chuyển đổi sang .docx hoặc .pdf trước khi tải lên."
+            )
+
 
     # Other formats (pptx, ...): write to a temp file and let
     # content-core extract via file path. Passing raw bytes as "content"

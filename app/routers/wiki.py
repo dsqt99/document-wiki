@@ -16,7 +16,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, field_validator
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, case, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -260,6 +260,60 @@ async def list_wiki_pages(
 
     rows = (await db.execute(stmt)).all()
     return [_summary(r.WikiPage, scope_name=r.scope_name) for r in rows]
+
+
+@router.get("/wiki/search", response_model=list[WikiPageSummary])
+async def search_wiki_pages(
+    q: str = Query(..., min_length=1, max_length=500),
+    limit: int = Query(30, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    user: Employee = require_permission("wiki:read"),
+):
+    """Content (semantic + full-text) search over wiki pages, best match first.
+
+    Backs the "Nội dung" mode of the wiki list. Hits are re-filtered through the
+    same RBAC scope filter as /wiki/pages, so results never widen access.
+    """
+    from app.ai.registry import ProviderRegistry
+
+    try:
+        provider = await ProviderRegistry(db).get_embedding(task="search_query")
+        query_embedding = await provider.embed(q[:4000])
+    except Exception as e:
+        logger.warning(f"wiki search: embedding failed: {e}")
+        raise HTTPException(status_code=503, detail="Embedding model is not available")
+
+    # Scope the retrieval itself to what the user can read, so out-of-scope
+    # pages don't crowd the top-k and leave restricted users with few hits.
+    perm_filter = _build_wiki_scope_filter(user)
+    hits = await wiki_service.search_pages_hybrid(
+        db, query_embedding, q, top_k=limit * 3,
+        all_scopes=perm_filter is None,
+        department_ids=list(user.department_ids or []) or None,
+    )
+    ids = [h["page"].id for h in hits]
+    if not ids:
+        return []
+
+    stmt = (
+        select(
+            WikiPage,
+            case(
+                (WikiPage.scope_type == "department", Department.name),
+                else_=None,
+            ).label("scope_name"),
+        )
+        .select_from(WikiPage)
+        .outerjoin(Department, and_(WikiPage.scope_id == Department.id, WikiPage.scope_type == "department"))
+        .where(WikiPage.id.in_(ids))
+    )
+    if perm_filter is not None:
+        stmt = stmt.where(perm_filter)
+    rows = {r.WikiPage.id: r for r in (await db.execute(stmt)).all()}
+    return [
+        _summary(rows[i].WikiPage, scope_name=rows[i].scope_name)
+        for i in ids if i in rows
+    ][:limit]
 
 
 @router.get("/wiki/pages/{slug:path}", response_model=WikiPageDetail)
@@ -650,18 +704,21 @@ async def get_wiki_graph(
     depth: int = Query(1, ge=1, le=3),
     offset: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
+    edge_type: Optional[str] = Query(None, description="Filter edge types: all | concept | legal | wikilink"),
     db: AsyncSession = Depends(get_db),
     user: Employee = require_permission("wiki:read"),
 ):
-    """Return nodes/edges for visualization with scope filtering."""
+    """Return nodes/edges for visualization with scope filtering and relation types."""
     if slug:
         # Neighborhood view — check access to center page first
         return await wiki_service.get_neighborhood(db, slug, depth=depth)
 
     # Full graph — paginated, with scope filtering
     from sqlalchemy import case, func as sqlfunc
+    from sqlalchemy.orm import aliased
 
-    from app.database.models import Department, WikiLink
+    from app.database.models import Department, LegalRelation, LegalUnit, WikiLink
+    from app.models.concept_relation import ConceptRelation
 
     base_filter = WikiPage.slug.notin_([wiki_service.INDEX_SLUG, wiki_service.LOG_SLUG, wiki_service.HOT_SLUG])
 
@@ -701,14 +758,95 @@ async def get_wiki_graph(
     pages = (await db.execute(stmt)).all()
 
     # Edges — return ALL on first batch (offset=0)
+    edges: list[dict] = []
     if offset == 0:
-        edges_rows = (await db.execute(
-            select(WikiPage.slug.label("from_slug"), WikiLink.to_slug)
-            .join(WikiLink, WikiLink.from_page_id == WikiPage.id)
-        )).all()
-        edges = edges_rows
-    else:
-        edges = []
+        filter_type = (edge_type or "all").lower().strip()
+
+        # 1. WikiLinks
+        if filter_type in ("all", "wikilink"):
+            wikilinks_stmt = (
+                select(WikiPage.slug.label("from_slug"), WikiLink.to_slug)
+                .join(WikiLink, WikiLink.from_page_id == WikiPage.id)
+            )
+            wikilink_rows = (await db.execute(wikilinks_stmt)).all()
+            for r in wikilink_rows:
+                edges.append({
+                    "from": r.from_slug,
+                    "to": r.to_slug,
+                    "type": "wikilink",
+                    "label": "wikilink",
+                    "predicate": "wikilink",
+                    "weight": 1.0,
+                    "evidence": None,
+                })
+
+        # 2. Concept Relations
+        if filter_type in ("all", "concept"):
+            src_p = aliased(WikiPage, name="src_concept_page")
+            tgt_p = aliased(WikiPage, name="tgt_concept_page")
+            concept_stmt = (
+                select(
+                    src_p.slug.label("from_slug"),
+                    tgt_p.slug.label("to_slug"),
+                    ConceptRelation.predicate,
+                    ConceptRelation.evidence,
+                    ConceptRelation.weight,
+                    ConceptRelation.source_concept,
+                    ConceptRelation.target_concept,
+                )
+                .join(src_p, ConceptRelation.source_page_id == src_p.id)
+                .join(tgt_p, ConceptRelation.target_page_id == tgt_p.id)
+            )
+            concept_rows = (await db.execute(concept_stmt)).all()
+            for r in concept_rows:
+                edges.append({
+                    "from": r.from_slug,
+                    "to": r.to_slug,
+                    "type": "concept",
+                    "label": r.predicate,
+                    "predicate": r.predicate,
+                    "weight": float(getattr(r, "weight", 1.0) or 1.0),
+                    "evidence": getattr(r, "evidence", None),
+                    "source_concept": getattr(r, "source_concept", None),
+                    "target_concept": getattr(r, "target_concept", None),
+                })
+
+        # 3. Legal Relations
+        if filter_type in ("all", "legal"):
+            src_u = aliased(LegalUnit, name="src_legal_unit")
+            tgt_u = aliased(LegalUnit, name="tgt_legal_unit")
+            src_lp = aliased(WikiPage, name="src_legal_page")
+            tgt_lp = aliased(WikiPage, name="tgt_legal_page")
+
+            legal_stmt = (
+                select(
+                    src_lp.slug.label("from_slug"),
+                    tgt_lp.slug.label("to_slug"),
+                    LegalRelation.relation_type,
+                    LegalRelation.quote_context,
+                    LegalRelation.is_effective,
+                    LegalRelation.target_doc_number,
+                )
+                .join(src_u, LegalRelation.source_unit_id == src_u.id)
+                .join(src_lp, src_u.wiki_page_id == src_lp.id)
+                .join(tgt_u, LegalRelation.target_unit_id == tgt_u.id)
+                .join(tgt_lp, tgt_u.wiki_page_id == tgt_lp.id)
+                .where(LegalRelation.is_effective.is_(True))
+            )
+            legal_rows = (await db.execute(legal_stmt)).all()
+            for r in legal_rows:
+                raw_rel = getattr(r, "relation_type", "legal")
+                lbl = raw_rel.value if hasattr(raw_rel, "value") else str(raw_rel)
+                edges.append({
+                    "from": r.from_slug,
+                    "to": r.to_slug,
+                    "type": "legal",
+                    "label": lbl,
+                    "predicate": lbl,
+                    "weight": 1.2,
+                    "evidence": getattr(r, "quote_context", None),
+                    "target_doc_number": getattr(r, "target_doc_number", None),
+                })
 
     return {
         "nodes": [
@@ -723,7 +861,7 @@ async def get_wiki_graph(
             }
             for r in pages
         ],
-        "edges": [{"from": r.from_slug, "to": r.to_slug} for r in edges],
+        "edges": edges,
         "total": total,
         "offset": offset,
         "has_more": offset + limit < total,

@@ -253,7 +253,8 @@ Extract all knowledge from this section and return a JSON object with this exact
     {{
       "from": "string — source topic name",
       "to": "string — target topic name",
-      "type": "string — e.g. owns|part_of|caused_by|regulates|uses|located_in|other"
+      "predicate": "la_mot | thuoc | quy_dinh | ap_dung_cho | lien_quan",
+      "evidence": "string — direct sentence or excerpt providing evidence for this relationship"
     }}
   ],
   "topics": ["string"]
@@ -265,6 +266,7 @@ Rules:
   first character of the actual document section content.
 - Absolute offset in full document = {start_char} + local_offset.
 - confidence must be "explicit" (directly stated) or "inferred" (implied by the text).
+- For relations, predicate MUST be chosen from the closed set: 'la_mot' (is-a/type-of), 'thuoc' (part-of/belongs-to), 'quy_dinh' (regulates/governs), 'ap_dung_cho' (applies-to), or 'lien_quan' (general relation). Include direct sentence evidence.
 - Be exhaustive — include all significant named terms, organizations, subjects, and factual claims.
 - Place all extracted subjects (whether a person, company, technology, product, or idea) under `concepts`. Keep `entities` as an empty list `[]` for system compatibility.
 - Return empty arrays [] for categories with no findings.

@@ -101,11 +101,12 @@ export function KnowledgeTable({
     }
   };
 
-  const handleRetry = async (id: string) => {
+  // branch: undefined = server picks the failed branch(es); chunk / wiki / all = explicit.
+  const handleRetry = async (id: string, branch?: "chunk" | "wiki" | "all") => {
     setActionError(null);
     setRetryingIds((prev) => new Set(prev).add(id));
     try {
-      await api(`/api/sources/${id}/retry`, { method: "POST" });
+      await api(`/api/sources/${id}/retry${branch ? `?branch=${branch}` : ""}`, { method: "POST" });
       onRefresh();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Failed to retry");
@@ -568,7 +569,7 @@ export function KnowledgeTable({
                                 {t("knowledge.status.awaiting_approval", "Review Size")}
                               </DropdownMenuItem>
                             )}
-                            {source.status === "error" && (
+                            {(source.status === "error" || source.status === "partial") && (
                               <DropdownMenuItem
                                 onClick={() => handleRetry(source.id)}
                                 disabled={retryingIds.has(source.id)}
@@ -578,6 +579,36 @@ export function KnowledgeTable({
                                 </span>
                                 {retryingIds.has(source.id) ? t("common.retrying", "Retrying...") : t("common.retry", "Retry")}
                               </DropdownMenuItem>
+                            )}
+                            {/* Per-branch retry: only once text was extracted (a branch left 'pending'). */}
+                            {["error", "partial", "plan_ready"].includes(source.status) &&
+                              ((source.chunk_status && source.chunk_status !== "pending") ||
+                                (source.wiki_status && source.wiki_status !== "pending")) && (
+                              <>
+                                <DropdownMenuItem
+                                  onClick={() => handleRetry(source.id, "chunk")}
+                                  disabled={retryingIds.has(source.id)}
+                                >
+                                  <span className="material-symbols-outlined mr-2" style={{ fontSize: 16 }}>segment</span>
+                                  {t("knowledge.retryChunk", "Re-run raw chunks")}
+                                </DropdownMenuItem>
+                                {!source.preserve_verbatim && (
+                                  <DropdownMenuItem
+                                    onClick={() => handleRetry(source.id, "wiki")}
+                                    disabled={retryingIds.has(source.id)}
+                                  >
+                                    <span className="material-symbols-outlined mr-2" style={{ fontSize: 16 }}>auto_stories</span>
+                                    {t("knowledge.retryWiki", "Re-run wiki compilation")}
+                                  </DropdownMenuItem>
+                                )}
+                                <DropdownMenuItem
+                                  onClick={() => handleRetry(source.id, "all")}
+                                  disabled={retryingIds.has(source.id)}
+                                >
+                                  <span className="material-symbols-outlined mr-2" style={{ fontSize: 16 }}>restart_alt</span>
+                                  {t("knowledge.retryAll", "Re-process from scratch")}
+                                </DropdownMenuItem>
+                              </>
                             )}
                             <DropdownMenuSeparator />
                             <DropdownMenuItem

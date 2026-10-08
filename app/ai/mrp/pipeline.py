@@ -27,36 +27,7 @@ from app.ai.mrp.writer import PageWriteResult, run_refine_phase
 from app.utils.progress import ProgressTracker
 
 
-async def _resolve_wiki_scopes(session: AsyncSession, source) -> list[tuple[str, Optional[uuid.UUID]]]:
-    """Return the list of (scope_type, scope_id) tuples to commit wiki pages into.
-
-    Project scope takes priority. If source has department assignments, one scope
-    per department. Falls back to global.
-
-    Reads scope_type / scope_id fresh from DB rather than from the in-memory
-    `source` object: PATCH /sources/{id} may have changed scope while the
-    worker held a stale copy (session uses expire_on_commit=False). Mixing
-    in-memory scope with DB-read departments would commit wiki pages to the
-    wrong scope and could leak visibility.
-    """
-    from app.database.models import Source as SourceModel
-    from app.database.models import SourceDepartment
-
-    row = (await session.execute(
-        select(SourceModel.scope_type, SourceModel.scope_id).where(SourceModel.id == source.id)
-    )).one_or_none()
-    if row is None:
-        return [("global", None)]
-    scope_type, scope_id = row
-    if scope_type == "project":
-        return [("project", scope_id)]
-    rows = (await session.execute(
-        select(SourceDepartment.department_id).where(SourceDepartment.source_id == source.id)
-    )).all()
-    dept_ids = [r[0] for r in rows]
-    if dept_ids:
-        return [("department", did) for did in dept_ids]
-    return [("global", None)]
+from app.services.wiki_service import resolve_wiki_scopes as _resolve_wiki_scopes
 
 
 # ---------------------------------------------------------------------------
@@ -220,11 +191,13 @@ async def run_commit_phase(
     src = await session.get(Source, source.id)
     if src:
         src.pipeline_phase = "commit"
-        src.status = "ready"
-        src.progress = 100
-        src.progress_message = "Done"
-        src.error_message = None
+        src.wiki_status = "ready"
+        src.wiki_progress = 100
+        src.wiki_progress_message = "Done"
+        src.wiki_error_message = None
         src.auto_recover_count = 0
+        from app.services.source_status import update_source_dual_status
+        await update_source_dual_status(session, src)
 
     await session.commit()
 
@@ -287,6 +260,7 @@ async def run_mrp_pipeline(
     kt_slug: Optional[str],
     kt_name: Optional[str],
     kt_desc: Optional[str],
+    attempt_id_str: Optional[str] = None,
 ) -> dict:
     """
     Orchestrate Phase 0 (Triage) → Phase 1 (MAP) → Phase 2 (REDUCE).
@@ -309,7 +283,7 @@ async def run_mrp_pipeline(
         if plan and plan.status in ("pending_review", "approved"):
             logger.info(f"MRP: source={source_id} already at plan_review, skipping MAP+REDUCE")
             if plan.status == "approved" or settings.mrp_auto_approve_plan:
-                return await _auto_trigger_refine(source_id, plan)
+                return await _auto_trigger_refine(source_id, plan, attempt_id_str)
             return {"status": "plan_ready", "plan_id": str(plan.id)}
 
     if current_phase in ("refine", "verify", "commit"):
@@ -357,12 +331,12 @@ async def run_mrp_pipeline(
     await tracker.update(80, "Compilation plan ready")
 
     if settings.mrp_auto_approve_plan:
-        return await _auto_trigger_refine(source_id, plan)
+        return await _auto_trigger_refine(source_id, plan, attempt_id_str)
 
     return {"status": "plan_ready", "plan_id": str(plan.id)}
 
 
-async def _auto_trigger_refine(source_id: uuid.UUID, plan) -> dict:
+async def _auto_trigger_refine(source_id: uuid.UUID, plan, attempt_id_str: Optional[str] = None) -> dict:
     """Auto-approve plan and enqueue ingest_refine_task."""
     from datetime import datetime, timezone
 
@@ -380,14 +354,22 @@ async def _auto_trigger_refine(source_id: uuid.UUID, plan) -> dict:
                 p.reviewed_at = datetime.now(timezone.utc)
             src = await sess.get(Source, source_id)
             if src:
-                src.status = "processing"
-                src.progress_message = "Plan approved — compiling wiki pages..."
+                src.wiki_status = "refining"
+                src.wiki_progress_message = "Plan approved — compiling wiki pages..."
+                from app.services.source_status import update_source_dual_status
+                await update_source_dual_status(sess, src)
+                if not attempt_id_str:
+                    from app.services.source_status import wiki_attempt_of
+                    attempt_id_str = wiki_attempt_of(src)
             await sess.commit()
     except Exception as exc:
         logger.warning(f"MRP auto-approve state update failed: {exc}")
 
     pool = await get_arq_pool()
-    job = await pool.enqueue_job("ingest_refine_task", str(source_id))
+    args = [str(source_id)]
+    if attempt_id_str:
+        args.append(attempt_id_str)
+    job = await pool.enqueue_job("ingest_refine_task", *args)
     return {"status": "plan_auto_approved", "job_id": job.job_id if job else None}
 
 

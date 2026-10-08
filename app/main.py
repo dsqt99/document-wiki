@@ -3,6 +3,7 @@ Arkon — Enterprise AI Control Center.
 FastAPI application entry point.
 """
 
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -88,19 +89,32 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"Could not seed built-in skills: {e}")
 
+        # Load custom role permissions if configured
+        try:
+            from app.database import async_session_factory
+            from app.services.config_service import ConfigService
+            from app.services.permissions import load_role_permissions_override
+            async with async_session_factory() as session:
+                cfg = ConfigService(session)
+                custom_perms = await cfg.get("role_permissions_custom")
+                if custom_perms:
+                    load_role_permissions_override(custom_perms)
+        except Exception as e:
+            logger.warning(f"Could not load custom role permissions: {e}")
+
         # Warn if sensitive defaults are unchanged
         if settings.secret_key == "change-me-to-a-random-secret-string":
             logger.warning("⚠️  SECRET_KEY is set to the default value — change it before deploying to production!")
         # MCP server ready
         logger.success("Arkon MCP Server ready at /mcp")
 
-        # Initialize Langfuse & sync model pricing definitions
-        try:
-            from app.ai.tracing import get_langfuse, sync_all_models_to_langfuse
-            get_langfuse()
-            sync_all_models_to_langfuse()
-        except Exception as e:
-            logger.warning(f"Could not sync models to Langfuse: {e}")
+        # Initialize Langfuse & sync model pricing definitions (temporarily commented)
+        # try:
+        #     from app.ai.tracing import get_langfuse, sync_all_models_to_langfuse
+        #     if get_langfuse():
+        #         asyncio.create_task(asyncio.to_thread(sync_all_models_to_langfuse))
+        # except Exception as e:
+        #     logger.warning(f"Could not initialize Langfuse background sync: {e}")
 
         logger.success("Arkon API started successfully")
         yield
@@ -197,7 +211,9 @@ app.mount("/mcp", mcp_http_app)
 
 # --- REST API Routers ---
 from app.routers import (  # noqa: E402
+    admin_custom_models,
     admin_embeddings,
+    admin_failures,
     admin_models,
     admin_settings,
     admin_stats,
@@ -230,7 +246,9 @@ app.include_router(wiki_images.router, prefix="/api", tags=["wiki"])
 app.include_router(admin_settings.router, prefix="/api", tags=["settings"])
 app.include_router(admin_embeddings.router, prefix="/api", tags=["settings"])
 app.include_router(admin_models.router, prefix="/api", tags=["settings"])
+app.include_router(admin_custom_models.router, prefix="/api", tags=["settings"])
 app.include_router(admin_stats.router, prefix="/api", tags=["statistics"])
+app.include_router(admin_failures.router, prefix="/api", tags=["admin"])
 app.include_router(rbac.router, prefix="/api", tags=["rbac"])
 app.include_router(knowledge_types.router, prefix="/api", tags=["knowledge-types"])
 
