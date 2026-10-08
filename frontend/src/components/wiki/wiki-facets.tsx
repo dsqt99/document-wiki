@@ -3,7 +3,7 @@
 import React from "react";
 import { cn } from "@/lib/utils";
 
-export type FacetOption = { value: string; label: string; count: number };
+export type FacetOption = { value: string; label: string; count: number; color?: string };
 
 export const STATUS_LABEL_VI: Record<string, string> = {
   evergreen: "Cốt lõi ổn định",
@@ -91,7 +91,10 @@ export function FacetGroup({
                     onChange={() => onToggle(o.value)}
                     className="size-3.5 accent-primary shrink-0"
                   />
-                  <span className={cn("flex-1 truncate", checked ? "text-foreground font-medium" : "text-foreground/80")}>
+                  <span
+                    className={cn("flex-1 truncate", checked ? "text-foreground font-medium" : "text-foreground/80")}
+                    style={o.color ? { color: o.color } : undefined}
+                  >
                     {o.label}
                   </span>
                   <span className="text-[11px] text-muted-foreground tabular-nums">{o.count}</span>

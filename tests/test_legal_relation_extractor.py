@@ -90,3 +90,29 @@ def test_extract_reference_citation_relations():
     assert len(citations) >= 1
     assert citations[0].target_doc_number == "136/2020/NĐ-CP"
     assert citations[0].target_article_number == "16"
+
+
+def test_doc_level_replace_and_repeal():
+    """Whole-document replacement / repeal (no target article) incl. yearless numbers."""
+    text = (
+        "Điều 3. Hiệu lực thi hành\n"
+        "1. Quyết định này thay thế Quyết định số 1520/QĐ-BTC ngày 01/08/2023.\n"
+        "2. Bãi bỏ Thông tư số 12/2019/TT-BTC.\n"
+        "3. Quyết định số 99/QĐ-BTC hết hiệu lực kể từ ngày ký."
+    )
+    relations = LegalRelationExtractor().extract_from_text(text, default_doc_number="2777/QĐ-BTC")
+    doc_level = {
+        (r.relation_type, r.target_doc_number)
+        for r in relations
+        if r.target_article_number is None
+    }
+    assert (LegalRelationType.THAY_THE, "1520/QĐ-BTC") in doc_level
+    assert (LegalRelationType.BAI_BO, "12/2019/TT-BTC") in doc_level
+    assert (LegalRelationType.BAI_BO, "99/QĐ-BTC") in doc_level
+    assert all(r.target_doc_number != "2777/QĐ-BTC" for r in relations)
+
+
+def test_clause_repeal_is_not_doc_level():
+    text = "Bãi bỏ khoản 2 Điều 10 của Nghị định số 136/2020/NĐ-CP."
+    relations = LegalRelationExtractor().extract_from_text(text, default_doc_number="50/2024/NĐ-CP")
+    assert not [r for r in relations if r.target_article_number is None and r.relation_type == LegalRelationType.BAI_BO]

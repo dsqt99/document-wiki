@@ -87,6 +87,8 @@ class SourceResponse(BaseModel):
     wiki_progress: int = 0
     wiki_progress_message: Optional[str] = None
     wiki_error_message: Optional[str] = None
+    # Thông tin văn bản (số hiệu, ngày ban hành/hiệu lực, ...) + derived validity
+    doc_meta: Optional[dict] = None
     created_at: str
     updated_at: str
 
@@ -130,7 +132,21 @@ async def _image_count(session: AsyncSession, source_id: uuid.UUID) -> int:
     return (await session.execute(stmt)).scalar_one()
 
 
-def _to_response(source: Source, wiki_page_count: int = 0, image_count: int = 0) -> SourceResponse:
+def _doc_meta_out(source: Source, lifecycle: Optional[dict] = None) -> Optional[dict]:
+    from app.services.doc_metadata_service import compute_validity, get_doc_meta
+
+    meta = get_doc_meta(source)
+    if not meta:
+        return None
+    return {**meta, "validity": compute_validity(meta, lifecycle)}
+
+
+def _to_response(
+    source: Source,
+    wiki_page_count: int = 0,
+    image_count: int = 0,
+    lifecycle: Optional[dict] = None,
+) -> SourceResponse:
     # Extract departments from M2M relationship
     dept_ids = []
     dept_names = []
@@ -175,6 +191,7 @@ def _to_response(source: Source, wiki_page_count: int = 0, image_count: int = 0)
         wiki_progress=source.wiki_progress or 0,
         wiki_progress_message=source.wiki_progress_message,
         wiki_error_message=source.wiki_error_message,
+        doc_meta=_doc_meta_out(source, lifecycle),
         created_at=source.created_at.isoformat(),
         updated_at=source.updated_at.isoformat(),
     )
@@ -189,6 +206,42 @@ def _source_load_options():
     ]
 
 
+def source_read_filter(user: Employee):
+    """RBAC for listing sources → (allowed, extra where-clause or None).
+
+    Raises 403 when the user holds no doc:read permission at all.
+    """
+    perms = _get_user_permissions(user)
+    if user.role != "admin" and not any(p.startswith("doc:read:") for p in perms):
+        raise HTTPException(403, "Permission required: doc:read")
+
+    scope_level = "all" if user.role == "admin" else get_scope_level(list(perms), "doc", "read")
+    if scope_level is None:
+        return False, None
+    if scope_level != "own_dept":
+        return True, None
+
+    # Only show: global docs (no departments) OR docs overlapping the
+    # user's department set. Empty set → only global docs.
+    user_dept_ids = list(user.department_ids)
+    global_clause = ~exists(
+        select(SourceDepartment.source_id)
+        .where(SourceDepartment.source_id == Source.id)
+    )
+    if not user_dept_ids:
+        return True, global_clause
+    return True, or_(
+        global_clause,
+        exists(
+            select(SourceDepartment.source_id)
+            .where(
+                SourceDepartment.source_id == Source.id,
+                SourceDepartment.department_id.in_(user_dept_ids),
+            )
+        ),
+    )
+
+
 @router.get("/sources")
 async def list_sources(
     knowledge_type_id: Optional[uuid.UUID] = Query(None),
@@ -201,43 +254,16 @@ async def list_sources(
     user: Employee = Depends(get_current_user),
 ):
     """List sources with scoped filtering based on user permissions."""
-    # Check user has at least some doc:read permission
-    perms = _get_user_permissions(user)
-    if user.role != "admin" and not any(p.startswith("doc:read:") for p in perms):
-        raise HTTPException(403, "Permission required: doc:read")
-
     base = select(Source).options(*_source_load_options())
     count_base = select(func.count(Source.id))
 
     # --- Scope filtering ---
-    scope_level = "all" if user.role == "admin" else get_scope_level(list(perms), "doc", "read")
-
-    if scope_level == "own_dept":
-        # Only show: global docs (no departments) OR docs overlapping the
-        # user's department set. Empty set → only global docs.
-        user_dept_ids = list(user.department_ids)
-        global_clause = ~exists(
-            select(SourceDepartment.source_id)
-            .where(SourceDepartment.source_id == Source.id)
-        )
-        if user_dept_ids:
-            dept_filter = or_(
-                global_clause,
-                exists(
-                    select(SourceDepartment.source_id)
-                    .where(
-                        SourceDepartment.source_id == Source.id,
-                        SourceDepartment.department_id.in_(user_dept_ids),
-                    )
-                ),
-            )
-        else:
-            dept_filter = global_clause
+    allowed, dept_filter = source_read_filter(user)
+    if not allowed:
+        return {"items": [], "total": 0, "page": page, "page_size": page_size, "total_pages": 1}
+    if dept_filter is not None:
         base = base.where(dept_filter)
         count_base = count_base.where(dept_filter)
-    elif scope_level is None:
-        # No doc:read permission at all
-        return {"items": [], "total": 0, "page": page, "page_size": page_size, "total_pages": 1}
 
     # --- Additional filters ---
     if knowledge_type_id:
@@ -267,9 +293,15 @@ async def list_sources(
     stmt = base.order_by(Source.created_at.desc()).offset(offset).limit(page_size)
     sources = (await db.execute(stmt)).scalars().all()
 
+    from app.services.doc_metadata_service import get_doc_meta, lifecycle_for, load_lifecycle
+
+    lifecycles = await load_lifecycle(
+        db, [n for s in sources if (n := get_doc_meta(s).get("doc_number"))]
+    )
     items: list[SourceResponse] = []
     for s in sources:
-        items.append(_to_response(s, await _wiki_page_count(db, s.id)))
+        lc = lifecycle_for(lifecycles, get_doc_meta(s).get("doc_number"))
+        items.append(_to_response(s, await _wiki_page_count(db, s.id), lifecycle=lc))
 
     return {
         "items": items,

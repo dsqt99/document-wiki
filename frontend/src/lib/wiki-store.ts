@@ -198,54 +198,6 @@ export function getDocForPage(p: WikiPageSummary, sources: WikiSourceItem[]): Wi
   return null;
 }
 
-export interface ComputedSourceStats {
-  sources: Array<{ id: string; title: string; count: number }>;
-  otherCount: number;
-  articlesCount: number;
-  overviewsCount: number;
-  totalCount: number;
-}
-
-export function computeSourceStats(
-  pages: WikiPageSummary[],
-  sources: WikiSourceItem[]
-): ComputedSourceStats {
-  const counts = new Map<string, number>();
-  let otherCount = 0;
-  let articlesCount = 0;
-  let overviewsCount = 0;
-
-  for (const p of pages) {
-    if (p.page_type === "index" || p.page_type === "log" || p.page_type === "hot") continue;
-    if (p.title.startsWith("Điều ")) {
-      articlesCount++;
-    } else {
-      overviewsCount++;
-    }
-
-    const doc = getDocForPage(p, sources);
-    if (doc) {
-      counts.set(doc.id, (counts.get(doc.id) || 0) + 1);
-    } else {
-      otherCount++;
-    }
-  }
-
-  return {
-    sources: sources.map((s) => ({
-      id: s.id,
-      title: s.title || s.file_name || "Untitled",
-      count: counts.get(s.id) || 0,
-    })),
-    otherCount,
-    articlesCount,
-    overviewsCount,
-    totalCount: pages.filter(
-      (p) => p.page_type !== "index" && p.page_type !== "log" && p.page_type !== "hot"
-    ).length,
-  };
-}
-
 // Helper methods for pages cache
 export function getCachedPages(url: string): WikiPageSummary[] | null {
   return wikiStore.pagesCache.get(url) || null;

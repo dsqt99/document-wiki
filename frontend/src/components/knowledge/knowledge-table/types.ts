@@ -1,3 +1,5 @@
+import { DocMeta, Validity } from "@/types/legal-doc";
+
 export type KnowledgeType = {
   id: string;
   slug: string;
@@ -41,6 +43,8 @@ export type Source = {
   preserve_verbatim?: boolean;
   pipeline_strategy?: string;
   pipeline_phase?: string;
+  // Extracted document metadata (số hiệu, ngày ban hành/hiệu lực, lĩnh vực) + derived validity
+  doc_meta?: (DocMeta & { validity?: Validity }) | null;
   created_at: string;
   updated_at?: string;
 };

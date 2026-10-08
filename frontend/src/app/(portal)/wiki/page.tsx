@@ -11,7 +11,6 @@ import { wikiTypeGroupLabel } from "@/components/wiki/wiki-type-badge";
 import { WikiStatusBadge } from "@/components/wiki/wiki-status-badge";
 import { WikiSearchDialog } from "@/components/wiki/wiki-search-dialog";
 import { WikiCreatePageDialog } from "@/components/wiki/wiki-create-page-dialog";
-import { WikiLibraryView } from "@/components/wiki/wiki-library-view";
 import {
   FacetGroup,
   STATUS_LABEL_VI,
@@ -21,7 +20,7 @@ import {
 import { EmptyState } from "@/components/shared/empty-state";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
-import { WikiSourceItem, computeSourceStats, displaySourceTitle } from "@/lib/wiki-store";
+import { WikiSourceItem, displaySourceTitle } from "@/lib/wiki-store";
 
 const WORKSPACE_ROLE_LEVEL: Record<string, number> = {
   viewer: 0,
@@ -73,7 +72,7 @@ export default function WikiIndexPage() {
   const [prefillTitle, setPrefillTitle] = React.useState("");
   const [scopes, setScopes] = React.useState<WikiScope[]>([]);
 
-  const [viewMode, setViewMode] = React.useState<"pages" | "library" | "index">("pages");
+  const [viewMode, setViewMode] = React.useState<"pages" | "index">("pages");
 
   // List controls
   const [query, setQuery] = React.useState("");
@@ -236,12 +235,6 @@ export default function WikiIndexPage() {
   );
   const createMode = getCreateModeForScope(selectedScope);
 
-  const sourceStats = React.useMemo(() => computeSourceStats(allPages, sources), [allPages, sources]);
-  const sourceArticleCountMap = React.useMemo(() => {
-    const map = new Map<string, number>();
-    for (const s of sourceStats.sources) map.set(s.id, s.count);
-    return map;
-  }, [sourceStats]);
   const sourceTitleById = React.useMemo(() => {
     const m = new Map<string, string>();
     for (const s of sources) m.set(s.id, displaySourceTitle(s));
@@ -377,7 +370,6 @@ export default function WikiIndexPage() {
           {(
             [
               { id: "pages", label: "Trang wiki", icon: "article", count: allPages.length },
-              { id: "library", label: "Tủ sách văn bản", icon: "local_library", count: sources.length },
               ...(indexMd ? [{ id: "index", label: "Mục lục tổng hợp", icon: "menu_book", count: null }] : []),
             ] as { id: typeof viewMode; label: string; icon: string; count: number | null }[]
           ).map((tab) => {
@@ -401,6 +393,14 @@ export default function WikiIndexPage() {
               </button>
             );
           })}
+          <Link
+            href="/wiki/law"
+            className="flex items-center gap-1.5 px-3 py-2 -mb-px text-sm font-medium border-b-2 border-transparent text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: 17 }}>balance</span>
+            Wiki Pháp luật
+            <span className="text-xs tabular-nums text-muted-foreground">{sources.length}</span>
+          </Link>
         </div>
 
         {loading ? (
@@ -409,8 +409,6 @@ export default function WikiIndexPage() {
               progress_activity
             </span>
           </div>
-        ) : viewMode === "library" ? (
-          <WikiLibraryView sources={sources} sourceArticleCountMap={sourceArticleCountMap} />
         ) : viewMode === "index" && indexMd ? (
           <div className="bg-card border border-border rounded-2xl p-6 shadow-sahara max-w-4xl">
             <WikiContent markdown={indexMd} />

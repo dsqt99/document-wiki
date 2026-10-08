@@ -32,6 +32,7 @@ import { PlanReviewDialog } from "./plan-review-dialog";
 import { ExtractionReviewDialog } from "./extraction-review-dialog";
 import { SourceArticlesDrawer } from "./source-articles-drawer";
 import { useI18n } from "@/lib/i18n";
+import { VALIDITY_INFO, formatViDate } from "@/lib/legal-doc";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -336,6 +337,12 @@ export function KnowledgeTable({
                 <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground w-[160px]">
                   Phân loại & Phạm vi
                 </TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground w-[110px]">
+                  Ngày ban hành
+                </TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground w-[130px]">
+                  Hiệu lực
+                </TableHead>
                 <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground w-[80px]">
                   Số trang
                 </TableHead>
@@ -354,6 +361,10 @@ export function KnowledgeTable({
             <TableBody>
               {filteredSources.map((source) => {
                 const meta = parseSourceLegalMeta(source);
+                const docMeta = source.doc_meta;
+                const docNumber = docMeta?.doc_number || meta.docNumber;
+                const authority = docMeta?.issuing_authority || meta.issuingAuthority;
+                const validity = docMeta?.validity ? VALIDITY_INFO[docMeta.validity] : null;
                 const isExpanded = expandedSourceIds.has(source.id);
                 const hasArticles = (source.wiki_page_count ?? 0) > 0;
 
@@ -394,9 +405,9 @@ export function KnowledgeTable({
                               >
                                 {meta.badgeLabel}
                               </span>
-                              {meta.docNumber && (
+                              {docNumber && (
                                 <span className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded-md bg-muted/80 text-foreground border border-border/80">
-                                  Số: {meta.docNumber}
+                                  Số: {docNumber}
                                 </span>
                               )}
                             </div>
@@ -412,13 +423,19 @@ export function KnowledgeTable({
 
                             {/* Subtitle: Authority, date, file name */}
                             <div className="flex items-center gap-2.5 text-[11px] text-muted-foreground flex-wrap pt-0.5">
-                              {meta.issuingAuthority && (
+                              {authority && (
                                 <span className="flex items-center gap-1 font-medium text-foreground/80">
                                   <span className="material-symbols-outlined text-[13px] text-primary/70">account_balance</span>
-                                  {meta.issuingAuthority}
+                                  {authority}
                                 </span>
                               )}
-                              {meta.docDate && (
+                              {docMeta?.field && (
+                                <span className="flex items-center gap-1">
+                                  <span className="material-symbols-outlined text-[13px]">category</span>
+                                  {docMeta.field}
+                                </span>
+                              )}
+                              {!docMeta?.issued_date && meta.docDate && (
                                 <span className="flex items-center gap-1">
                                   <span className="material-symbols-outlined text-[13px]">calendar_today</span>
                                   {meta.docDate}
@@ -462,6 +479,31 @@ export function KnowledgeTable({
                           </div>
                           <ScopeBadge scopeType={source.scope_type} scopeId={source.scope_id} />
                         </div>
+                      </TableCell>
+
+                      {/* Issued date */}
+                      <TableCell className="py-3">
+                        <span className="text-xs tabular-nums text-foreground/80">
+                          {docMeta?.issued_date ? formatViDate(docMeta.issued_date) : meta.docDate || "—"}
+                        </span>
+                      </TableCell>
+
+                      {/* Validity */}
+                      <TableCell className="py-3">
+                        {validity ? (
+                          <div className="flex flex-col gap-0.5 items-start">
+                            <span className={cn("px-2 py-0.5 rounded-full border text-[10px] font-semibold whitespace-nowrap", validity.badge)}>
+                              {validity.label}
+                            </span>
+                            {docMeta?.effective_date && (
+                              <span className="text-[10px] text-muted-foreground tabular-nums pl-0.5">
+                                từ {formatViDate(docMeta.effective_date)}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground/50">—</span>
+                        )}
                       </TableCell>
 
                       {/* Page count */}
@@ -535,6 +577,16 @@ export function KnowledgeTable({
                               <span className="material-symbols-outlined mr-2" style={{ fontSize: 16 }}>visibility</span>
                               {t("common.view", "View")}
                             </DropdownMenuItem>
+                            {source.status === "ready" && (
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  router.push(`/wiki/law/${encodeURIComponent(docMeta?.doc_slug || source.id)}`)
+                                }
+                              >
+                                <span className="material-symbols-outlined mr-2" style={{ fontSize: 16 }}>balance</span>
+                                Wiki Pháp luật
+                              </DropdownMenuItem>
+                            )}
                             {source.status === "ready" && (
                               <DropdownMenuItem
                                 onClick={async () => {
@@ -626,7 +678,7 @@ export function KnowledgeTable({
                     {/* Inline Expanded Articles Drawer */}
                     {isExpanded && (
                       <TableRow className="bg-muted/15 border-b border-border/80">
-                        <TableCell colSpan={7} className="p-0">
+                        <TableCell colSpan={9} className="p-0">
                           <SourceArticlesDrawer
                             source={source}
                             onClose={() => toggleExpand(source.id)}

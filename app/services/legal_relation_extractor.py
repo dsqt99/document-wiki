@@ -40,6 +40,29 @@ RE_DOC_NUMBER = re.compile(
     re.IGNORECASE,
 )
 
+# Generic Vietnamese doc number, with or without year: 2777/QĐ-BTC,
+# 31/QĐ-HĐTV, 145/2026/TT-BTC. Case-sensitive suffix keeps prose like
+# "1/3 số" or "và/hoặc" from matching.
+RE_DOC_NUMBER_ANY = re.compile(
+    r"(?<![\w/])(\d+(?:/\d{4})?/[A-ZĐ]{1,8}\d*(?:\-[A-ZĐ]{1,8}\d*){0,3})(?![\w/])"
+)
+
+
+def find_doc_numbers(text: str) -> list[str]:
+    """All doc numbers in `text`, specific pattern first, deduplicated in order."""
+    seen: dict[str, None] = {}
+    for m in RE_DOC_NUMBER.finditer(text):
+        seen.setdefault(m.group(1).upper(), None)
+    for m in RE_DOC_NUMBER_ANY.finditer(text):
+        seen.setdefault(m.group(1).upper(), None)
+    return list(seen)
+
+# Whole-document lifecycle: "... thay thế Quyết định số 3453/QĐ-BTC ...",
+# "bãi bỏ Thông tư số 12/2020/TT-BTC", "Quyết định số X ... hết hiệu lực".
+RE_DOC_REPLACE = re.compile(r"\bthay\s+thế\s+(?!(?:khoản|điểm|Điều)\b)", re.IGNORECASE)
+RE_DOC_REPEAL = re.compile(r"\bbãi\s+bỏ\s+(?!(?:khoản|điểm|Điều)\b)", re.IGNORECASE)
+RE_DOC_EXPIRE = re.compile(r"\bhết\s+hiệu\s+lực\b", re.IGNORECASE)
+
 RE_LAW_NUMBER = re.compile(
     r"(?:Luật|Bộ luật)[^;\n\.,]+?số\s+(\d+/\d{4}/QH\d+)",
     re.IGNORECASE,
@@ -174,7 +197,45 @@ class LegalRelationExtractor:
                             )
                         )
 
+            # 4. Whole-document replacement / repeal / expiry
+            relations.extend(self._extract_doc_lifecycle(line_str, default_doc_number))
+
         return relations
+
+    def _extract_doc_lifecycle(
+        self, line: str, default_doc_number: Optional[str]
+    ) -> List[ExtractedRelation]:
+        """Doc-level THAY_THE / BAI_BO targets named on a single line.
+
+        Only doc numbers that appear *after* the trigger phrase count for
+        "thay thế"/"bãi bỏ"; for "hết hiệu lực" the doc named *before* it does
+        ("Quyết định số X ... hết hiệu lực"). Article-level repeals are handled
+        by RE_BAI_BO_CLAUSE.
+        """
+        own = (default_doc_number or "").upper()
+        out: List[ExtractedRelation] = []
+        seen: set[tuple[LegalRelationType, str]] = set()
+
+        def add(rel_type: LegalRelationType, doc: str) -> None:
+            if doc == own or (rel_type, doc) in seen:
+                return
+            seen.add((rel_type, doc))
+            out.append(ExtractedRelation(relation_type=rel_type, target_doc_number=doc, quote_context=line[:250]))
+
+        for pattern, rel_type in ((RE_DOC_REPLACE, LegalRelationType.THAY_THE), (RE_DOC_REPEAL, LegalRelationType.BAI_BO)):
+            m = pattern.search(line)
+            if m:
+                tail = line[m.end():m.end() + 160]
+                docs = find_doc_numbers(tail)
+                if docs:
+                    add(rel_type, docs[0])
+
+        m = RE_DOC_EXPIRE.search(line)
+        if m:
+            docs = find_doc_numbers(line[:m.start()])
+            if docs:
+                add(LegalRelationType.BAI_BO, docs[-1])
+        return out
 
     def extract_preamble_basis(self, preamble_text: str) -> List[ExtractedRelation]:
         """Extract legal basis (Căn cứ) from preamble lines."""
@@ -187,9 +248,10 @@ class LegalRelationExtractor:
             if not line_s.lower().startswith("căn cứ"):
                 continue
 
-            doc_numbers = RE_DOC_NUMBER.findall(line_s)
             law_numbers = RE_LAW_NUMBER.findall(line_s)
-            all_doc_numbers = list(set([dn.upper() for dn in (doc_numbers + law_numbers)]))
+            all_doc_numbers = list(dict.fromkeys(
+                find_doc_numbers(line_s) + [dn.upper() for dn in law_numbers]
+            ))
 
             for dn in all_doc_numbers:
                 relations.append(

@@ -372,12 +372,24 @@ async def dispatch_dual_pipeline(
     # Branch A: commit, then enqueue.
     await commit_and_enqueue_chunk_branch(session, source, attempt)
 
+    # Document metadata (số hiệu, hiệu lực, lĩnh vực...) for the legal wiki UI.
+    # Legal sources that compile get it inside finalize_legal_source, where the
+    # article count and overview slug are known.
+    is_legal = await is_legal_source(session, source)
+    if source.preserve_verbatim or not is_legal:
+        try:
+            from app.services.doc_metadata_service import store_document_metadata
+            await store_document_metadata(session, source)
+            await session.commit()
+        except Exception as e:
+            logger.warning(f"Document metadata extraction failed for {source_id}: {e}")
+
     if source.preserve_verbatim:
         logger.info(f"Source {source_id} is verbatim: branch B skipped")
         return {"status": source.status, "branch_a": "queued", "branch_b": "skipped"}
 
     # Branch B: legal documents compile into Điều-level pages without MRP.
-    if await is_legal_source(session, source):
+    if is_legal:
         await set_branch_state(
             source.id, "wiki", status="processing", progress=50,
             message="Parsing legal document articles...", session=session,
@@ -1815,6 +1827,22 @@ async def relink_legal_relations_task(ctx: dict, source_id: Optional[str] = None
         return result
 
 
+async def backfill_doc_metadata_task(
+    ctx: dict, only_missing: bool = True, use_llm: bool = True, limit: int = 1000,
+) -> dict:
+    """Backfill document metadata (số hiệu, hiệu lực, lĩnh vực) for existing sources."""
+    from app.database import async_session_factory
+    from app.services.doc_metadata_service import backfill_document_metadata
+
+    logger.info(f"Starting backfill_doc_metadata_task (only_missing={only_missing}, use_llm={use_llm})...")
+    async with async_session_factory() as session:
+        result = await backfill_document_metadata(
+            session, only_missing=only_missing, use_llm=use_llm, limit=limit,
+        )
+    logger.info(f"backfill_doc_metadata_task finished: {result}")
+    return result
+
+
 async def generate_questions_task(
     ctx: dict,
     source_id: str,
@@ -1924,6 +1952,7 @@ class WorkerSettings:
         ai_pre_review_draft_task,
         reassign_source_scope_task,
         relink_legal_relations_task,
+        backfill_doc_metadata_task,
         generate_questions_task,
     ]
     redis_settings = _get_redis_settings()

@@ -513,6 +513,14 @@ async def finalize_legal_source(session: AsyncSession, source: Source, tracker: 
     preamble = parsed["preamble"]
     articles = parsed["articles"]
 
+    # Persist document metadata (thông tin văn bản) for the legal wiki UI.
+    from app.services.doc_metadata_service import store_document_metadata
+    await tracker.update(58, "Đang trích xuất thông tin văn bản (số hiệu, hiệu lực, lĩnh vực)...")
+    await store_document_metadata(
+        session, source, regex_meta=meta, article_count=len(articles), doc_slug=doc_slug,
+    )
+    await session.commit()
+
     wiki_scopes = await wiki_service.resolve_wiki_scopes(session, source)
 
     # Get knowledge type slug
