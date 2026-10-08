@@ -82,6 +82,7 @@ export function WikiContent({
   const processed = preprocessWikilinks(markdown);
   const headings = React.useMemo(() => extractHeadings(markdown), [markdown]);
   const [activeHeading, setActiveHeading] = React.useState<string | null>(null);
+  const [tocOpen, setTocOpen] = React.useState(true);
 
   const imageIds = React.useMemo(() => {
     const out = new Set<string>();
@@ -112,33 +113,42 @@ export function WikiContent({
 
   return (
     <div className="relative">
-      {/* Table of Contents — only show when enough headings */}
+      {/* Table of Contents — collapsible, only when enough headings */}
       {headings.length >= 3 && (
-        <div className="mb-8 rounded-xl border border-border bg-card/50 px-5 py-4">
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
-            <span className="material-symbols-outlined" style={{ fontSize: 13 }}>toc</span>
-            Contents
-          </p>
-          <nav className="flex flex-col gap-0.5">
-            {headings.map((h) => (
-              <a
-                key={h.id}
-                href={`#${h.id}`}
-                className={`text-xs py-0.5 hover:text-primary transition-colors ${
-                  activeHeading === h.id
-                    ? "text-primary font-medium"
-                    : "text-muted-foreground"
-                }`}
-                style={{ paddingLeft: (h.level - 2) * 16 }}
-                onClick={(e) => {
-                  e.preventDefault();
-                  document.getElementById(h.id)?.scrollIntoView({ behavior: "smooth" });
-                }}
-              >
-                {h.text}
-              </a>
-            ))}
-          </nav>
+        <div className="mb-8 rounded-xl border border-border bg-card/50">
+          <button
+            type="button"
+            onClick={() => setTocOpen((o) => !o)}
+            className="w-full flex items-center gap-2 px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-muted-foreground hover:text-foreground cursor-pointer"
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: 16 }}>toc</span>
+            Mục lục · {headings.length}
+            <span className="material-symbols-outlined ml-auto" style={{ fontSize: 18 }}>
+              {tocOpen ? "expand_less" : "expand_more"}
+            </span>
+          </button>
+          {tocOpen && (
+            <nav className="flex flex-col gap-0.5 px-4 pb-3 -mt-0.5">
+              {headings.map((h) => (
+                <a
+                  key={h.id}
+                  href={`#${h.id}`}
+                  className={`text-[13px] py-0.5 hover:text-primary transition-colors ${
+                    activeHeading === h.id
+                      ? "text-primary font-medium"
+                      : "text-muted-foreground"
+                  }`}
+                  style={{ paddingLeft: (h.level - 2) * 16 }}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    document.getElementById(h.id)?.scrollIntoView({ behavior: "smooth" });
+                  }}
+                >
+                  {h.text}
+                </a>
+              ))}
+            </nav>
+          )}
         </div>
       )}
 
@@ -292,8 +302,8 @@ export function WikiContent({
               const altStr = typeof alt === "string" ? alt : "";
               if (!srcStr.startsWith("image://")) {
                 // External / regular image — render as-is.
-                // eslint-disable-next-line @next/next/no-img-element
                 return (
+                  // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={srcStr}
                     alt={altStr}

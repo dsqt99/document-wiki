@@ -10,9 +10,9 @@ import { WikiContent } from "@/components/wiki/wiki-content";
 import { WikiSidebarRight } from "@/components/wiki/wiki-backlinks";
 import { WikiEditor } from "@/components/wiki/wiki-editor";
 import { WikiDraftBanner } from "@/components/wiki/wiki-draft-banner";
-import { wikiTypeGroupLabel } from "@/components/wiki/wiki-type-badge";
+import { WikiTypeBadge, wikiTypeGroupLabel } from "@/components/wiki/wiki-type-badge";
+import { ScopeBadge } from "@/components/shared/scope-badge";
 import { WikiSearchDialog } from "@/components/wiki/wiki-search-dialog";
-import { WikiScopeSwitcher } from "@/components/wiki/wiki-scope-switcher";
 import { WikiCreatePageDialog } from "@/components/wiki/wiki-create-page-dialog";
 import { WikiStatusBadge, WikiStatus } from "@/components/wiki/wiki-status-badge";
 import {
@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { WikiScope } from "@/types/wiki";
 import { EmptyState } from "@/components/shared/empty-state";
-import { PageHeader } from "@/components/shared/page-header";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import {
@@ -31,6 +31,7 @@ import {
   setCachedPageDetail,
   getCachedSourceData,
   setCachedSourceData,
+  useWikiStore,
 } from "@/lib/wiki-store";
 
 const WORKSPACE_ROLE_LEVEL: Record<string, number> = {
@@ -49,6 +50,8 @@ export default function WikiPageViewer() {
   const params = useParams();
   const searchParams = useSearchParams();
   const { user, hasPermission } = useAuth();
+  const { treeCollapsed, infoCollapsed, setTreeCollapsed, setInfoCollapsed } = useWikiStore();
+  const readingMode = treeCollapsed && infoCollapsed;
 
   const slugParts = Array.isArray(params.slug) ? params.slug : [params.slug ?? ""];
   const initialSlug = slugParts.join("/");
@@ -125,6 +128,12 @@ export default function WikiPageViewer() {
   const [page, setPage] = React.useState<WikiPageDetail | null>(null);
   const [sourceData, setSourceData] = React.useState<any | null>(null);
   const [citations, setCitations] = React.useState<any[]>([]);
+  const [sourcesExpanded, setSourcesExpanded] = React.useState(false);
+  const [sourcesForSlug, setSourcesForSlug] = React.useState(currentSlug);
+  if (sourcesForSlug !== currentSlug) {
+    setSourcesForSlug(currentSlug);
+    setSourcesExpanded(false);
+  }
   const [notFound, setNotFound] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
   const [searchOpen, setSearchOpen] = React.useState(false);
@@ -248,10 +257,6 @@ export default function WikiPageViewer() {
     },
     [user, isGlobalAdmin, hasPermission],
   );
-  const headerCreateMode = getCreateModeForScope({
-    scope_type: currentScope.scope_type,
-    scope_id: currentScope.scope_id ?? null,
-  });
   const dialogTargetScope = dialogScope ?? currentScope;
   const dialogMode = getCreateModeForScope({
     scope_type: dialogTargetScope.scope_type,
@@ -488,63 +493,8 @@ export default function WikiPageViewer() {
   // ---------------------------------------------------------------------------
   return (
     <>
-      <PageHeader
-        title="Knowledge Wiki"
-        description="Compiled knowledge from your organization's documents."
-        action={
-          <div className="flex items-center gap-2">
-            <WikiScopeSwitcher current={currentScope} />
-            <Button
-              variant="outline"
-              onClick={() => setSearchOpen(true)}
-              className="gap-2"
-            >
-              <span className="material-symbols-outlined text-base">search</span>
-              Search
-              <kbd className="hidden sm:inline-block ml-1 px-1.5 py-0.5 rounded border border-border text-xs font-mono text-muted-foreground">
-                ⌘K
-              </kbd>
-            </Button>
-            {headerCreateMode && (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setDialogScope(null);
-                  setCreateOpen(true);
-                }}
-                className="gap-2"
-                title={
-                  headerCreateMode === "direct"
-                    ? `Create a new page in ${currentScope.name}`
-                    : `Propose a new page in ${currentScope.name} (reviewer approves)`
-                }
-              >
-                <span className="material-symbols-outlined text-base">add</span>
-                {headerCreateMode === "direct" ? "New page" : "Propose page"}
-              </Button>
-            )}
-            {user && (
-              <Link
-                href="/wiki/review"
-                className="inline-flex h-8 items-center gap-1.5 px-2.5 rounded-lg text-sm font-medium border border-border bg-background hover:bg-muted transition-colors"
-                title="Drafts you authored and drafts waiting for your review"
-              >
-                <span className="material-symbols-outlined" style={{ fontSize: 16 }}>edit_note</span>
-                Contributions
-              </Link>
-            )}
-            <Link
-              href="/wiki/graph"
-              className="inline-flex h-8 items-center gap-1.5 px-2.5 rounded-lg text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-            >
-              <span className="material-symbols-outlined" style={{ fontSize: 16 }}>hub</span>
-              Graph View
-            </Link>
-          </div>
-        }
-      />
-
-      <div className="flex-1 flex gap-0 -mx-6 md:-mx-8 lg:-mx-10 -mb-6 md:-mb-8 lg:-mb-10 min-h-0 border-t border-border overflow-hidden">
+      <div className="flex-1 min-h-0 flex flex-col">
+      <div className="flex-1 flex gap-0 -mx-6 md:-mx-8 lg:-mx-10 -mt-4 -mb-6 md:-mb-8 lg:-mb-10 min-h-0 overflow-hidden">
         {/* Left: Page Tree — same scope-grouped layout as /wiki. We do NOT
             filter pagesUrl by scope so the sidebar is identical across all
             wiki pages; the active page's scope bucket auto-expands. */}
@@ -557,6 +507,7 @@ export default function WikiPageViewer() {
             scope_id: scopeId ?? null,
           }}
           getCreateModeForScope={getCreateModeForScope}
+          onSearch={() => setSearchOpen(true)}
           onCreatePage={(scope) => {
             const match = scopes.find(
               (s) =>
@@ -605,92 +556,175 @@ export default function WikiPageViewer() {
               />
             </div>
           ) : page ? (
-            <div className="px-4 py-8">
-              {/* Breadcrumb & Back Button — project scope returns to /workspaces,
-                  department scope returns to /wiki with that department's scope
-                  preserved so the user lands on the dept's tree+index. */}
-              <div className="flex items-center gap-3 mb-6">
-                <Link
-                  href={backHref}
-                  className="flex items-center justify-center w-8 h-8 rounded-full border border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground transition-colors shrink-0 shadow-sm"
-                  title={isProjectScoped ? "Back to Workspace" : "Back to Wiki"}
-                >
-                  <span className="material-symbols-outlined text-[18px]">arrow_back</span>
-                </Link>
-
-                <nav className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <Link
-                    href={backHref}
-                    className="hover:text-foreground transition-colors font-medium"
-                  >
+            <div
+              className={cn(
+                "mx-auto px-6 xl:px-10 py-6",
+                isSourceView ? "max-w-6xl" : "max-w-[54rem]",
+              )}
+            >
+              {/* Breadcrumb + reading-mode toggle */}
+              <div className="flex items-center gap-3 mb-4">
+                <nav className="flex items-center gap-1 text-xs text-muted-foreground min-w-0">
+                  <Link href={backHref} className="hover:text-foreground transition-colors font-medium">
                     {isProjectScoped ? "Workspace" : "Wiki"}
                   </Link>
                   <span className="material-symbols-outlined text-muted-foreground/50" style={{ fontSize: 14 }}>chevron_right</span>
-                  <span className="capitalize font-medium">
-                    {wikiTypeGroupLabel(page.page_type)}
-                  </span>
-                  <span className="material-symbols-outlined text-muted-foreground/50" style={{ fontSize: 14 }}>chevron_right</span>
-                  <span className="text-foreground font-semibold truncate max-w-[200px]">
-                    {page.title}
-                  </span>
+                  <span className="font-medium text-foreground/80 truncate">{wikiTypeGroupLabel(page.page_type)}</span>
                 </nav>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = !readingMode;
+                    setTreeCollapsed(next);
+                    setInfoCollapsed(next);
+                  }}
+                  className={cn(
+                    "ml-auto shrink-0 inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border text-xs font-medium transition-colors cursor-pointer",
+                    readingMode
+                      ? "border-primary/40 bg-primary/10 text-primary"
+                      : "border-border text-muted-foreground hover:text-foreground hover:bg-accent/60",
+                  )}
+                  title={readingMode ? "Hiện lại danh mục và thông tin trang" : "Ẩn danh mục và thông tin trang để đọc rộng hơn"}
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: 15 }}>
+                    {readingMode ? "close_fullscreen" : "open_in_full"}
+                  </span>
+                  <span className="hidden sm:inline">{readingMode ? "Thoát chế độ đọc" : "Chế độ đọc"}</span>
+                </button>
               </div>
 
-              {/* Page header + Edit button */}
-              <div className="flex items-start justify-between gap-4 mb-8">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <h1 className="font-heading text-4xl font-normal leading-tight text-foreground">
-                      {page.title}
-                    </h1>
-                    {page.page_type !== "index" && page.page_type !== "log" && page.page_type !== "hot" && page.page_type !== "source" && (
-                      (canEdit) ? (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger className="cursor-pointer">
-                              <WikiStatusBadge status={page.status} className="mt-1 shrink-0" />
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="start">
-                            {(["seed", "developing", "mature", "evergreen"] as WikiStatus[]).map((s) => (
-                              <DropdownMenuItem
-                                key={s}
-                                onClick={async () => {
-                                  try {
-                                    const qs = scopeType ? `?scope_type=${scopeType}&scope_id=${scopeId}` : "";
-                                    await api(`/api/wiki/pages/${page.slug}/status${qs}`, {
-                                      method: "PATCH",
-                                      headers: { "Content-Type": "application/json" },
-                                      body: JSON.stringify({ status: s }),
-                                    });
-                                    setPage((prev) => prev ? { ...prev, status: s } : prev);
-                                  } catch {}
-                                }}
-                                disabled={page.status === s}
-                                className="gap-2"
-                              >
-                                <WikiStatusBadge status={s} />
-                              </DropdownMenuItem>
-                            ))}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      ) : (
-                        <WikiStatusBadge status={page.status} className="mt-1 shrink-0" />
-                      )
-                    )}
-                  </div>
-                </div>
+              {/* Badges: type · scope · status — version on the right */}
+              <div className="flex items-center gap-2 flex-wrap mb-3">
+                <WikiTypeBadge type={page.page_type} />
+                {!isSourceView && <ScopeBadge scopeType={page.scope_type || "global"} scopeId={page.scope_id} />}
+                {page.page_type !== "index" && page.page_type !== "log" && page.page_type !== "hot" && page.page_type !== "source" && (
+                  canEdit ? (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger className="cursor-pointer" title="Đổi độ hoàn thiện">
+                        <WikiStatusBadge status={page.status} className="shrink-0" />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start">
+                        {(["seed", "developing", "mature", "evergreen"] as WikiStatus[]).map((s) => (
+                          <DropdownMenuItem
+                            key={s}
+                            onClick={async () => {
+                              try {
+                                const qs = scopeType ? `?scope_type=${scopeType}&scope_id=${scopeId}` : "";
+                                await api(`/api/wiki/pages/${page.slug}/status${qs}`, {
+                                  method: "PATCH",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ status: s }),
+                                });
+                                setPage((prev) => prev ? { ...prev, status: s } : prev);
+                              } catch {}
+                            }}
+                            disabled={page.status === s}
+                            className="gap-2"
+                          >
+                            <WikiStatusBadge status={s} />
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  ) : (
+                    <WikiStatusBadge status={page.status} className="shrink-0" />
+                  )
+                )}
+                {!isSourceView && page.version > 0 && (
+                  <span className="ml-auto text-xs font-mono text-muted-foreground" title="Phiên bản">
+                    v{page.version}
+                  </span>
+                )}
+              </div>
 
+              {/* Title + Edit */}
+              <div className="flex items-start justify-between gap-4">
+                <h1 className="flex-1 min-w-0 font-heading text-3xl font-normal leading-tight text-foreground">
+                  {page.title}
+                </h1>
                 {mode === "view" && !isSourceView && (canEdit || canPropose) && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setMode("edit")}
-                    className="shrink-0 gap-1.5 mt-1"
-                  >
+                  <Button variant="outline" size="sm" onClick={() => setMode("edit")} className="shrink-0 gap-1.5 mt-1">
                     <span className="material-symbols-outlined text-sm">edit</span>
-                    {canEdit ? "Edit" : "Propose Edit"}
+                    {canEdit ? "Chỉnh sửa" : "Đề xuất sửa"}
                   </Button>
                 )}
               </div>
+
+              {!isSourceView && (
+                <div className="mt-3 mb-6 space-y-3">
+                  {page.updated_at && (
+                    <p className="text-xs text-muted-foreground">
+                      Cập nhật lúc{" "}
+                      {new Date(page.updated_at).toLocaleString("vi-VN", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        day: "2-digit",
+                        month: "2-digit",
+                        year: "numeric",
+                      })}
+                    </p>
+                  )}
+
+                  {/* Source documents */}
+                  {citations.length > 0 && (
+                    <div className="flex flex-col gap-1">
+                      {(sourcesExpanded ? citations : citations.slice(0, 2)).map((c) => (
+                        <Link
+                          key={c.id}
+                          href={`/wiki/source/${c.id}${scopeLinkSuffix}`}
+                          onClick={(e) => {
+                            if (!e.ctrlKey && !e.metaKey && !e.shiftKey && e.button === 0) {
+                              e.preventDefault();
+                              handlePageSelect(`source/${c.id}`);
+                            }
+                          }}
+                          className="inline-flex items-center gap-1.5 w-fit max-w-full text-sm text-foreground/80 hover:text-primary transition-colors"
+                          title={c.title || c.file_name}
+                        >
+                          <span className="material-symbols-outlined text-muted-foreground shrink-0" style={{ fontSize: 16 }}>
+                            description
+                          </span>
+                          <span className="truncate">{c.title || c.file_name}</span>
+                        </Link>
+                      ))}
+                      {citations.length > 2 && (
+                        <button
+                          type="button"
+                          onClick={() => setSourcesExpanded((v) => !v)}
+                          className="w-fit text-xs font-medium text-primary hover:underline cursor-pointer"
+                        >
+                          {sourcesExpanded ? "Thu gọn" : `+${citations.length - 2} tài liệu`}
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Knowledge-type tags */}
+                  {page.knowledge_type_slugs?.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {page.knowledge_type_slugs.map((k) => (
+                        <span
+                          key={k}
+                          className="px-2 py-0.5 rounded-md bg-muted text-[11px] font-medium text-muted-foreground"
+                        >
+                          {k}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Summary */}
+                  {page.summary && (
+                    <div className="rounded-xl border border-border bg-muted/40 px-4 py-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                        Tóm tắt
+                      </p>
+                      <p className="text-sm leading-relaxed text-foreground/90">{page.summary}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+              {isSourceView && <div className="mb-6" />}
 
               {/* Draft banner — visible to reviewers AND to authors of own drafts. */}
               {mode === "view" && !editingDraft && drafts.length > 0 && (
@@ -953,10 +987,32 @@ export default function WikiPageViewer() {
 
         {/* Right: Sidebar (hidden on < lg, only in view mode) */}
         {page && mode === "view" && (
-          <div className="hidden lg:block h-full">
-            <WikiSidebarRight slug={currentSlug} page={page} linkSuffix={scopeLinkSuffix} onSelectPage={handlePageSelect} />
+          <div className="hidden xl:block h-full">
+            {infoCollapsed ? (
+              <div className="w-11 h-full border-l border-border bg-card/30 flex flex-col items-center pt-3">
+                <button
+                  onClick={() => setInfoCollapsed(false)}
+                  className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors cursor-pointer"
+                  title="Mở thông tin trang"
+                >
+                  <span className="material-symbols-outlined block" style={{ fontSize: 18 }}>right_panel_open</span>
+                </button>
+              </div>
+            ) : (
+              <div className="relative h-full">
+                <button
+                  onClick={() => setInfoCollapsed(true)}
+                  className="absolute right-2 top-2.5 z-10 p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors cursor-pointer"
+                  title="Thu gọn thông tin trang"
+                >
+                  <span className="material-symbols-outlined block" style={{ fontSize: 16 }}>right_panel_close</span>
+                </button>
+                <WikiSidebarRight slug={currentSlug} page={page} linkSuffix={scopeLinkSuffix} onSelectPage={handlePageSelect} />
+              </div>
+            )}
           </div>
         )}
+      </div>
       </div>
 
       <WikiSearchDialog open={searchOpen} onOpenChange={setSearchOpen} onSelectPage={handlePageSelect} />

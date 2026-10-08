@@ -16,7 +16,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, field_validator
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, case, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -260,6 +260,60 @@ async def list_wiki_pages(
 
     rows = (await db.execute(stmt)).all()
     return [_summary(r.WikiPage, scope_name=r.scope_name) for r in rows]
+
+
+@router.get("/wiki/search", response_model=list[WikiPageSummary])
+async def search_wiki_pages(
+    q: str = Query(..., min_length=1, max_length=500),
+    limit: int = Query(30, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    user: Employee = require_permission("wiki:read"),
+):
+    """Content (semantic + full-text) search over wiki pages, best match first.
+
+    Backs the "Nội dung" mode of the wiki list. Hits are re-filtered through the
+    same RBAC scope filter as /wiki/pages, so results never widen access.
+    """
+    from app.ai.registry import ProviderRegistry
+
+    try:
+        provider = await ProviderRegistry(db).get_embedding(task="search_query")
+        query_embedding = await provider.embed(q[:4000])
+    except Exception as e:
+        logger.warning(f"wiki search: embedding failed: {e}")
+        raise HTTPException(status_code=503, detail="Embedding model is not available")
+
+    # Scope the retrieval itself to what the user can read, so out-of-scope
+    # pages don't crowd the top-k and leave restricted users with few hits.
+    perm_filter = _build_wiki_scope_filter(user)
+    hits = await wiki_service.search_pages_hybrid(
+        db, query_embedding, q, top_k=limit * 3,
+        all_scopes=perm_filter is None,
+        department_ids=list(user.department_ids or []) or None,
+    )
+    ids = [h["page"].id for h in hits]
+    if not ids:
+        return []
+
+    stmt = (
+        select(
+            WikiPage,
+            case(
+                (WikiPage.scope_type == "department", Department.name),
+                else_=None,
+            ).label("scope_name"),
+        )
+        .select_from(WikiPage)
+        .outerjoin(Department, and_(WikiPage.scope_id == Department.id, WikiPage.scope_type == "department"))
+        .where(WikiPage.id.in_(ids))
+    )
+    if perm_filter is not None:
+        stmt = stmt.where(perm_filter)
+    rows = {r.WikiPage.id: r for r in (await db.execute(stmt)).all()}
+    return [
+        _summary(rows[i].WikiPage, scope_name=rows[i].scope_name)
+        for i in ids if i in rows
+    ][:limit]
 
 
 @router.get("/wiki/pages/{slug:path}", response_model=WikiPageDetail)
