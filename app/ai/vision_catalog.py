@@ -41,6 +41,35 @@ VISION_CATALOG: dict[str, VisionModelSpec] = {
         cost_per_1m_input_tokens=None,
         cost_per_image=None,
     ),
+    "anthropic/claude-haiku-5-5": VisionModelSpec(
+        id="anthropic/claude-haiku-5-5",
+        provider="anthropic",
+        model_id="claude-haiku-5-5",
+        max_image_size_mb=5,
+        label="Claude Haiku 5.5",
+        cost_per_1m_input_tokens=None,
+        cost_per_image=None,
+    ),
+    # --- Google Gemini (native SDK) ---
+    "google/gemini-3.5-flash": VisionModelSpec(
+        id="google/gemini-3.5-flash",
+        provider="google",
+        model_id="gemini-3.5-flash",
+        max_image_size_mb=20,
+        label="Gemini 3.5 Flash",
+        cost_per_1m_input_tokens=None,
+        cost_per_image=None,
+    ),
+    "google/gemini-3.1-flash-lite": VisionModelSpec(
+        id="google/gemini-3.1-flash-lite",
+        provider="google",
+        model_id="gemini-3.1-flash-lite",
+        max_image_size_mb=20,
+        label="Gemini 3.1 Flash-Lite",
+        cost_per_1m_input_tokens=0.25,
+        cost_per_image=None,
+        notes="Most cost-efficient Gemini for image captioning.",
+    ),
 }
 
 

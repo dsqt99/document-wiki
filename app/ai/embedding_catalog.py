@@ -34,7 +34,40 @@ class EmbeddingModelSpec:
 # `wiki_page_embeddings_<dim>` table in the database. Currently supported
 # dimensions: 768, 1024, 1536, 3072.
 EMBEDDING_CATALOG: dict[str, EmbeddingModelSpec] = {
+    # --- Google Gemini ---
+    # Both support flexible output dim; pinned to 3072 so the table matches
+    # (the provider passes `output_dimensionality` from spec.dimension).
+    "google/gemini-embedding-001": EmbeddingModelSpec(
+        id="google/gemini-embedding-001",
+        provider="google",
+        model_id="gemini-embedding-001",
+        dimension=3072,
+        max_input_tokens=2048,
+        label="Gemini Embedding 001 (3072d)",
+        cost_per_1m_tokens=0.15,
+        notes="Text-only. Strong multilingual incl. Vietnamese.",
+    ),
+    "google/gemini-embedding-2": EmbeddingModelSpec(
+        id="google/gemini-embedding-2",
+        provider="google",
+        model_id="gemini-embedding-2",
+        dimension=3072,
+        max_input_tokens=8192,
+        label="Gemini Embedding 2 (3072d)",
+        cost_per_1m_tokens=0.15,
+        notes="Multimodal, 8K input window.",
+    ),
     # --- OpenAI ---
+    "openai/text-embedding-3-small": EmbeddingModelSpec(
+        id="openai/text-embedding-3-small",
+        provider="openai",
+        model_id="text-embedding-3-small",
+        dimension=1536,
+        max_input_tokens=8191,
+        label="OpenAI text-embedding-3-small (1536d)",
+        cost_per_1m_tokens=0.02,
+        notes="Best price/performance on OpenAI side.",
+    ),
     "openai/text-embedding-3-large": EmbeddingModelSpec(
         id="openai/text-embedding-3-large",
         provider="openai",

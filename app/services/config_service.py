@@ -32,7 +32,9 @@ def _is_sensitive(key: str) -> bool:
             "embedding_api_key", "llm_api_key", "vision_api_key", "ocr_api_key",
             "smtp_password", "webhook_secret",
         }
-        or key.startswith(("embedding_api_key__", "llm_api_key__", "vision_api_key__"))  # per-provider keys
+        or key.startswith((
+            "embedding_api_key__", "llm_api_key__", "vision_api_key__", "ocr_api_key__",
+        ))  # per-provider keys
         or key.startswith("custom_model_api_key__")  # admin-added models
     )
 
@@ -97,6 +99,7 @@ ALL_CONFIG_KEYS = [
     ACTIVE_LLM_MODEL_KEY,        # canonical spec_id from LLM_CATALOG
     "llm_api_key__openai",       # per-provider keys for the presets
     "llm_api_key__anthropic",
+    "llm_api_key__google",
     "llm_api_key",               # legacy single key (fallback for any provider)
     "llm_base_url",              # Custom endpoint
 
@@ -104,12 +107,16 @@ ALL_CONFIG_KEYS = [
     ACTIVE_VISION_MODEL_KEY,     # canonical spec_id from VISION_CATALOG
     "vision_api_key__openai",
     "vision_api_key__anthropic",
+    "vision_api_key__google",
     "vision_api_key",            # legacy single key (fallback for any provider)
     "vision_base_url",           # Custom endpoint
 
     # --- Dedicated OCR Service ---
     "ocr_base_url",
     "ocr_api_key",
+    "ocr_api_key__openai",       # per-provider OCR keys (fall back to the vision key)
+    "ocr_api_key__anthropic",
+    "ocr_api_key__google",
     "ocr_model",
     "ocr_prompt",
     "ocr_mode",

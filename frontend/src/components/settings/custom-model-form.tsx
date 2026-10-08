@@ -7,24 +7,37 @@ import { api } from "@/lib/api";
 
 export type CustomModelKind = "llm" | "vision" | "embedding" | "ocr";
 
+/** Provider groups shown in Settings; "custom" = own base URL + API key. */
+export type ProviderGroup = "anthropic" | "openai" | "google" | "custom";
+
+export const PROVIDER_LABELS: Record<ProviderGroup, string> = {
+  anthropic: "Anthropic",
+  openai: "OpenAI",
+  google: "Gemini",
+  custom: "Custom",
+};
+
 const EMBEDDING_DIMENSIONS = [768, 1024, 1536, 3072];
 
 type SavedModel = { id: string };
 
 /**
- * "Thêm model" form shared by the LLM, Vision, Embedding and OCR cards:
- * base URL + model name (+ optional label / API key), saved server-side as a
- * custom model of the given kind.
+ * "Thêm model" form shared by the LLM, Vision, Embedding and OCR cards.
+ * Under a known provider only the model name is needed (endpoint and API key
+ * come from that provider); "custom" also asks for base URL and API key.
  */
 export function CustomModelForm({
   kind,
+  provider = "custom",
   onSaved,
   onCancel,
 }: {
   kind: CustomModelKind;
+  provider?: ProviderGroup;
   onSaved: (id: string) => void;
   onCancel: () => void;
 }) {
+  const isCustom = provider === "custom";
   const [label, setLabel] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [modelId, setModelId] = useState("");
@@ -34,7 +47,7 @@ export function CustomModelForm({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  const canSave = baseUrl.trim().length > 0 && modelId.trim().length > 0;
+  const canSave = modelId.trim().length > 0 && (!isCustom || baseUrl.trim().length > 0);
 
   async function handleSave() {
     setSaving(true);
@@ -44,11 +57,12 @@ export function CustomModelForm({
         method: "POST",
         body: {
           kind,
+          provider,
           label: label.trim() || undefined,
-          base_url: baseUrl.trim(),
+          base_url: isCustom ? baseUrl.trim() : undefined,
           model_id: modelId.trim(),
-          api_key: apiKey.trim() || undefined,
-          protocol,
+          api_key: (isCustom && apiKey.trim()) || undefined,
+          protocol: isCustom ? protocol : undefined,
           dimension: kind === "embedding" ? dimension : undefined,
         },
       });
@@ -61,23 +75,25 @@ export function CustomModelForm({
   }
 
   return (
-    <div className="mb-4 rounded-lg border border-dashed border-primary/40 bg-primary/5 p-3 flex flex-col gap-3">
+    <div className="rounded-lg border border-dashed border-primary/40 bg-primary/5 p-3 flex flex-col gap-3">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div className="flex flex-col gap-1.5 sm:col-span-2">
-          <Label className="text-xs">Base URL *</Label>
-          <Input
-            value={baseUrl}
-            onChange={(e) => setBaseUrl(e.target.value)}
-            placeholder={protocol === "anthropic" ? "https://api.anthropic.com" : "https://api.example.com/v1"}
-            className="bg-background font-mono text-xs"
-          />
-        </div>
+        {isCustom && (
+          <div className="flex flex-col gap-1.5 sm:col-span-2">
+            <Label className="text-xs">Base URL *</Label>
+            <Input
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+              placeholder={protocol === "anthropic" ? "https://api.anthropic.com" : "https://api.example.com/v1"}
+              className="bg-background font-mono text-xs"
+            />
+          </div>
+        )}
         <div className="flex flex-col gap-1.5">
           <Label className="text-xs">Model name *</Label>
           <Input
             value={modelId}
             onChange={(e) => setModelId(e.target.value)}
-            placeholder="vd: qwen3-32b"
+            placeholder={isCustom ? "vd: qwen3-32b" : `Model ID của ${PROVIDER_LABELS[provider]}`}
             maxLength={100}
             className="bg-background font-mono text-xs"
           />
@@ -91,17 +107,19 @@ export function CustomModelForm({
             className="bg-background text-xs"
           />
         </div>
-        <div className="flex flex-col gap-1.5">
-          <Label className="text-xs">API key</Label>
-          <Input
-            type="password"
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            placeholder="Bỏ trống nếu endpoint không cần key"
-            className="bg-background text-xs"
-          />
-        </div>
-        {kind === "llm" && (
+        {isCustom && (
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-xs">API key</Label>
+            <Input
+              type="password"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="Bỏ trống nếu endpoint không cần key"
+              className="bg-background text-xs"
+            />
+          </div>
+        )}
+        {isCustom && kind === "llm" && (
           <div className="flex flex-col gap-1.5">
             <Label className="text-xs">Giao thức</Label>
             <select
@@ -131,12 +149,14 @@ export function CustomModelForm({
           </div>
         )}
       </div>
-      {kind !== "llm" && (
-        <p className="text-[11px] text-muted-foreground">
-          Endpoint phải tương thích OpenAI API
-          {kind === "embedding" && " và trả về vector đúng số chiều đã chọn"}.
-        </p>
-      )}
+      <p className="text-[11px] text-muted-foreground">
+        {isCustom
+          ? kind === "llm"
+            ? "Endpoint OpenAI-compatible (vLLM, Ollama, LiteLLM…) hoặc Anthropic Messages."
+            : "Endpoint phải tương thích OpenAI API"
+          : `Dùng endpoint và API key chung của ${PROVIDER_LABELS[provider]}.`}
+        {kind === "embedding" && " Vector trả về phải đúng số chiều đã chọn."}
+      </p>
       <div className="flex items-center gap-2">
         <button
           disabled={!canSave || saving}
@@ -165,13 +185,21 @@ export async function deleteCustomModel(kind: CustomModelKind, id: string) {
 /** Replace the API key of an existing custom model (other fields unchanged). */
 export async function saveCustomModelKey(
   kind: CustomModelKind,
-  spec: { model_id: string; label: string; base_url?: string | null; protocol?: string | null; dimension?: number },
+  spec: {
+    model_id: string;
+    label: string;
+    group?: string;
+    base_url?: string | null;
+    protocol?: string | null;
+    dimension?: number;
+  },
   apiKey: string,
 ) {
   await api("/api/settings/custom-models", {
     method: "POST",
     body: {
       kind,
+      provider: spec.group ?? "custom",
       model_id: spec.model_id,
       label: spec.label,
       base_url: spec.base_url,

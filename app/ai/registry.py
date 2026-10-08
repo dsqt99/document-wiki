@@ -242,14 +242,14 @@ class ProviderRegistry:
         self, kind: str, spec_id: str
     ) -> Optional[tuple[ProviderType, str, str]]:
         """(provider, base_url, api_key) of an admin-added model, else None."""
-        from app.ai.custom_models import get_api_key, get_custom, is_custom
+        from app.ai.custom_models import get_custom, is_custom, resolve_api_key
 
         if not is_custom(spec_id):
             return None
         model = await get_custom(self.db, kind, spec_id)
         if model is None:
             raise ValueError(f"Custom model {spec_id!r} was deleted. Pick another model in Settings.")
-        api_key = await get_api_key(self.db, kind, spec_id)
+        api_key = await resolve_api_key(self.db, model)
         # Local OpenAI-compatible servers often need no auth, but the SDK
         # refuses an empty key.
         return ProviderType(model.protocol), model.base_url, api_key or "none"

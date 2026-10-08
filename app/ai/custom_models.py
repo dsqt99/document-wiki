@@ -26,6 +26,17 @@ PROTOCOLS = ("openai", "anthropic")
 EMBEDDING_DIMENSIONS = (768, 1024, 1536, 3072)  # tables that exist (migration 015)
 MAX_MODEL_ID_LEN = 100  # spec ids land in String(128) columns
 
+# Settings groups models by provider. A model added under a known provider
+# only needs a model name: endpoint and protocol come from the table below and
+# the API key falls back to that provider's key. "custom" = any endpoint.
+PROVIDERS = ("openai", "anthropic", "google", "custom")
+_OPENAI_COMPAT_URLS = {
+    "openai": "https://api.openai.com/v1",
+    "anthropic": "https://api.anthropic.com/v1/",
+    "google": "https://generativelanguage.googleapis.com/v1beta/openai/",
+}
+_ANTHROPIC_NATIVE_URL = "https://api.anthropic.com"
+
 _STORE_KEY = "custom_models"
 _API_KEY_PREFIX = "custom_model_api_key__"
 
@@ -39,6 +50,23 @@ class CustomModel:
     base_url: str
     protocol: str = "openai"
     dimension: Optional[int] = None
+    provider: str = "custom"
+
+
+def provider_endpoint(kind: str, provider: str) -> tuple[str, str]:
+    """(base_url, protocol) for a model added under a known provider.
+
+    Claude LLMs use the native Messages API; everything else (and every
+    vision/embedding/OCR call) goes through an OpenAI-compatible endpoint.
+    """
+    if provider == "anthropic" and kind == "llm":
+        return _ANTHROPIC_NATIVE_URL, "anthropic"
+    return _OPENAI_COMPAT_URLS[provider], "openai"
+
+
+def provider_key_config_key(kind: str, provider: str) -> str:
+    """app_config key of the shared API key of a provider for one kind."""
+    return f"{kind}_api_key__{provider}"
 
 
 def is_custom(spec_id: Optional[str]) -> bool:
@@ -130,3 +158,18 @@ async def get_api_key(db: AsyncSession, kind: str, spec_id: str) -> str:
     from app.services.config_service import ConfigService
 
     return await ConfigService(db).get(api_key_config_key(kind, spec_id)) or ""
+
+
+async def resolve_api_key(db: AsyncSession, model: CustomModel) -> str:
+    """The model's own key, else the shared key of its provider."""
+    from app.services.config_service import ConfigService
+
+    key = await get_api_key(db, model.kind, model.id)
+    if key or model.provider == "custom":
+        return key
+    svc = ConfigService(db)
+    key = await svc.get(provider_key_config_key(model.kind, model.provider))
+    if not key and model.kind == "ocr":
+        # OCR reuses the vision key of the same provider when it has none.
+        key = await svc.get(provider_key_config_key("vision", model.provider))
+    return key or ""

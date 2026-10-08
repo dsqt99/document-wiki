@@ -23,13 +23,16 @@ from app.ai.custom_models import (
     KINDS,
     MAX_MODEL_ID_LEN,
     PROTOCOLS,
+    PROVIDERS,
     CustomModel,
     delete_custom,
-    get_api_key,
     get_custom,
     is_custom,
     list_custom,
     make_id,
+    provider_endpoint,
+    provider_key_config_key,
+    resolve_api_key,
     save_custom,
 )
 from app.database import get_db
@@ -42,21 +45,21 @@ router = APIRouter()
 OCR_MODEL_SPEC_KEY = "ocr_model_spec_id"
 
 # OCR goes through an OpenAI-compatible chat endpoint (ocr_service), so the
-# Claude preset uses Anthropic's OpenAI-compatible base URL.
-OCR_PRESETS: dict[str, dict] = {
-    "openai/gpt-6-luna": {
-        "provider": "openai",
-        "label": "GPT-6 Luna",
-        "base_url": "https://api.openai.com/v1",
-        "model_id": "gpt-6-luna",
-    },
-    "anthropic/claude-sonnet-5-5": {
-        "provider": "anthropic",
-        "label": "Claude Sonnet 5.5",
-        "base_url": "https://api.anthropic.com/v1/",
-        "model_id": "claude-sonnet-5-5",
-    },
-}
+# Claude and Gemini presets use their providers' OpenAI-compatible base URLs.
+def _ocr_preset(provider: str, model_id: str, label: str) -> tuple[str, dict]:
+    base_url, _ = provider_endpoint("ocr", provider)
+    return f"{provider}/{model_id}", {
+        "provider": provider, "label": label, "base_url": base_url, "model_id": model_id,
+    }
+
+
+OCR_PRESETS: dict[str, dict] = dict([
+    _ocr_preset("openai", "gpt-6-luna", "GPT-6 Luna"),
+    _ocr_preset("anthropic", "claude-sonnet-5-5", "Claude Sonnet 5.5"),
+    _ocr_preset("anthropic", "claude-haiku-5-5", "Claude Haiku 5.5"),
+    _ocr_preset("google", "gemini-3.5-flash", "Gemini 3.5 Flash"),
+    _ocr_preset("google", "gemini-3.1-flash-lite", "Gemini 3.1 Flash-Lite"),
+])
 
 
 # ---------------------------------------------------------------------------
@@ -71,13 +74,16 @@ class CustomModelOut(BaseModel):
     base_url: str
     protocol: str
     dimension: Optional[int]
+    provider: str
     api_key_configured: bool
 
 
 class CustomModelIn(BaseModel):
     kind: str
     model_id: str
-    base_url: str
+    # Known providers derive the endpoint; "custom" needs base_url.
+    provider: str = "custom"
+    base_url: Optional[str] = None
     label: Optional[str] = None
     protocol: str = "openai"
     dimension: Optional[int] = None
@@ -92,6 +98,8 @@ class OcrModelOut(BaseModel):
     base_url: str
     model_id: str
     custom: bool
+    # Provider group shown in Settings ("custom" = own endpoint).
+    group: str
     api_key_configured: bool
 
 
@@ -113,7 +121,8 @@ async def _to_out(db: AsyncSession, m: CustomModel) -> CustomModelOut:
     return CustomModelOut(
         id=m.id, kind=m.kind, model_id=m.model_id, label=m.label,
         base_url=m.base_url, protocol=m.protocol, dimension=m.dimension,
-        api_key_configured=bool(await get_api_key(db, m.kind, m.id)),
+        provider=m.provider,
+        api_key_configured=bool(await resolve_api_key(db, m)),
     )
 
 
@@ -140,29 +149,42 @@ async def _active_ids(db: AsyncSession) -> dict[str, Optional[str]]:
     }
 
 
-async def _apply_ocr(db: AsyncSession, spec_id: str, api_key: Optional[str]) -> None:
-    """Write the flat ocr_* keys ocr_service reads."""
+async def resolve_ocr_endpoint(db: AsyncSession, spec_id: str) -> tuple[str, str, str]:
+    """(base_url, model_id, api_key) of an OCR model, from its stored keys."""
     from app.services.config_service import ConfigService, vision_api_key_for
 
-    svc = ConfigService(db)
     if is_custom(spec_id):
         m = await get_custom(db, "ocr", spec_id)
         if m is None:
             raise HTTPException(status_code=400, detail=f"Unknown OCR model {spec_id!r}")
-        base_url, model_id = m.base_url, m.model_id
-        key = await get_api_key(db, "ocr", spec_id) or "none"
-    else:
-        preset = OCR_PRESETS.get(spec_id)
-        if preset is None:
-            raise HTTPException(status_code=400, detail=f"Unknown OCR model {spec_id!r}")
-        base_url, model_id = preset["base_url"], preset["model_id"]
-        # A typed key wins; otherwise reuse the vision key of the same provider.
-        key = api_key or await svc.get(vision_api_key_for(preset["provider"]))
-        if not key:
-            raise HTTPException(
-                status_code=400,
-                detail=f"No {preset['provider']} API key. Enter the API key for this model.",
-            )
+        return m.base_url, m.model_id, await resolve_api_key(db, m) or "none"
+    preset = OCR_PRESETS.get(spec_id)
+    if preset is None:
+        raise HTTPException(status_code=400, detail=f"Unknown OCR model {spec_id!r}")
+    svc = ConfigService(db)
+    # The provider's OCR key, then its vision key.
+    key = (
+        await svc.get(provider_key_config_key("ocr", preset["provider"]))
+        or await svc.get(vision_api_key_for(preset["provider"]))
+    )
+    if not key:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No {preset['provider']} API key. Enter the API key for this model.",
+        )
+    return preset["base_url"], preset["model_id"], key
+
+
+async def _apply_ocr(db: AsyncSession, spec_id: str, api_key: Optional[str]) -> None:
+    """Write the flat ocr_* keys ocr_service reads."""
+    from app.services.config_service import ConfigService
+
+    svc = ConfigService(db)
+    preset = OCR_PRESETS.get(spec_id)
+    if api_key and preset is not None:
+        # A typed key becomes the provider's OCR key.
+        await svc.set(provider_key_config_key("ocr", preset["provider"]), api_key)
+    base_url, model_id, key = await resolve_ocr_endpoint(db, spec_id)
     await svc.set("ocr_base_url", base_url)
     await svc.set("ocr_model", model_id)
     await svc.set("ocr_api_key", key)
@@ -190,15 +212,23 @@ async def save_custom_model(
 ):
     if body.kind not in KINDS:
         raise HTTPException(status_code=400, detail=f"kind must be one of {KINDS}")
-    if body.protocol not in PROTOCOLS:
+    if body.provider not in PROVIDERS:
+        raise HTTPException(status_code=400, detail=f"provider must be one of {PROVIDERS}")
+    if body.provider == "anthropic" and body.kind == "embedding":
+        raise HTTPException(status_code=400, detail="Anthropic has no embedding models.")
+    if body.provider == "custom":
+        protocol = body.protocol
+        base_url = (body.base_url or "").strip()
+    else:
+        base_url, protocol = provider_endpoint(body.kind, body.provider)
+    if protocol not in PROTOCOLS:
         raise HTTPException(status_code=400, detail=f"protocol must be one of {PROTOCOLS}")
-    if body.protocol == "anthropic" and body.kind != "llm":
+    if protocol == "anthropic" and body.kind != "llm":
         raise HTTPException(
             status_code=400,
             detail="Anthropic protocol is only supported for LLM; use an OpenAI-compatible URL.",
         )
     model_id = body.model_id.strip()
-    base_url = body.base_url.strip()
     if not model_id or len(model_id) > MAX_MODEL_ID_LEN:
         raise HTTPException(status_code=400, detail=f"Model name must be 1–{MAX_MODEL_ID_LEN} characters")
     if not base_url.startswith(("http://", "https://")):
@@ -215,7 +245,7 @@ async def save_custom_model(
     model = CustomModel(
         id=spec_id, kind=body.kind, model_id=model_id,
         label=(body.label or "").strip() or model_id,
-        base_url=base_url, protocol=body.protocol, dimension=dimension,
+        base_url=base_url, protocol=protocol, dimension=dimension, provider=body.provider,
     )
     await save_custom(db, model, _new_key(body.api_key))
     # Keep the OCR keys in sync when the edited model is the OCR model in use.
@@ -265,12 +295,18 @@ async def get_ocr_catalog(
     db: AsyncSession = Depends(get_db),
     _user: Employee = require_permission("org:settings:manage"),
 ):
-    from app.services.config_service import ConfigService
+    from app.services.config_service import ConfigService, vision_api_key_for
 
     svc = ConfigService(db)
     active = await svc.get(OCR_MODEL_SPEC_KEY)
     current_model = await svc.get("ocr_model")
     current_key = bool(await svc.get("ocr_api_key"))
+
+    async def _provider_has_key(provider: str) -> bool:
+        return bool(
+            await svc.get(provider_key_config_key("ocr", provider))
+            or await svc.get(vision_api_key_for(provider))
+        )
 
     if active is None:
         # Configs from before model selection existed: match by model name.
@@ -282,14 +318,15 @@ async def get_ocr_catalog(
     for spec_id, p in OCR_PRESETS.items():
         specs.append(OcrModelOut(
             id=spec_id, provider=p["provider"], label=p["label"], base_url=p["base_url"],
-            model_id=p["model_id"], custom=False,
-            api_key_configured=current_key and active == spec_id,
+            model_id=p["model_id"], custom=False, group=p["provider"],
+            api_key_configured=(current_key and active == spec_id)
+            or await _provider_has_key(p["provider"]),
         ))
     for m in await list_custom(db, "ocr"):
         specs.append(OcrModelOut(
             id=m.id, provider="custom", label=m.label, base_url=m.base_url,
-            model_id=m.model_id, custom=True,
-            api_key_configured=bool(await get_api_key(db, "ocr", m.id)),
+            model_id=m.model_id, custom=True, group=m.provider,
+            api_key_configured=bool(await resolve_api_key(db, m)),
         ))
     return OcrCatalogOut(active_spec_id=active, specs=specs)
 

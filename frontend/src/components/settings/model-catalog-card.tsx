@@ -1,21 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { api } from "@/lib/api";
-import {
-  CustomModelForm,
-  deleteCustomModel,
-  saveCustomModelKey,
-  type CustomModelKind,
-} from "./custom-model-form";
+import type { CustomModelKind } from "./custom-model-form";
+import { ActiveModelChip, ProviderModelPicker } from "./provider-model-picker";
 
 // Shape shared by LLMSpecOut and VisionSpecOut on the backend. Cards pick which
 // fields to display via the `renderMeta` prop so this component stays generic.
 export type ModelSpec = {
   id: string;
   provider: string;
+  // Provider group shown as a tab: "anthropic" | "openai" | "google" | "custom".
+  group: string;
   model_id: string;
   label: string;
   notes: string | null;
@@ -42,6 +38,11 @@ type CatalogResp = {
   specs: ModelSpec[];
 };
 
+/** Selected model can be activated: provider models need their provider key. */
+export function canActivate(spec: { group: string; api_key_configured: boolean } | null) {
+  return !!spec && (spec.group === "custom" || spec.api_key_configured);
+}
+
 export function ModelCatalogCard({
   title,
   description,
@@ -62,13 +63,7 @@ export function ModelCatalogCard({
   const [catalog, setCatalog] = useState<CatalogResp | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [settings, setSettings] = useState<Record<string, unknown>>({});
-  const [adding, setAdding] = useState(false);
-  // Key typed for one model; switching models shows that model's saved key.
-  const [keyDraft, setKeyDraft] = useState<{ id: string | null; value: string }>({
-    id: null,
-    value: "",
-  });
-  const [saving, setSaving] = useState(false);
+  const [switching, setSwitching] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
 
@@ -79,14 +74,14 @@ export function ModelCatalogCard({
 
   async function refresh() {
     try {
-      const [c, settings] = await Promise.all([
+      const [c, s] = await Promise.all([
         api<CatalogResp>(catalogUrl),
         api<Record<string, unknown>>("/api/settings"),
       ]);
       setCatalog(c);
-      setSettings(settings);
+      setSettings(s);
       setSelected((prev) =>
-        prev && c.specs.some((s) => s.id === prev) ? prev : c.active_spec_id ?? c.specs[0]?.id ?? null,
+        prev && c.specs.some((x) => x.id === prev) ? prev : c.active_spec_id ?? c.specs[0]?.id ?? null,
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : `Failed to load ${title}`);
@@ -94,69 +89,23 @@ export function ModelCatalogCard({
   }
 
   const selectedSpec = catalog?.specs.find((s) => s.id === selected) ?? null;
-  // Masked saved key of the selected model ("••••…" = saved server-side).
-  const keyName = selectedSpec?.api_key_config_key;
-  const maskedValue = keyName ? settings[keyName] : undefined;
-  const maskedKey =
-    typeof maskedValue === "string" && maskedValue
-      ? maskedValue
-      : selectedSpec?.api_key_configured
-        ? "••••••••"
-        : "";
+  const activeSpec = catalog?.specs.find((s) => s.id === catalog.active_spec_id) ?? null;
+  const willSwitch = !!selectedSpec && selectedSpec.id !== catalog?.active_spec_id;
 
-  const apiKey = keyDraft.id === selected ? keyDraft.value : maskedKey;
-  const setApiKey = (value: string) => setKeyDraft({ id: selected, value });
-
-  const isActiveSelected = selectedSpec?.id === catalog?.active_spec_id;
-  const willSwitch = !!selectedSpec && !isActiveSelected;
-  const isMaskedKey = apiKey.includes("•");
-  const hasNewKey = apiKey.trim().length > 0 && !isMaskedKey;
-  const canSave =
-    !!selectedSpec &&
-    (hasNewKey || (willSwitch && (selectedSpec.custom || selectedSpec.api_key_configured)));
-
-  async function handleDelete(spec: ModelSpec) {
-    if (!confirm(`Xóa model "${spec.label}"?`)) return;
-    setError("");
-    try {
-      await deleteCustomModel(kind, spec.id);
-      if (selected === spec.id) setSelected(null);
-      await refresh();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Delete failed");
-    }
-  }
-
-  async function handleSave() {
+  async function handleActivate() {
     if (!selectedSpec) return;
-    setSaving(true);
+    setSwitching(true);
     setError("");
     setSaved(false);
     try {
-      if (hasNewKey) {
-        if (selectedSpec.custom) {
-          await saveCustomModelKey(kind, selectedSpec, apiKey.trim());
-        } else if (selectedSpec.api_key_config_key) {
-          await api("/api/settings", {
-            method: "PUT",
-            body: { settings: { [selectedSpec.api_key_config_key]: apiKey.trim() } },
-          });
-        }
-      }
-      if (willSwitch) {
-        await api(switchUrl, {
-          method: "POST",
-          body: { model_spec_id: selectedSpec.id },
-        });
-      }
-      setKeyDraft({ id: null, value: "" });
+      await api(switchUrl, { method: "POST", body: { model_spec_id: selectedSpec.id } });
       await refresh();
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Save failed");
+      setError(e instanceof Error ? e.message : "Switch failed");
     } finally {
-      setSaving(false);
+      setSwitching(false);
     }
   }
 
@@ -164,149 +113,97 @@ export function ModelCatalogCard({
     return (
       <div className="bg-card rounded-xl p-6 border border-border shadow-sahara">
         <p className="text-sm text-muted-foreground">Loading {title.toLowerCase()}…</p>
+        {error && <p className="text-xs text-destructive mt-2">{error}</p>}
       </div>
     );
   }
 
   return (
-    <div className="bg-card rounded-xl p-6 border border-border shadow-sahara">
-      <div className="flex items-center gap-3 mb-4">
-        <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
+    <div className="bg-card rounded-xl p-6 border border-border shadow-sahara flex flex-col gap-4">
+      <div className="flex items-start gap-3">
+        <div className="w-9 h-9 shrink-0 rounded-lg bg-primary/10 flex items-center justify-center">
           <span className="material-symbols-outlined text-primary text-base">{icon}</span>
         </div>
-        <div className="flex-1">
+        <div className="flex-1 min-w-0">
           <h3 className="text-base font-semibold text-foreground">{title}</h3>
           <p className="text-xs text-muted-foreground">{description}</p>
         </div>
-        {!adding && (
-          <button
-            onClick={() => setAdding(true)}
-            className="flex items-center gap-1 border border-border px-2.5 py-1.5 rounded-lg text-xs font-medium hover:bg-muted"
-          >
-            <span className="material-symbols-outlined text-sm">add</span>
-            Thêm model
-          </button>
-        )}
+        <ActiveModelChip spec={activeSpec} />
       </div>
 
-      {adding && (
-        <CustomModelForm
-          kind={kind}
-          onCancel={() => setAdding(false)}
-          onSaved={async (id) => {
-            setAdding(false);
-            setSelected(id);
-            await refresh();
-          }}
-        />
+      <ProviderModelPicker
+        kind={kind}
+        specs={catalog.specs}
+        activeId={catalog.active_spec_id}
+        selectedId={selected}
+        onSelect={setSelected}
+        settings={settings}
+        onChanged={refresh}
+        renderMeta={renderMeta}
+      />
+
+      <ActivateBar
+        willSwitch={willSwitch}
+        ready={canActivate(selectedSpec)}
+        busy={switching}
+        saved={saved}
+        error={error}
+        label={selectedSpec?.label}
+        onActivate={handleActivate}
+      />
+    </div>
+  );
+}
+
+/** Footer of the model cards: "Dùng model này" for the selected model. */
+export function ActivateBar({
+  willSwitch,
+  ready,
+  busy,
+  saved,
+  error,
+  label,
+  onActivate,
+  actionText = "Dùng model này",
+  disabled = false,
+  children,
+}: {
+  willSwitch: boolean;
+  ready: boolean;
+  busy: boolean;
+  saved: boolean;
+  error: string;
+  label?: string;
+  onActivate: () => void;
+  actionText?: string;
+  disabled?: boolean;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-3 border-t border-border/60 pt-3">
+      <button
+        disabled={!willSwitch || !ready || busy || disabled}
+        onClick={onActivate}
+        className="bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
+      >
+        {busy ? "Đang chuyển…" : actionText}
+      </button>
+      {children}
+      {willSwitch && !ready && (
+        <span className="text-xs text-amber-600 dark:text-amber-400">
+          Lưu API key của nhà cung cấp trước khi dùng {label}.
+        </span>
       )}
-
-      {/* Model list */}
-      <div className="flex flex-col gap-2 mb-4">
-        {catalog.specs.map((spec) => {
-          const isActive = spec.id === catalog.active_spec_id;
-          const isChecked = spec.id === selected;
-          return (
-            <label
-              key={spec.id}
-              className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-                isChecked ? "border-primary bg-primary/5" : "border-border hover:bg-accent/30"
-              }`}
-            >
-              <input
-                type="radio"
-                name={`${title}-spec`}
-                value={spec.id}
-                checked={isChecked}
-                onChange={() => setSelected(spec.id)}
-                className="mt-1"
-              />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-sm font-medium">{spec.label}</span>
-                  <span className="text-[10px] uppercase tracking-wide text-muted-foreground bg-secondary/40 px-1.5 py-0.5 rounded">
-                    {spec.custom ? "Tự thêm" : spec.provider}
-                  </span>
-                  {isActive && (
-                    <span className="text-[10px] uppercase tracking-wide bg-green-500/15 text-green-700 dark:text-green-400 px-1.5 py-0.5 rounded">
-                      Active
-                    </span>
-                  )}
-                </div>
-                {spec.custom ? (
-                  <p className="text-[11px] text-muted-foreground mt-1 font-mono break-all">
-                    {spec.model_id} · {spec.base_url}
-                  </p>
-                ) : (
-                  renderMeta && (
-                    <div className="text-[11px] text-muted-foreground mt-1">{renderMeta(spec)}</div>
-                  )
-                )}
-                {spec.notes && (
-                  <p className="text-[11px] text-muted-foreground/80 mt-1 italic">{spec.notes}</p>
-                )}
-              </div>
-              {spec.custom && !isActive && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    void handleDelete(spec);
-                  }}
-                  title="Xóa model"
-                  className="text-muted-foreground hover:text-destructive"
-                >
-                  <span className="material-symbols-outlined text-base">delete</span>
-                </button>
-              )}
-            </label>
-          );
-        })}
-      </div>
-
-      {/* API key — per provider for presets, per model for custom models */}
-      {selectedSpec && (
-        <div className="mb-4 flex flex-col gap-1.5">
-          <Label className="text-xs">
-            API key {selectedSpec.custom ? selectedSpec.label : selectedSpec.provider}
-            {selectedSpec.api_key_configured && (
-              <span className="ml-2 text-green-600 dark:text-green-400">✓ saved</span>
-            )}
-          </Label>
-          <Input
-            type={isMaskedKey ? "text" : "password"}
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            onFocus={() => {
-              if (isMaskedKey) setApiKey("");
-            }}
-            onBlur={() => {
-              if (!apiKey) setApiKey(maskedKey);
-            }}
-            placeholder={
-              selectedSpec.api_key_configured ? "Replace existing key…" : "Paste API key"
-            }
-            className="bg-background"
-          />
-        </div>
+      {!willSwitch && !saved && !error && (
+        <span className="text-xs text-muted-foreground">Model đang chọn là model đang dùng.</span>
       )}
-
-      <div className="flex items-center gap-3">
-        <button
-          disabled={!canSave || saving}
-          onClick={handleSave}
-          className="bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
-        >
-          {saving ? "Saving…" : willSwitch ? "Switch & Save" : "Save"}
-        </button>
-        {saved && (
-          <span className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
-            <span className="material-symbols-outlined text-sm">check_circle</span>
-            Saved
-          </span>
-        )}
-        {error && <p className="text-xs text-destructive">{error}</p>}
-      </div>
+      {saved && (
+        <span className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
+          <span className="material-symbols-outlined text-sm">check_circle</span>
+          Đã chuyển model
+        </span>
+      )}
+      {error && <p className="text-xs text-destructive">{error}</p>}
     </div>
   );
 }

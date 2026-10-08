@@ -4,7 +4,7 @@ Admin settings router — provider config, connection testing, dashboard stats.
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -169,6 +169,17 @@ class TestOCRConnectionRequest(BaseModel):
     base_url: Optional[str] = None
     api_key: Optional[str] = None
     model: Optional[str] = None
+    # OCR catalog id: test that model with its stored key (Settings picker).
+    model_spec_id: Optional[str] = None
+
+
+async def _ocr_target(db: AsyncSession, model_spec_id: Optional[str]):
+    """(base_url, model, api_key) of a catalog OCR model, or Nones."""
+    if not model_spec_id:
+        return None, None, None
+    from app.routers.admin_custom_models import resolve_ocr_endpoint
+
+    return await resolve_ocr_endpoint(db, model_spec_id)
 
 
 class TestOCRConnectionResponse(BaseModel):
@@ -189,6 +200,13 @@ async def test_ocr_connection(
     base_url = body.base_url if body else None
     api_key = body.api_key if body else None
     model = body.model if body else None
+
+    if body and body.model_spec_id:
+        try:
+            spec_url, spec_model, spec_key = await _ocr_target(db, body.model_spec_id)
+        except HTTPException as e:
+            return TestOCRConnectionResponse(success=False, message=str(e.detail))
+        base_url, model, api_key = base_url or spec_url, model or spec_model, api_key or spec_key
 
     if not base_url or not api_key:
         cfg = ConfigService(db)
@@ -224,6 +242,7 @@ async def test_ocr(
     override_api_key: Optional[str] = Form(None),
     override_model: Optional[str] = Form(None),
     override_prompt: Optional[str] = Form(None),
+    model_spec_id: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db),
 ):
     """Run OCR on a single image or selected page of a PDF for testing/preview."""
@@ -231,6 +250,14 @@ async def test_ocr(
     from app.config import settings
     from app.services.config_service import ConfigService
     from app.services.ocr_service import ocr_service
+
+    try:
+        spec_url, spec_model, spec_key = await _ocr_target(db, model_spec_id)
+    except HTTPException as e:
+        return TestOCRResponse(success=False, error=str(e.detail))
+    override_base_url = override_base_url or spec_url
+    override_model = override_model or spec_model
+    override_api_key = override_api_key or spec_key
 
     content = await file.read()
     filename = file.filename or "unknown"

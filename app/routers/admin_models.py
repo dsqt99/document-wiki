@@ -49,6 +49,8 @@ class LLMSpecOut(BaseModel):
     custom: bool = False
     base_url: Optional[str] = None
     protocol: Optional[str] = None
+    # Provider group shown in Settings: openai | anthropic | google | custom.
+    group: str = "custom"
 
 
 class LLMCatalogOut(BaseModel):
@@ -70,6 +72,8 @@ class VisionSpecOut(BaseModel):
     custom: bool = False
     base_url: Optional[str] = None
     protocol: Optional[str] = None
+    # Provider group shown in Settings: openai | anthropic | google | custom.
+    group: str = "custom"
 
 
 class VisionCatalogOut(BaseModel):
@@ -100,7 +104,7 @@ async def _catalog_entries(db: AsyncSession, kind: str, specs, get_spec) -> list
     the key/custom metadata shared by both output schemas."""
     from dataclasses import asdict
 
-    from app.ai.custom_models import get_api_key, list_custom
+    from app.ai.custom_models import list_custom, resolve_api_key
 
     out = []
     for s in specs:
@@ -108,14 +112,16 @@ async def _catalog_entries(db: AsyncSession, kind: str, specs, get_spec) -> list
             **asdict(s),
             "api_key_configured": await _preset_key_configured(db, kind, s.provider),
             "api_key_config_key": f"{kind}_api_key__{s.provider}",
+            "group": s.provider,
         })
     for m in await list_custom(db, kind):
         spec = get_spec(m.id)
         out.append({
             **asdict(spec),
             "label": m.label or m.model_id,
-            "api_key_configured": bool(await get_api_key(db, kind, m.id)),
+            "api_key_configured": bool(await resolve_api_key(db, m)),
             "custom": True,
+            "group": m.provider,
             "base_url": m.base_url,
             "protocol": m.protocol,
         })
@@ -123,11 +129,17 @@ async def _catalog_entries(db: AsyncSession, kind: str, specs, get_spec) -> list
 
 
 async def _check_switchable(db: AsyncSession, kind: str, spec) -> None:
-    from app.ai.custom_models import get_custom, is_custom
+    from app.ai.custom_models import get_custom, is_custom, resolve_api_key
 
     if is_custom(spec.id):
-        if await get_custom(db, kind, spec.id) is None:
+        model = await get_custom(db, kind, spec.id)
+        if model is None:
             raise HTTPException(status_code=400, detail=f"Unknown model {spec.id!r}")
+        if model.provider != "custom" and not await resolve_api_key(db, model):
+            raise HTTPException(
+                status_code=400,
+                detail=f"No {model.provider} API key configured. Save the API key first, then switch.",
+            )
         return  # keyless local endpoints are allowed
     if not await _preset_key_configured(db, kind, spec.provider):
         raise HTTPException(

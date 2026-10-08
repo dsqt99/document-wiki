@@ -55,6 +55,8 @@ class EmbeddingSpecOut(BaseModel):
     api_key_config_key: Optional[str] = None  # None for custom models
     custom: bool = False
     base_url: Optional[str] = None
+    # Provider group shown in Settings: openai | google | custom.
+    group: str = "custom"
 
 
 class EmbeddingCatalogOut(BaseModel):
@@ -110,11 +112,12 @@ async def _spec_to_out(
         notes=spec.notes,
         api_key_configured=bool(key),
         api_key_config_key=embedding_api_key_for(spec.provider),
+        group=spec.provider,
     )
 
 
 async def _custom_specs_out(db: AsyncSession) -> list[EmbeddingSpecOut]:
-    from app.ai.custom_models import get_api_key, list_custom
+    from app.ai.custom_models import list_custom, resolve_api_key
 
     out = []
     for m in await list_custom(db, "embedding"):
@@ -127,9 +130,10 @@ async def _custom_specs_out(db: AsyncSession) -> list[EmbeddingSpecOut]:
             label=m.label or spec.label,
             cost_per_1m_tokens=None,
             notes=None,
-            api_key_configured=bool(await get_api_key(db, "embedding", m.id)),
+            api_key_configured=bool(await resolve_api_key(db, m)),
             custom=True,
             base_url=m.base_url,
+            group=m.provider,
         ))
     return out
 
@@ -243,13 +247,14 @@ async def switch_embedding_model(
             ),
         )
 
-    from app.ai.custom_models import get_custom, is_custom
+    from app.ai.custom_models import get_custom, is_custom, resolve_api_key
 
     if is_custom(spec.id):
-        # Keyless local endpoints are allowed for admin-added models.
-        if await get_custom(db, "embedding", spec.id) is None:
+        model = await get_custom(db, "embedding", spec.id)
+        if model is None:
             raise HTTPException(status_code=400, detail=f"Unknown model {spec.id!r}")
-        api_key = "custom"
+        # Keyless local endpoints are allowed for "custom"; known providers need a key.
+        api_key = "custom" if model.provider == "custom" else await resolve_api_key(db, model)
     else:
         # Make sure the chosen provider has an API key configured.
         api_key = await ConfigService(db).get(embedding_api_key_for(spec.provider))

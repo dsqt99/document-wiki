@@ -25,14 +25,20 @@ def store(monkeypatch):
     return data
 
 
-def test_presets_only_gpt6_and_claude():
+def test_presets_cover_each_provider_group():
     from app.ai.embedding_catalog import EMBEDDING_CATALOG
     from app.ai.llm_catalog import LLM_CATALOG
     from app.ai.vision_catalog import VISION_CATALOG
+    from app.routers.admin_custom_models import OCR_PRESETS
 
-    assert set(LLM_CATALOG) == {"openai/gpt-6-luna", "anthropic/claude-sonnet-5-5"}
-    assert set(VISION_CATALOG) == {"openai/gpt-6-luna", "anthropic/claude-sonnet-5-5"}
-    assert set(EMBEDDING_CATALOG) == {"openai/text-embedding-3-large"}
+    for catalog in (LLM_CATALOG, VISION_CATALOG, OCR_PRESETS):
+        providers = {(s["provider"] if isinstance(s, dict) else s.provider) for s in catalog.values()}
+        assert providers == {"openai", "anthropic", "google"}
+    # Anthropic has no embedding models.
+    assert {s.provider for s in EMBEDDING_CATALOG.values()} == {"openai", "google"}
+    assert "openai/gpt-6-luna" in LLM_CATALOG and "anthropic/claude-sonnet-5-5" in LLM_CATALOG
+    for spec in EMBEDDING_CATALOG.values():
+        assert spec.dimension in cm.EMBEDDING_DIMENSIONS
 
 
 def test_custom_ids_round_trip_through_get_spec():
@@ -138,3 +144,49 @@ def test_gpt6_is_treated_as_reasoning_model():
 
     llm = OpenAILLM(ProviderConfig(provider=ProviderType.OPENAI, api_key="x", model_id="gpt-6-luna"))
     assert llm._is_reasoning_or_gpt5()
+
+
+@pytest.mark.asyncio
+async def test_provider_model_uses_provider_endpoint_and_key(store):
+    from app.ai.registry import ProviderRegistry
+
+    base_url, protocol = cm.provider_endpoint("llm", "google")
+    await cm.save_custom(None, cm.CustomModel(
+        id="custom/gemini-x", kind="llm", model_id="gemini-x", label="Gemini X",
+        base_url=base_url, protocol=protocol, provider="google"), None)
+    store["llm_api_key__google"] = "g-key"
+    store["active_llm_model_spec_id"] = "custom/gemini-x"
+
+    cfg = await ProviderRegistry(None)._load_llm_config()
+    assert cfg.provider == ProviderType.OPENAI
+    assert cfg.base_url == "https://generativelanguage.googleapis.com/v1beta/openai/"
+    assert cfg.api_key == "g-key"  # falls back to the provider key
+
+
+def test_provider_endpoint_claude_llm_is_native():
+    assert cm.provider_endpoint("llm", "anthropic") == ("https://api.anthropic.com", "anthropic")
+    assert cm.provider_endpoint("vision", "anthropic")[1] == "openai"
+
+
+@pytest.mark.asyncio
+async def test_ocr_provider_model_falls_back_to_vision_key(store):
+    m = cm.CustomModel(id="custom/claude-x", kind="ocr", model_id="claude-x", label="X",
+                       base_url="https://api.anthropic.com/v1/", provider="anthropic")
+    await cm.save_custom(None, m, None)
+    store["vision_api_key__anthropic"] = "v-key"
+    assert await cm.resolve_api_key(None, m) == "v-key"
+    store["ocr_api_key__anthropic"] = "o-key"
+    assert await cm.resolve_api_key(None, m) == "o-key"
+
+
+@pytest.mark.asyncio
+async def test_legacy_custom_models_default_to_custom_group(store):
+    import json
+
+    store["custom_models"] = json.dumps([{
+        "id": "custom/old", "kind": "llm", "model_id": "old", "label": "Old",
+        "base_url": "http://x/v1", "protocol": "openai", "dimension": None,
+    }])
+    (m,) = await cm.list_custom(None, "llm")
+    assert m.provider == "custom"
+    assert await cm.resolve_api_key(None, m) == ""
