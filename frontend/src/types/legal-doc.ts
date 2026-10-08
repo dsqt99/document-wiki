@@ -17,6 +17,7 @@ export type DocMeta = {
   doc_slug?: string | null;
   method?: string;
   extracted_at?: string;
+  manual_fields?: string[]; // keys edited by hand — kept on re-extraction
 };
 
 export type LegalDoc = {

@@ -496,9 +496,9 @@ export function WikiPageTree({
         {/* Header: back to index + quick actions */}
         <div className="flex items-center gap-0.5">
           <Link
-            href="/wiki"
+            href="/wiki/law"
             className="mr-auto inline-flex items-center gap-1 px-1 py-0.5 rounded-md text-sm font-semibold text-foreground hover:text-primary transition-colors"
-            title="Về trang Wiki"
+            title="Về Trang wiki"
           >
             <span className="material-symbols-outlined" style={{ fontSize: 18 }}>arrow_back</span>
             Wiki

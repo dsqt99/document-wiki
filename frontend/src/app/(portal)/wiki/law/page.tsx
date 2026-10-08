@@ -156,7 +156,8 @@ export default function WikiLawPage() {
     if (id === "all") params.delete("kt");
     else params.set("kt", id);
     const qs = params.toString();
-    router.replace(qs ? `/wiki/law?${qs}` : "/wiki/law", { scroll: false });
+    const base = window.location.pathname;
+    router.replace(qs ? `${base}?${qs}` : base, { scroll: false });
   };
 
   const byKt = React.useMemo(
@@ -243,20 +244,20 @@ export default function WikiLawPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
             <span className="material-symbols-outlined text-primary" style={{ fontSize: 26 }}>
-              balance
+              auto_stories
             </span>
-            Wiki Pháp luật
+            Trang wiki
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
             Tra cứu văn bản theo số hiệu, lĩnh vực và tình trạng hiệu lực.
           </p>
         </div>
         <Link
-          href="/wiki"
+          href="/wiki/graph"
           className="flex items-center gap-1.5 px-3 h-9 rounded-lg border border-border bg-background text-sm font-medium hover:bg-muted transition-colors"
         >
-          <span className="material-symbols-outlined" style={{ fontSize: 17 }}>article</span>
-          Trang wiki
+          <span className="material-symbols-outlined" style={{ fontSize: 17 }}>hub</span>
+          Đồ thị tri thức
         </Link>
       </div>
 

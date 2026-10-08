@@ -9,7 +9,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { BarList, LineChart } from "@/components/stats/charts";
 import { WikiStatusBadge } from "@/components/wiki/wiki-status-badge";
-import WikiIndexPage from "./wiki/page";
+import WikiLawPage from "./wiki/law/page";
 
 /* ──────────────────────────────────────────────────────────────────────── */
 /* Types                                                                    */
@@ -222,7 +222,7 @@ export default function DashboardPage() {
   }
 
   if (user.role !== "admin") {
-    return <WikiIndexPage />;
+    return <WikiLawPage />;
   }
 
   return (

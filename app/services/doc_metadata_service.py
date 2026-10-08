@@ -243,14 +243,19 @@ async def store_document_metadata(
 ) -> dict[str, Any]:
     """Extract and write `Source.metadata_["doc"]`. Caller commits."""
     meta = await extract_document_metadata(session, source, use_llm=use_llm, regex_meta=regex_meta)
+    prev = (source.metadata_ or {}).get(METADATA_KEY) or {}
     if article_count is not None:
         meta["article_count"] = article_count
     if doc_slug:
         meta["doc_slug"] = doc_slug
-    else:
-        prev = (source.metadata_ or {}).get(METADATA_KEY) or {}
-        if prev.get("doc_slug"):
-            meta["doc_slug"] = prev["doc_slug"]
+    elif prev.get("doc_slug"):
+        meta["doc_slug"] = prev["doc_slug"]
+    # Values a user corrected by hand survive re-extraction.
+    manual = [k for k in prev.get("manual_fields") or [] if k in EDITABLE_META_KEYS]
+    for key in manual:
+        meta[key] = prev.get(key)
+    if manual:
+        meta["manual_fields"] = manual
     meta["extracted_at"] = datetime.now(timezone.utc).isoformat()
     # Reassign (not mutate) so SQLAlchemy sees the JSONB change.
     source.metadata_ = {**(source.metadata_ or {}), METADATA_KEY: meta}
@@ -259,6 +264,37 @@ async def store_document_metadata(
 
 def get_doc_meta(source: Source) -> dict[str, Any]:
     return dict((source.metadata_ or {}).get(METADATA_KEY) or {})
+
+
+EDITABLE_META_KEYS = (
+    "doc_type", "doc_number", "issuing_authority", "official_title",
+    "issued_date", "effective_date", "expiry_date", "field",
+)
+_META_DATE_KEYS = ("issued_date", "effective_date", "expiry_date")
+
+
+def apply_manual_doc_meta(source: Source, updates: dict[str, Any]) -> dict[str, Any]:
+    """Merge user-edited metadata into `Source.metadata_["doc"]`. Caller commits.
+
+    Empty strings clear a value; dates accept dd/mm/yyyy or ISO. Edited keys are
+    remembered in `manual_fields` so a later re-extraction keeps them.
+    """
+    meta = get_doc_meta(source)
+    manual = set(meta.get("manual_fields") or [])
+    for key, raw in updates.items():
+        if key not in EDITABLE_META_KEYS:
+            continue
+        value = _clean_str(raw) if raw is not None else None
+        if value and key in _META_DATE_KEYS:
+            iso = to_iso_date(value)
+            if not iso:
+                raise ValueError(f"Ngày không hợp lệ cho '{key}': {raw}")
+            value = iso
+        meta[key] = value
+        manual.add(key)
+    meta["manual_fields"] = sorted(manual)
+    source.metadata_ = {**(source.metadata_ or {}), METADATA_KEY: meta}
+    return meta
 
 
 # ---------------------------------------------------------------------------

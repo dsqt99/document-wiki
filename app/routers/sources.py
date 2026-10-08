@@ -117,6 +117,8 @@ class SourceUpdate(BaseModel):
     department_ids: Optional[list[uuid.UUID]] = None
     scope_type: Optional[str] = None
     scope_id: Optional[uuid.UUID] = None
+    # Partial document metadata (số hiệu, cơ quan, ngày ban hành/hiệu lực, lĩnh vực…)
+    doc_meta: Optional[dict[str, Optional[str]]] = None
 
 
 async def _wiki_page_count(session: AsyncSession, source_id: uuid.UUID) -> int:
@@ -242,12 +244,28 @@ def source_read_filter(user: Employee):
     )
 
 
+def _list_order(sort: str) -> list:
+    """Whitelisted ORDER BY for the documents table; undated rows sort last."""
+    field, _, direction = (sort or "").rpartition("_")
+    desc = direction != "asc"
+    columns = {
+        "created": Source.created_at,
+        "title": func.lower(Source.title),
+        "issued": Source.metadata_["doc"]["issued_date"].astext,
+        "effective": Source.metadata_["doc"]["effective_date"].astext,
+    }
+    col = columns.get(field, Source.created_at)
+    primary = col.desc().nulls_last() if desc else col.asc().nulls_last()
+    return [primary, Source.created_at.desc()]
+
+
 @router.get("/sources")
 async def list_sources(
     knowledge_type_id: Optional[uuid.UUID] = Query(None),
     department_id: Optional[uuid.UUID] = Query(None),
-    status: Optional[str] = Query(None),
+    status: Optional[str] = Query(None, description="One status or a comma-separated list"),
     search: Optional[str] = Query(None),
+    sort: str = Query("created_desc", description="<field>_<asc|desc>; field in created|title|issued|effective"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=5000),
     db: AsyncSession = Depends(get_db),
@@ -280,8 +298,9 @@ async def list_sources(
         base = base.where(dept_exists)
         count_base = count_base.where(dept_exists)
     if status:
-        base = base.where(Source.status == status)
-        count_base = count_base.where(Source.status == status)
+        statuses = [x.strip() for x in status.split(",") if x.strip()]
+        base = base.where(Source.status.in_(statuses))
+        count_base = count_base.where(Source.status.in_(statuses))
     if search:
         like = f"%{search}%"
         base = base.where(Source.title.ilike(like) | Source.file_name.ilike(like))
@@ -290,7 +309,7 @@ async def list_sources(
     total = (await db.execute(count_base)).scalar() or 0
 
     offset = (max(page, 1) - 1) * page_size
-    stmt = base.order_by(Source.created_at.desc()).offset(offset).limit(page_size)
+    stmt = base.order_by(*_list_order(sort)).offset(offset).limit(page_size)
     sources = (await db.execute(stmt)).scalars().all()
 
     from app.services.doc_metadata_service import get_doc_meta, lifecycle_for, load_lifecycle
@@ -882,6 +901,12 @@ async def update_source(
         source.title = body.title
     if body.knowledge_type_id is not None:
         source.knowledge_type_id = body.knowledge_type_id
+    if body.doc_meta:
+        from app.services.doc_metadata_service import apply_manual_doc_meta
+        try:
+            apply_manual_doc_meta(source, body.doc_meta)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
     scope_changed = False
     new_scope_type = body.scope_type if body.scope_type is not None else old_scope_type

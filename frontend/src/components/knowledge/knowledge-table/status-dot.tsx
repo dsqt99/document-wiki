@@ -1,78 +1,67 @@
 import React from "react";
 import { Source } from "./types";
 import { useI18n } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
+
+const STYLE: Record<string, { dot: string; text: string }> = {
+  ready: { dot: "bg-emerald-500", text: "text-emerald-700 dark:text-emerald-400" },
+  processing: { dot: "bg-amber-500 animate-pulse", text: "text-amber-700 dark:text-amber-400" },
+  pending: { dot: "bg-slate-400 animate-pulse", text: "text-muted-foreground" },
+  plan_ready: { dot: "bg-blue-500", text: "text-blue-600 dark:text-blue-400" },
+  awaiting_approval: { dot: "bg-orange-500", text: "text-orange-600 dark:text-orange-400" },
+  partial: { dot: "bg-amber-500", text: "text-amber-700 dark:text-amber-400" },
+  error: { dot: "bg-destructive", text: "text-destructive" },
+};
+
+const FALLBACK_LABEL: Record<string, string> = {
+  ready: "Sẵn sàng",
+  processing: "Đang xử lý",
+  pending: "Chờ xử lý",
+  plan_ready: "Chờ duyệt kế hoạch",
+  awaiting_approval: "Chờ duyệt dung lượng",
+  partial: "Hoàn tất một phần",
+  error: "Lỗi",
+};
+
+/** Sub-line under the status label: what the pipeline is doing / produced / why it failed. */
+function subLine(source: Source): { text: string; tone: "muted" | "error" } | null {
+  const st = source.status;
+  if (st === "processing" || st === "pending") {
+    const pct = st === "processing" && source.progress != null ? `${source.progress}%` : "";
+    const msg = source.progress_message || (st === "pending" ? "Đang xếp hàng" : "");
+    return { text: [pct, msg].filter(Boolean).join(" · "), tone: "muted" };
+  }
+  if (st === "error" || st === "partial") {
+    const msg = source.error_message || source.wiki_error_message || source.chunk_error_message || source.progress_message;
+    return msg ? { text: msg, tone: "error" } : null;
+  }
+  if (st === "plan_ready" || st === "awaiting_approval") return { text: "Cần xem xét để tiếp tục", tone: "muted" };
+  if (st === "ready") {
+    if (source.preserve_verbatim) return { text: "Nguyên văn theo Điều", tone: "muted" };
+    if (source.wiki_status === "error") return { text: "Wiki lỗi — chỉ có đoạn trích", tone: "error" };
+    if (source.wiki_page_count) return { text: `${source.wiki_page_count} trang wiki`, tone: "muted" };
+  }
+  return null;
+}
 
 export function StatusDot({ source }: { source: Source }) {
   const { t } = useI18n();
-
-  const colors: Record<string, string> = {
-    ready: "bg-green-500",
-    processing: "bg-yellow-500",
-    error: "bg-destructive",
-    partial: "bg-amber-500",
-    pending: "bg-muted-foreground",
-    plan_ready: "bg-blue-500",
-    awaiting_approval: "bg-orange-500",
-  };
-
-  const status = source.status;
-  const highlight = status === "plan_ready" || status === "awaiting_approval";
-
-  const getStatusLabel = (st: string) => {
-    switch (st) {
-      case "ready":
-        return t("knowledge.status.ready", "Ready");
-      case "processing":
-        return t("knowledge.status.processing", "Processing");
-      case "error":
-        return t("knowledge.status.error", "Error");
-      case "partial":
-        return t("knowledge.status.partial", "Partial");
-      case "pending":
-        return t("knowledge.status.pending", "Pending");
-      case "plan_ready":
-        return t("knowledge.status.plan_ready", "Review Plan");
-      case "awaiting_approval":
-        return t("knowledge.status.awaiting_approval", "Review Size");
-      default:
-        return st;
-    }
-  };
-
-  const branchLabel = (st?: string) => {
-    if (!st) return "-";
-    if (st === "ready") return "✓";
-    if (st === "error") return "✗";
-    if (st === "skipped") return "—";
-    return "…";
-  };
+  const st = source.status;
+  const style = STYLE[st] || STYLE.pending;
+  const sub = subLine(source);
 
   return (
-    <div className="flex flex-col gap-1">
-      <div className="flex items-center gap-1.5">
-        <span className={`w-2 h-2 rounded-full ${colors[status] || colors.pending}`} />
-        <span className={`text-xs capitalize ${highlight ? (status === "plan_ready" ? "text-blue-500 font-medium" : "text-orange-500 font-medium") : "text-muted-foreground"}`}>
-          {getStatusLabel(status)}
-        </span>
-        {status === "processing" && source.progress !== undefined && (
-          <span className="text-xs text-muted-foreground">({source.progress}%)</span>
-        )}
-      </div>
-      {(status === "processing" || status === "pending") && source.progress_message && (
-        <span className="text-[10px] text-muted-foreground truncate max-w-[150px]" title={source.progress_message}>
-          {source.progress_message}
-        </span>
-      )}
-      {source.chunk_status && source.chunk_status !== "pending" && !source.preserve_verbatim && (
-        <span className="text-[10px] text-muted-foreground">
-          {t("knowledge.branch.chunks", "Chunks")}: {branchLabel(source.chunk_status)}
-          {" · "}
-          {t("knowledge.branch.wiki", "Wiki")}: {branchLabel(source.wiki_status)}
-        </span>
-      )}
-      {(status === "error" || status === "partial") && source.progress_message && (
-        <span className="text-[10px] text-destructive truncate max-w-[150px]" title={source.progress_message}>
-          {source.progress_message}
+    <div className="flex min-w-0 flex-col">
+      <span className={cn("flex items-center gap-1.5 text-xs font-medium whitespace-nowrap", style.text)}>
+        <span className={cn("size-1.5 shrink-0 rounded-full", style.dot)} />
+        {t(`knowledge.status.${st}`, FALLBACK_LABEL[st] || st)}
+      </span>
+      {sub && sub.text && (
+        <span
+          className={cn("truncate pl-3 text-[10px] max-w-[160px]", sub.tone === "error" ? "text-destructive/80" : "text-muted-foreground")}
+          title={sub.text}
+        >
+          {sub.text}
         </span>
       )}
     </div>

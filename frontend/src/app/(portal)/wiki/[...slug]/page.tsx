@@ -100,11 +100,7 @@ export default function WikiPageViewer() {
   // Where "back" navigates. Projects keep their dedicated workspace page;
   // department-scoped pages return to the wiki landing with the scope preserved
   // so the user lands back on that department's tree+index, not global.
-  const backHref = isProjectScoped
-    ? "/workspaces"
-    : isScoped
-      ? `/wiki?scope_type=${scopeType}&scope_id=${scopeId}`
-      : "/wiki";
+  const backHref = isProjectScoped ? "/workspaces" : "/wiki/law";
 
   // Look up the display name for the current page's scope so the scope
   // switcher trigger reads e.g. "Phòng Nhân sự" rather than just "department".

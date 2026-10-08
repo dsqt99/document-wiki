@@ -73,6 +73,14 @@ def _doc_out(source: Source, lifecycle: dict) -> dict:
     }
 
 
+@router.get("/wiki/legal-doc-fields")
+async def list_legal_doc_fields(_user: Employee = Depends(get_current_user)):
+    """Allowed values for the 'lĩnh vực' metadata field."""
+    from app.services.doc_metadata_service import FIELDS
+
+    return {"fields": FIELDS}
+
+
 @router.get("/wiki/legal-docs")
 async def list_legal_docs(
     content_q: Optional[str] = Query(None, description="Full-text (nội dung) search"),

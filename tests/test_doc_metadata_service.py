@@ -52,3 +52,35 @@ def test_compute_validity():
     assert compute_validity(
         {"effective_date": "2020-01-01"}, {"repealed_by": ["1/QĐ-BTC"]}, today=TODAY
     ) == VALIDITY_EXPIRED
+
+
+def test_apply_manual_doc_meta_merges_and_tracks_fields():
+    from types import SimpleNamespace
+
+    from app.services.doc_metadata_service import apply_manual_doc_meta
+
+    src = SimpleNamespace(metadata_={"other": 1, "doc": {"doc_number": "1/2020/NĐ-CP", "field": "Khác"}})
+    meta = apply_manual_doc_meta(
+        src,
+        {"doc_number": " 2/2021/NĐ-CP ", "issued_date": "05/03/2021", "field": "", "bogus": "x"},
+    )
+    assert meta["doc_number"] == "2/2021/NĐ-CP"
+    assert meta["issued_date"] == "2021-03-05"
+    assert meta["field"] is None
+    assert "bogus" not in meta
+    assert meta["manual_fields"] == ["doc_number", "field", "issued_date"]
+    assert src.metadata_["other"] == 1 and src.metadata_["doc"] is meta
+
+
+def test_apply_manual_doc_meta_rejects_bad_date():
+    from types import SimpleNamespace
+
+    from app.services.doc_metadata_service import apply_manual_doc_meta
+
+    src = SimpleNamespace(metadata_=None)
+    try:
+        apply_manual_doc_meta(src, {"effective_date": "31/02/2024"})
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("expected ValueError")

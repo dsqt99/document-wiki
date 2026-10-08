@@ -45,8 +45,7 @@ const navSectionDefs: NavSectionDef[] = [
     labelKey: "nav.orgKnowledge",
     items: [
       { labelKey: "nav.documents", href: "/knowledge", icon: "description", requiredPermissions: ["doc:read:own_dept", "doc:read:all"] },
-      { labelKey: "nav.wiki", href: "/wiki", icon: "auto_stories", requiredPermissions: ["wiki:read:own_dept", "wiki:read:all"] },
-      { labelKey: "nav.legalWiki", href: "/wiki/law", icon: "balance", requiredPermissions: ["doc:read:own_dept", "doc:read:all"] },
+      { labelKey: "nav.wiki", href: "/wiki/law", icon: "auto_stories", requiredPermissions: ["wiki:read:own_dept", "wiki:read:all", "doc:read:own_dept", "doc:read:all"] },
       { labelKey: "nav.reviews", href: "/wiki/review", icon: "fact_check", requiredPermissions: ["wiki:read:own_dept", "wiki:read:all"] },
       { labelKey: "nav.skills", href: "/skills", icon: "bolt", requiredPermissions: ["skill:read:own_dept", "skill:read:all"] },
     ],
@@ -106,7 +105,13 @@ function SidebarNavItem({
   collapsed = false,
 }: SidebarNavItemProps) {
   const { user } = useAuth();
-  const active = isActive(href, pathname) || (href === "/wiki" && pathname === "/" && user?.role !== "admin");
+  // "Trang wiki" also owns individual wiki pages (/wiki/<slug>, /wiki/source/...) and is the non-admin home.
+  const active =
+    isActive(href, pathname) ||
+    (href === "/wiki/law" &&
+      ((pathname === "/" && user?.role !== "admin") ||
+        pathname === "/wiki" ||
+        (pathname.startsWith("/wiki/") && !pathname.startsWith("/wiki/review"))));
 
   if (collapsed) {
     return (

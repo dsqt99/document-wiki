@@ -130,7 +130,7 @@ export default function WikiGraphPage() {
         <div className="flex items-center justify-between px-5 py-2.5 border-b border-border bg-card/80 backdrop-blur-sm shrink-0">
           <div className="flex items-center gap-3">
             <button
-              onClick={() => router.push(isScoped ? `/workspaces` : "/wiki")}
+              onClick={() => router.push(isScoped ? `/workspaces` : "/wiki/law")}
               className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-accent/50"
               title={isScoped ? "Back to Workspace" : "Back to Wiki"}
             >
