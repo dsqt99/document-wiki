@@ -902,10 +902,16 @@ async def get_legal_unit_validity_warnings(
     unit_id: uuid.UUID,
 ) -> list[dict[str, Any]]:
     """Check if a legal unit has been amended, supplemented, replaced, or repealed."""
+    from sqlalchemy.orm import configure_mappers, selectinload
+
+    configure_mappers()  # backref attributes (LegalRelation.source_unit) exist only after configure
+
     from app.database.models import LegalRelation, LegalRelationType
 
+    # Eager-load: a lazy `rel.source_unit` raises MissingGreenlet under asyncio.
     query = (
         select(LegalRelation)
+        .options(selectinload(LegalRelation.source_unit))
         .where(
             LegalRelation.target_unit_id == unit_id,
             LegalRelation.is_effective.is_(True),

@@ -49,7 +49,7 @@ async def test_route_exact_legal_query_hit():
 
     session = AsyncMock()
     mock_res = MagicMock()
-    mock_res.scalar_one_or_none.return_value = mock_unit
+    mock_res.scalars.return_value.first.return_value = mock_unit
     session.execute = AsyncMock(return_value=mock_res)
 
     result = await route_exact_legal_query(session, "Điều 5 Nghị định 136/2020/NĐ-CP")

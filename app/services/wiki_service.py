@@ -429,6 +429,93 @@ def _fts_query(query_text: str):
     return func.websearch_to_tsquery(_FTS_CONFIG, func.f_unaccent(tokenized))
 
 
+# A lexical hit covering at least this share of the query's content terms is
+# "strong": it bypasses the cosine floor like an all-terms match does.
+_STRONG_COVERAGE = 0.6
+
+
+def _lexical_plan(query_text: str) -> tuple[list[str], list[tuple[str, str]]]:
+    """(content terms, exact needles) for the lexical arm.
+
+    Needles are ("doc", folded regex) for document numbers and ("phrase",
+    folded text) for quoted phrases; both must appear verbatim in the chunk.
+    """
+    import re as _re
+
+    from app.core.vi_tokenizer import keyword_terms, quoted_phrases
+    from app.services.legal_route_service import find_doc_numbers
+
+    terms = keyword_terms(query_text or "")
+    needles: list[tuple[str, str]] = []
+    for doc in find_doc_numbers(query_text or ""):
+        # Bounded so "13/2023" does not match inside "113/2023"; any of "/",
+        # "-", "." as separator (file-name style "189.2025.NĐ.CP"), optional
+        # spaces around them as written in scanned documents.
+        parts = [p for p in _re.split(r"[/-]", doc.lower()) if p]
+        body = r"\s*[/.\-]\s*".join(_re.escape(p) for p in parts)
+        needles.append(("doc", r"(^|[^0-9a-z/.])" + body + r"($|[^0-9a-z])"))
+    for ph in quoted_phrases(query_text or ""):
+        needles.append(("phrase", ph))
+    return terms, needles
+
+
+def _exact_clause(table_name: str, needles: list[tuple[str, str]], column: str = "text"):
+    col = func.lower(literal_column(f"f_unaccent({table_name}.{column})"))
+    conds = []
+    for kind, needle in needles:
+        if kind == "doc":
+            conds.append(col.op("~")(needle))
+        else:
+            esc = needle.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            conds.append(col.like(f"%{esc}%", escape="\\"))
+    return or_(*conds)
+
+
+async def _lexical_arm(session, query_text: str, Emb, make_stmt, key_of, text_of):
+    """Lexical candidates: exact-needle rows first, then any-term FTS rows
+    (all-terms matches ranked ahead of partial ones).
+
+    `make_stmt(cond)` builds the arm's SELECT with `cond` in its WHERE.
+    Returns (rows best-first, strong_keys, exact_keys).
+    """
+    from app.core.vi_tokenizer import term_coverage, websearch_all, websearch_any
+
+    terms, needles = _lexical_plan(query_text)
+    rows: list = []
+    seen: set = set()
+    strong: set = set()
+    exact: set = set()
+
+    if needles:
+        stmt = make_stmt(_exact_clause(Emb.__tablename__, needles)).limit(_HYBRID_CANDIDATE_POOL)
+        for r in (await session.execute(stmt)).all():
+            k = key_of(r)
+            if k not in seen:
+                seen.add(k)
+                rows.append(r)
+                strong.add(k)
+                exact.add(k)
+
+    if terms:
+        tsv = _fts_expr(Emb.__tablename__)
+        any_q = func.websearch_to_tsquery(_FTS_CONFIG, websearch_any(terms))
+        all_q = func.websearch_to_tsquery(_FTS_CONFIG, websearch_all(terms))
+        stmt = (
+            make_stmt(tsv.op("@@")(any_q))
+            .order_by(tsv.op("@@")(all_q).desc(), func.ts_rank(tsv, any_q).desc())
+            .limit(_HYBRID_CANDIDATE_POOL)
+        )
+        for r in (await session.execute(stmt)).all():
+            k = key_of(r)
+            if k in seen:
+                continue
+            seen.add(k)
+            rows.append(r)
+            if len(terms) == 1 or term_coverage(terms, text_of(r)) >= _STRONG_COVERAGE:
+                strong.add(k)
+    return rows, strong, exact
+
+
 async def search_pages_semantic(
     session: AsyncSession,
     query_embedding: list[float],
@@ -589,19 +676,21 @@ async def search_pages_hybrid(
     )
     vec_rows = (await session.execute(vec_stmt)).all()
 
-    # --- Full-text arm ---
-    fts_rows = []
+    # --- Lexical arm (exact needles + any-term full text) ---
+    fts_rows: list = []
+    strong_keys: set = set()
+    exact_keys: set = set()
     if query_text and query_text.strip():
-        tsq = _fts_query(query_text)
-        tsv = _fts_expr(Emb.__tablename__)
-        fts_stmt = (
-            select(WikiPage, Emb.chunk_index, Emb.heading_path, Emb.text)
-            .join(Emb, Emb.page_id == WikiPage.id)
-            .where(and_(*base_where, tsv.op("@@")(tsq)))
-            .order_by(func.ts_rank(tsv, tsq).desc())
-            .limit(_HYBRID_CANDIDATE_POOL)
+        fts_rows, strong_keys, exact_keys = await _lexical_arm(
+            session, query_text, Emb,
+            make_stmt=lambda cond: (
+                select(WikiPage, Emb.chunk_index, Emb.heading_path, Emb.text)
+                .join(Emb, Emb.page_id == WikiPage.id)
+                .where(and_(*base_where, cond))
+            ),
+            key_of=lambda r: (r[0].id, r[1]),
+            text_of=lambda r: r[3],
         )
-        fts_rows = (await session.execute(fts_stmt)).all()
 
     results = _fuse_chunk_rows(
         vec_rows, fts_rows,
@@ -612,6 +701,8 @@ async def search_pages_hybrid(
         obj_field="page",
         top_k=top_k,
         fuse=reciprocal_rank_fusion,
+        strong_keys=strong_keys,
+        exact_keys=exact_keys,
     )
     chunk_by_key: dict = {}
     for r in vec_rows:
@@ -631,21 +722,25 @@ async def search_pages_hybrid(
 
 def _fuse_chunk_rows(
     vec_rows, fts_rows, *, key_of, group_of, obj_of, heading_of, obj_field,
-    top_k, fuse,
+    top_k, fuse, strong_keys=None, exact_keys=None,
 ) -> list[dict]:
     """Shared RRF fusion + group-to-parent logic for the two hybrid searches.
 
     `vec_rows` rows end with a cosine similarity; `fts_rows` rows carry no score.
     Chunks are fused by `key_of`, then collapsed to their parent (`group_of`)
     keeping the best-scoring chunk. Returns dicts with the parent under
-    `obj_field` plus rrf / cosine / heading_path / fts_matched.
+    `obj_field` plus rrf / cosine / heading_path / fts_matched / exact_match.
+
+    `fts_matched` marks a strong lexical hit (`strong_keys`; default: every
+    lexical row); `exact_match` marks a verbatim document-number/phrase hit.
     """
     vec_keys = [key_of(r) for r in vec_rows]
     fts_keys = [key_of(r) for r in fts_rows]
     fused = fuse([vec_keys, fts_keys])
 
     cosine_by_key = {key_of(r): float(r[-1]) for r in vec_rows}
-    fts_key_set = set(fts_keys)
+    fts_key_set = set(fts_keys) if strong_keys is None else set(strong_keys)
+    exact_key_set = set(exact_keys or ())
     row_by_key: dict = {}
     for r in vec_rows:
         row_by_key.setdefault(key_of(r), r)
@@ -666,15 +761,20 @@ def _fuse_chunk_rows(
             "cosine": cosine,
             "heading_path": heading_of(row) or "",
             "fts_matched": key in fts_key_set,
+            "exact_match": key in exact_key_set,
             "_win_key": key,  # winning chunk key — used to attach the chunk row
         }
         if entry is None or score > entry["rrf"]:
-            # Preserve an fts_matched=True flag seen on a lower-ranked chunk.
-            if entry is not None and entry["fts_matched"]:
-                cand["fts_matched"] = True
+            # Preserve flags seen on a lower-ranked chunk of the same parent.
+            if entry is not None:
+                cand["fts_matched"] = cand["fts_matched"] or entry["fts_matched"]
+                cand["exact_match"] = cand["exact_match"] or entry["exact_match"]
             grouped[gid] = cand
-        elif key in fts_key_set:
-            entry["fts_matched"] = True
+        else:
+            if key in fts_key_set:
+                entry["fts_matched"] = True
+            if key in exact_key_set:
+                entry["exact_match"] = True
 
     out = sorted(grouped.values(), key=lambda d: d["rrf"], reverse=True)
     return out[:top_k]
@@ -745,19 +845,21 @@ async def search_source_chunks_hybrid(
     )
     vec_rows = (await session.execute(vec_stmt)).all()
 
-    # --- Full-text arm ---
-    fts_rows = []
+    # --- Lexical arm (exact needles + any-term full text) ---
+    fts_rows: list = []
+    strong_keys: set = set()
+    exact_keys: set = set()
     if query_text and query_text.strip():
-        tsq = _fts_query(query_text)
-        tsv = _fts_expr(Emb.__tablename__)
-        fts_stmt = (
-            select(Source, Emb)
-            .join(Source, Source.id == Emb.source_id)
-            .where(and_(*base_where, tsv.op("@@")(tsq)))
-            .order_by(func.ts_rank(tsv, tsq).desc())
-            .limit(_HYBRID_CANDIDATE_POOL)
+        fts_rows, strong_keys, exact_keys = await _lexical_arm(
+            session, query_text, Emb,
+            make_stmt=lambda cond: (
+                select(Source, Emb)
+                .join(Source, Source.id == Emb.source_id)
+                .where(and_(*base_where, cond))
+            ),
+            key_of=lambda r: (r[0].id, r[1].chunk_index),
+            text_of=lambda r: r[1].text,
         )
-        fts_rows = (await session.execute(fts_stmt)).all()
 
     results = _fuse_chunk_rows(
         vec_rows, fts_rows,
@@ -768,6 +870,8 @@ async def search_source_chunks_hybrid(
         obj_field="source",
         top_k=top_k,
         fuse=reciprocal_rank_fusion,
+        strong_keys=strong_keys,
+        exact_keys=exact_keys,
     )
     # Attach the winning chunk row (its text/page_number) to each grouped result
     # using the winning chunk key recorded during fusion.
@@ -836,6 +940,7 @@ async def apply_update(
     scope_type: str = "global",
     scope_id: Optional[uuid.UUID] = None,
     status: Optional[str] = None,
+    guard: bool = True,
 ) -> Optional[WikiPage]:
     """
     Update an existing page atomically within the given scope:
@@ -846,10 +951,29 @@ async def apply_update(
       - Optionally update lifecycle status.
       - Bump version, refresh updated_at, refresh embedding if supplied.
     Returns None if the page does not exist.
+
+    This is the machine (compiler/ingest) write path — human edits go through
+    approve_draft / direct_edit_page / rollback_to_revision instead. With
+    guard=True (default) the rewrite is checked by
+    wiki_write_guard.check_machine_rewrite (table row loss > 20%, writer
+    failure stub, drastic shrink). A refused rewrite is NOT written: the
+    existing page is returned unchanged (no version bump, no revision, no
+    metadata change) so callers that fall back to apply_create on None do not
+    create a duplicate.
     """
     page = await get_page_by_slug(session, slug, scope_type=scope_type, scope_id=scope_id)
     if page is None:
         return None
+
+    if guard:
+        from app.services.wiki_write_guard import check_machine_rewrite
+        refusal = check_machine_rewrite(page.content_md, new_content_md)
+        if refusal:
+            logger.warning(
+                f"wiki apply_update refused for '{slug}' (scope={scope_type}): "
+                f"{refusal}; keeping stored version v{page.version}"
+            )
+            return page
 
     page.content_md = new_content_md
     if title is not None:
@@ -922,6 +1046,51 @@ async def upsert_page(
 # ---------------------------------------------------------------------------
 # Reserved pages: _index and _log
 # ---------------------------------------------------------------------------
+
+async def render_scoped_index(
+    session: AsyncSession,
+    *,
+    allowed_kt_slugs: Optional[list[str]] = None,
+    department_ids: Optional[list[uuid.UUID]] = None,
+    all_scopes: bool = False,
+    max_pages: int = 2000,
+) -> str:
+    """Wiki catalog markdown limited to the pages the caller may read.
+
+    The stored `_index` page lists every page in its scope regardless of
+    knowledge type, so read paths build the catalog per caller instead.
+    """
+    pages = await list_pages(
+        session,
+        allowed_kt_slugs=allowed_kt_slugs,
+        department_ids=department_ids,
+        all_scopes=all_scopes,
+        limit=max_pages + 1,
+    )
+    truncated = len(pages) > max_pages
+    pages = pages[:max_pages]
+
+    by_type: dict[str, list[WikiPage]] = {}
+    for p in pages:
+        by_type.setdefault(p.page_type or "other", []).append(p)
+
+    lines = ["# Wiki Index", ""]
+    if not by_type:
+        lines.append("_(empty — no pages yet)_")
+    for ptype in sorted(by_type.keys()):
+        lines.append(f"## {ptype.capitalize()}")
+        lines.append("")
+        for p in sorted(by_type[ptype], key=lambda x: (x.title or "").lower()):
+            summary_part = f" — {p.summary}" if p.summary else ""
+            lines.append(f"- [[{p.slug}|{p.title}]]{summary_part}")
+        lines.append("")
+    if truncated:
+        lines.append(
+            f"_Chỉ hiển thị {max_pages} trang mới cập nhật nhất — dùng "
+            "`list_wiki_pages` / `search_wiki` để tìm thêm._"
+        )
+    return "\n".join(lines).rstrip() + "\n"
+
 
 async def regenerate_index(
     session: AsyncSession,

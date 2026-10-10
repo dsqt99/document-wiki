@@ -145,3 +145,118 @@ def build_vietnamese_fts_query_terms(query: str) -> List[str]:
             terms.append(clean_t)
 
     return terms
+
+
+# ---------------------------------------------------------------------------
+# Keyword extraction for the lexical search arm
+# ---------------------------------------------------------------------------
+
+# Question / filler phrases removed before tokenizing (matched accent-folded).
+VI_QUESTION_PHRASES = [
+    "nhu the nao", "the nao", "ra sao", "la gi", "bao nhieu", "bao gio",
+    "o dau", "co phai", "duoc khong", "hay khong", "co khong", "phai khong",
+    "cho biet", "cho toi", "cho minh", "xin hoi", "vui long", "tra cuu",
+    "tim kiem", "gom nhung gi", "gom nhung", "nhung gi", "nhu vay",
+]
+
+# Single tokens dropped from keyword terms. Compared on the ACCENTED lower-case
+# token so "tội" (crime) is never confused with "tôi" (I).
+VI_STOPWORDS = frozenset({
+    "là", "gì", "của", "và", "các", "những", "cho", "với", "về", "theo",
+    "trong", "tại", "thì", "mà", "nào", "không", "có", "được", "bị", "sẽ",
+    "đã", "đang", "này", "đó", "để", "khi", "nếu", "từ", "đến", "một", "như",
+    "thế", "sao", "hay", "hoặc", "tôi", "bạn", "mình", "hỏi", "xin", "ạ",
+    "nhé", "à", "ơi", "nhỉ", "gồm", "nên", "phải", "cần", "hãy", "biết",
+    "ra", "đâu", "ai", "vậy", "ở", "thì", "rằng", "nhưng", "cũng", "lại",
+    "quy_định", "như_thế_nào", "thế_nào", "là_gì", "bao_nhiêu", "bao_giờ",
+    "ở_đâu", "cho_biết", "tra_cứu", "vui_lòng", "xin_hỏi", "những_gì",
+    "hiện_nay", "hiện_hành", "the", "of", "and", "what", "is", "how",
+})
+
+# Official document numbers, matched on accent-folded lower-case text:
+#   13/2023/nd-cp · 13/2023 · 123/qd-ubnd · 01/2024/tt-bca
+# The look-behind rejects the tail of a date ("15/03/2023" → not "03/2023").
+DOC_NUMBER_RE = re.compile(
+    r"(?<![\w/])"
+    r"(\d{1,5}\s*/\s*(?:\d{4}(?:\s*/\s*[a-z][a-z0-9]*(?:\s*-\s*[a-z0-9]+)*)?"
+    r"|[a-z][a-z0-9]*(?:\s*-\s*[a-z0-9]+)+))"
+    r"(?![\w/])"
+)
+DASHES = "‐‑‒–—―−"
+
+_RE_QUOTED = re.compile(r"[\"“”«»]([^\"“”«»]{2,200})[\"“”«»]")
+
+
+def quoted_phrases(query: str) -> List[str]:
+    """Phrases the user put in quotes — matched verbatim (accent-folded, lower)."""
+    return [strip_accents(m.strip()).lower() for m in _RE_QUOTED.findall(query or "") if m.strip()]
+
+
+def keyword_terms(query: str) -> List[str]:
+    """Content terms of `query`: accent-folded, compound-joined ("phong_chay"),
+    question phrases, document numbers and stopwords removed, de-duplicated,
+    in order. Falls back to all tokens when every token is a stopword.
+    """
+    if not query or not query.strip():
+        return []
+    text = unicodedata.normalize("NFC", query).lower()
+    for d in DASHES:
+        text = text.replace(d, "-")
+    folded = strip_accents(text)
+    if len(folded) == len(text):  # 1:1 fold → blank spans in place
+        chars = list(text)
+        spans = [m.span() for m in DOC_NUMBER_RE.finditer(folded)]
+        for ph in VI_QUESTION_PHRASES:
+            spans += [m.span() for m in re.finditer(r"\b" + re.escape(ph) + r"\b", folded)]
+        for a, b in spans:
+            chars[a:b] = " " * (b - a)
+        text = "".join(chars)
+
+    raw = []
+    for tok in tokenize_vi(text).split():
+        tok = re.sub(r"^[^\w]+|[^\w]+$", "", tok)
+        if tok:
+            raw.append(tok)
+
+    def _collect(tokens, use_stop: bool) -> List[str]:
+        out: List[str] = []
+        for tok in tokens:
+            if use_stop and tok in VI_STOPWORDS:
+                continue
+            t = strip_accents(tok)
+            if t and t not in out:
+                out.append(t)
+        return out
+
+    return _collect(raw, True) or _collect(raw, False)
+
+
+def _ts_term(term: str) -> str:
+    """One websearch_to_tsquery operand: compounds become quoted phrases."""
+    words = [w for w in re.split(r"[^\w]+|_", term) if w]
+    if not words:
+        return ""
+    return words[0] if len(words) == 1 else '"' + " ".join(words) + '"'
+
+
+def websearch_all(terms: List[str]) -> str:
+    """websearch_to_tsquery input requiring every term (AND)."""
+    return " ".join(t for t in (_ts_term(x) for x in terms) if t)
+
+
+def websearch_any(terms: List[str]) -> str:
+    """websearch_to_tsquery input matching any term (OR)."""
+    return " or ".join(t for t in (_ts_term(x) for x in terms) if t)
+
+
+def term_coverage(terms: List[str], text: str) -> float:
+    """Fraction of `terms` present in `text` (accent-folded substring match)."""
+    if not terms:
+        return 0.0
+    hay = " " + re.sub(r"\s+", " ", strip_accents((text or "").lower())) + " "
+    hits = 0
+    for t in terms:
+        needle = " ".join(w for w in re.split(r"[^\w]+|_", t) if w)
+        if needle and re.search(r"(?<!\w)" + re.escape(needle) + r"(?!\w)", hay):
+            hits += 1
+    return hits / len(terms)

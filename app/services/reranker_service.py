@@ -60,10 +60,18 @@ class RerankerService:
         degrade_floor: float = 0.15,
         apply_mmr: bool = False,
         mmr_lambda: float = 0.7,
+        prior_key: Optional[str] = None,
+        pin_key: Optional[str] = None,
     ) -> List[dict[str, Any]]:
         """Rerank candidates using remote cross-encoder or local fallback,
 
         with confidence filtering, auto-degradation floor, and MMR diversification.
+
+        `documents` are expected best-first (e.g. RRF order). `prior_key` names a
+        retrieval score blended into the weak local fallback (0.6 local + 0.4
+        normalized prior). Documents with a truthy `pin_key` are kept on top,
+        outside threshold filtering and MMR. When nothing passes the threshold
+        the input order is kept.
         """
         if not documents:
             return []
@@ -72,17 +80,24 @@ class RerankerService:
         if not self.enabled:
             return documents[:limit]
 
+        pinned = [dict(d) for d in documents if pin_key and d.get(pin_key)]
+        rest = [d for d in documents if not (pin_key and d.get(pin_key))]
+        if not rest:
+            return pinned[:limit]
+
         scored_docs: List[dict[str, Any]] = []
         # If remote reranker URL is configured, try calling it
         if self.base_url:
             try:
-                scored_docs = await self._call_remote_reranker(query, documents, text_key=text_key)
+                scored_docs = await self._call_remote_reranker(query, rest, text_key=text_key)
             except Exception as e:
                 logger.warning(f"Remote reranker call to {self.base_url} failed: {e}. Falling back to local scoring.")
 
         # Fallback to local scoring if remote call failed or returned empty
         if not scored_docs:
-            scored_docs = self._local_rerank(query, documents, text_key=text_key)
+            scored_docs = self._local_rerank(query, rest, text_key=text_key)
+            if prior_key:
+                self._blend_prior(scored_docs, prior_key)
 
         # Apply threshold filtering with auto-degradation
         min_thresh = threshold if threshold is not None else getattr(settings, "reranker_threshold", 0.0)
@@ -93,18 +108,37 @@ class RerankerService:
                 filtered = [d for d in scored_docs if d.get("rerank_score", 0.0) >= degrade_floor]
             if filtered:
                 scored_docs = filtered
+            else:
+                # Reranker is not confident about anything: trust retrieval order.
+                order = {id(d): i for i, d in enumerate(rest)}
+                score_of = {d.get("_rr_idx"): d.get("rerank_score", 0.0) for d in scored_docs}
+                scored_docs = [dict(d, rerank_score=score_of.get(order[id(d)], 0.0)) for d in rest]
+                apply_mmr = False
 
         # MMR Diversification: prevent identical repetitive chunks from saturating context
-        if apply_mmr and len(scored_docs) > 1:
+        room = max(limit - len(pinned), 0)
+        if apply_mmr and len(scored_docs) > 1 and room > 0:
             scored_docs = self.diversify_mmr(
                 scored_docs,
                 text_key=text_key,
                 score_key="rerank_score",
                 lambda_param=mmr_lambda,
-                top_n=limit,
+                top_n=room,
             )
 
-        return scored_docs[:limit]
+        for d in scored_docs:
+            d.pop("_rr_idx", None)
+        return (pinned + scored_docs[:room])[:limit]
+
+    @staticmethod
+    def _blend_prior(scored_docs: List[dict[str, Any]], prior_key: str) -> None:
+        """Mix a normalized retrieval prior into local scores, then re-sort."""
+        priors = [float(d.get(prior_key) or 0.0) for d in scored_docs]
+        top = max(priors) if priors else 0.0
+        for d, p in zip(scored_docs, priors):
+            norm = p / top if top > 0 else 0.0
+            d["rerank_score"] = round(0.6 * float(d.get("rerank_score", 0.0)) + 0.4 * norm, 4)
+        scored_docs.sort(key=lambda d: d.get("rerank_score", 0.0), reverse=True)
 
     async def _call_remote_reranker(
         self,
@@ -148,6 +182,7 @@ class RerankerService:
             if idx is not None and 0 <= idx < len(documents):
                 doc_copy = dict(documents[idx])
                 doc_copy["rerank_score"] = float(score)
+                doc_copy["_rr_idx"] = idx
                 scored_docs.append(doc_copy)
 
         scored_docs.sort(key=lambda d: d.get("rerank_score", 0.0), reverse=True)
@@ -163,7 +198,7 @@ class RerankerService:
         q_tokens = set(self._tokenize(query.lower()))
         scored_docs: List[dict[str, Any]] = []
 
-        for doc in documents:
+        for idx, doc in enumerate(documents):
             text = str(doc.get(text_key, "") or "").lower()
             d_tokens = set(self._tokenize(text))
 
@@ -174,11 +209,12 @@ class RerankerService:
                 jaccard = len(intersection) / len(q_tokens.union(d_tokens))
                 coverage = len(intersection) / len(q_tokens)
                 # Exact query substring boost
-                exact_boost = 0.3 if query.lower().strip() in text else 0.0
+                exact_boost = 0.3 if " ".join(self._tokenize(query)) in " ".join(self._tokenize(text)) else 0.0
                 score = (coverage * 0.5) + (jaccard * 0.2) + exact_boost
 
             doc_copy = dict(doc)
             doc_copy["rerank_score"] = round(float(score), 4)
+            doc_copy["_rr_idx"] = idx
             scored_docs.append(doc_copy)
 
         scored_docs.sort(key=lambda d: d.get("rerank_score", 0.0), reverse=True)
@@ -242,5 +278,7 @@ class RerankerService:
 
     @staticmethod
     def _tokenize(text: str) -> List[str]:
-        """Simple alphanumeric tokenizer."""
-        return re.findall(r"\w+", text)
+        """Accent-folded lower-case alphanumeric tokens ("Phòng" == "phong")."""
+        from app.core.vi_tokenizer import strip_accents
+
+        return re.findall(r"\w+", strip_accents(text or "").lower())

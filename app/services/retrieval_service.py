@@ -2,7 +2,7 @@
 Retrieval Service — Advanced Hybrid, Graph-Expanded & Reranked Retrieval Orchestrator.
 
 Combines:
-1. Exact Legal Match Routing: Directly resolves "Điều X Văn bản Y" queries against LegalUnit.
+1. Exact Routing: resolves "Điều X <số hiệu văn bản>" queries against the structured-unit table.
 2. Dual-Arm Hybrid Search: Cosine vector kNN + Vietnamese-tokenized BM25/FTS via RRF.
 3. 1-Hop Graph Neighbor Expansion: Traverses LegalRelation edges (amendments, guidances, repeals)
    to pull in cross-document context from the legal knowledge graph.
@@ -17,6 +17,7 @@ from typing import Any, Optional
 from loguru import logger
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import configure_mappers, selectinload
 
 from app.database.models import LegalRelation, LegalRelationType, LegalUnit, WikiPage
 from app.services.legal_route_service import route_exact_legal_query
@@ -60,8 +61,13 @@ async def expand_graph_neighbors(
             (LegalRelation.target_doc_number == d_num) & (LegalRelation.target_article_number == a_num)
         )
 
+    configure_mappers()  # backref attributes (LegalRelation.source_unit) exist only after configure
     rel_stmt = (
         select(LegalRelation)
+        .options(
+            selectinload(LegalRelation.source_unit),
+            selectinload(LegalRelation.target_unit),
+        )
         .where(
             or_(*conditions),
             LegalRelation.is_effective.is_(True),
@@ -72,7 +78,7 @@ async def expand_graph_neighbors(
     relations = rel_res.scalars().all()
 
     neighbors: list[dict[str, Any]] = []
-    seen_keys: set[tuple[str, str, str]] = set()
+    seen_keys: set[tuple[str, str, str, str]] = set()
 
     for rel in relations:
         rel_type_str = rel.relation_type.value if hasattr(rel.relation_type, "value") else str(rel.relation_type)
@@ -80,7 +86,7 @@ async def expand_graph_neighbors(
         # Determine direction and neighbor details
         if rel.target_unit_id in unit_map or (rel.target_doc_number, rel.target_article_number) in unit_doc_art_map:
             # Incoming: another document modified/guided this unit
-            source_u = getattr(rel, "source_unit", None)
+            source_u = rel.source_unit
             doc_num = (source_u.doc_number if source_u else None) or "Văn bản liên quan"
             art_num = (source_u.unit_number if source_u else None) or ""
             title = (source_u.title if source_u else None) or ""
@@ -89,7 +95,7 @@ async def expand_graph_neighbors(
             target_unit_ref = source_u
         else:
             # Outgoing: this unit references/guides another unit
-            target_u = getattr(rel, "target_unit", None)
+            target_u = rel.target_unit
             doc_num = (target_u.doc_number if target_u else None) or rel.target_doc_number or ""
             art_num = (target_u.unit_number if target_u else None) or rel.target_article_number or ""
             title = (target_u.title if target_u else None) or ""
@@ -97,7 +103,7 @@ async def expand_graph_neighbors(
             direction = "outgoing"
             target_unit_ref = target_u
 
-        dedup_key = (doc_num, art_num, rel_type_str)
+        dedup_key = (doc_num, art_num, rel_type_str, direction)
         if dedup_key in seen_keys:
             continue
         seen_keys.add(dedup_key)
@@ -123,7 +129,7 @@ def format_graph_neighbors_section(neighbors: list[dict[str, Any]]) -> str:
         return ""
 
     lines = [
-        "🔗 **VĂN BẢN & ĐIỀU KHOẢN LIÊN QUAN TRÊN ĐỒ THỊ PHÁP LÝ**:\n"
+        "🔗 **VĂN BẢN & ĐIỀU KHOẢN LIÊN QUAN**:\n"
     ]
     
     label_map = {
@@ -143,9 +149,10 @@ def format_graph_neighbors_section(neighbors: list[dict[str, Any]]) -> str:
         art = n.get("article_number")
         art_ref = f" - Điều {art}" if art else ""
         title = f": {n['title']}" if n.get("title") else ""
-        direction_arrow = "↳" if n.get("direction") == "incoming" else "→"
-
-        lines.append(f"- {direction_arrow} **{doc}{art_ref}** [{rel_label}]{title}")
+        if n.get("direction") == "incoming":
+            lines.append(f"- Bị tác động bởi **{doc}{art_ref}** ({rel_label}){title}")
+        else:
+            lines.append(f"- Văn bản này tác động đến **{doc}{art_ref}** ({rel_label}){title}")
         if n.get("quote_context"):
             lines.append(f"  *Trích yếu*: \"{n['quote_context'][:180]}...\"")
 
@@ -234,14 +241,30 @@ async def unified_search(
     5. Cross-encoder reranking with auto-degradation floor and MMR diversification.
     """
     from app.services import wiki_service
-    import asyncio
 
-    # 1. Exact Legal Routing
-    exact_route_res = await route_exact_legal_query(session, query)
+    failed_arms: list[str] = []
 
-    # 2. Hybrid Search Arms with Fault Tolerance
+    async def _arm(name: str, coro_fn):
+        """Run one arm inside a savepoint so a failing statement does not poison
+        the shared session for later arms. Arms run one after another: an
+        AsyncSession is not safe for concurrent use."""
+        try:
+            async with session.begin_nested():
+                return await coro_fn()
+        except Exception as e:
+            logger.warning(f"unified_search: {name} arm failed: {e}")
+            failed_arms.append(name)
+            return None
+
+    # 1. Exact document-number routing ("Điều X [khoản Y] <số hiệu>")
+    exact_route_res = await _arm(
+        "exact",
+        lambda: route_exact_legal_query(session, query, allowed_source_ids=allowed_source_ids),
+    )
+
+    # 2. Hybrid search arms
     fetch_k = top_k * 2 if apply_reranker else top_k
-    wiki_task = wiki_service.search_pages_hybrid(
+    wiki_hits = await _arm("wiki", lambda: wiki_service.search_pages_hybrid(
         session,
         query_embedding=query_embedding,
         query_text=query,
@@ -250,50 +273,25 @@ async def unified_search(
         department_ids=department_ids,
         project_ids=project_ids,
         all_scopes=all_scopes,
-    )
-    source_task = wiki_service.search_source_chunks_hybrid(
+    )) or []
+    source_hits = await _arm("source", lambda: wiki_service.search_source_chunks_hybrid(
         session,
         query_embedding=query_embedding,
         query_text=query,
         top_k=fetch_k,
         allowed_source_ids=allowed_source_ids,
-    )
+    )) or []
 
-    tasks = [wiki_task, source_task]
+    oos_hits: list = []
     if check_out_of_scope and not all_scopes:
-        oos_task = wiki_service.search_pages_semantic(
+        oos_hits = await _arm("out_of_scope", lambda: wiki_service.search_pages_semantic(
             session,
             query_embedding=query_embedding,
             top_k=5,
             department_ids=department_ids,
             project_ids=project_ids,
             inverse_scope=True,
-        )
-        tasks.append(oos_task)
-
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-
-    wiki_res = results[0]
-    source_res = results[1]
-    oos_res = results[2] if len(results) > 2 else []
-
-    if isinstance(wiki_res, Exception):
-        logger.warning(f"unified_search: wiki arm failed: {wiki_res}")
-        wiki_hits = []
-    else:
-        wiki_hits = wiki_res or []
-
-    if isinstance(source_res, Exception):
-        logger.warning(f"unified_search: source arm failed: {source_res}")
-        source_hits = []
-    else:
-        source_hits = source_res or []
-
-    if isinstance(oos_res, Exception):
-        logger.warning(f"unified_search: out-of-scope arm failed: {oos_res}")
-        oos_hits = []
-    else:
-        oos_hits = oos_res or []
+        )) or []
 
     # 3. Confidence Threshold Floor (drop weak vector-only noise, retain lexical matches)
     def _passes(hit: dict) -> bool:
@@ -308,14 +306,15 @@ async def unified_search(
     # 4. Adjacent Sequential Chunk Merging
     source_hits = merge_sequential_chunks(source_hits)
 
+    total_candidates = len(wiki_hits) + len(source_hits)
+
     # 5. 1-Hop Graph Neighbor Expansion from Top Wiki Pages
     top_page_ids = [h["page"].id for h in wiki_hits[:5] if "page" in h]
     graph_neighbors = []
     if top_page_ids:
-        try:
-            graph_neighbors = await expand_graph_neighbors(session, top_page_ids)
-        except Exception as e:
-            logger.warning(f"unified_search: graph expansion failed: {e}")
+        graph_neighbors = await _arm(
+            "graph", lambda: expand_graph_neighbors(session, top_page_ids)
+        ) or []
 
     # 6. Prepare candidate texts for reranking (using WINNING CHUNKS instead of whole 50KB page)
     candidates: list[dict[str, Any]] = []
@@ -329,7 +328,10 @@ async def unified_search(
         heading = h.get("heading_path") or ""
         header = f"{p.title} — {heading}" if heading else p.title
         text = f"[{header}]\n\n{chunk_text}"
-        candidates.append({"kind": "wiki", "hit": h, "text": text})
+        candidates.append({
+            "kind": "wiki", "hit": h, "text": text,
+            "rrf": h.get("rrf", 0.0), "exact": bool(h.get("exact_match")),
+        })
 
     for h in source_hits:
         c = h.get("chunk")
@@ -338,7 +340,13 @@ async def unified_search(
         doc_title = (getattr(s, "title", "") or getattr(s, "file_name", "") or "") if s else ""
         if doc_title:
             text = f"[{doc_title}]\n\n{text}"
-        candidates.append({"kind": "source", "hit": h, "text": text})
+        candidates.append({
+            "kind": "source", "hit": h, "text": text,
+            "rrf": h.get("rrf", 0.0), "exact": bool(h.get("exact_match")),
+        })
+
+    # Retrieval order (best RRF first) — the reranker's prior and its fallback.
+    candidates.sort(key=lambda c: c["rrf"], reverse=True)
 
     # 7. Cross-encoder Rerank with auto-degrade floor and MMR diversification
     reranker = RerankerService.get_instance()
@@ -351,6 +359,8 @@ async def unified_search(
             threshold=0.2,
             degrade_floor=0.15,
             apply_mmr=apply_mmr,
+            prior_key="rrf",
+            pin_key="exact",
         )
         final_ranked = []
         for cand in reranked_docs:
@@ -358,14 +368,15 @@ async def unified_search(
             cand["hit"]["rerank_score"] = score
             final_ranked.append((cand["kind"], score, cand["hit"]))
     else:
-        # Fallback to RRF ordering
-        unified = [("wiki", h["rrf"], h) for h in wiki_hits] + [("source", h["rrf"], h) for h in source_hits]
-        unified.sort(key=lambda r: r[1], reverse=True)
-        final_ranked = unified[:top_k]
+        # RRF ordering, verbatim document-number/phrase hits first (stable sort)
+        candidates.sort(key=lambda c: c["exact"], reverse=True)
+        final_ranked = [(c["kind"], c["rrf"], c["hit"]) for c in candidates[:top_k]]
 
     return {
         "exact_match": exact_route_res,
         "ranked_results": final_ranked,
         "graph_neighbors": graph_neighbors,
         "out_of_scope_hits": oos_hits,
+        "failed_arms": failed_arms,
+        "total_candidates": total_candidates,
     }

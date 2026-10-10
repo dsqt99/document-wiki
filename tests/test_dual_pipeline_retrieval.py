@@ -18,6 +18,22 @@ from app.services.retrieval_service import (
 )
 
 
+class _Savepoint:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+
+def _mock_session():
+    """AsyncSession stand-in: begin_nested() is a sync call returning an async CM."""
+    session = AsyncMock()
+    session.begin_nested = MagicMock(side_effect=lambda: _Savepoint())
+    return session
+
+
+
 # ---------------------------------------------------------------------------
 # 1. Heading Hierarchy & Table Boundary Protection in Chunking
 # ---------------------------------------------------------------------------
@@ -228,7 +244,7 @@ async def test_reranker_threshold_and_degrade_floor():
 @pytest.mark.asyncio
 async def test_unified_search_fault_tolerant_wiki_error():
     """Verify unified_search does not crash if wiki hybrid search raises an error."""
-    session = AsyncMock()
+    session = _mock_session()
     mock_source = MagicMock()
     mock_source.id = uuid.uuid4()
     mock_source.title = "Nghị định PCCC"
@@ -258,6 +274,7 @@ async def test_unified_search_fault_tolerant_wiki_error():
         kind, score, hit = res["ranked_results"][0]
         assert kind == "source"
         assert hit["source"].title == "Nghị định PCCC"
+        assert "wiki" in res["failed_arms"]
 
 
 if __name__ == "__main__":

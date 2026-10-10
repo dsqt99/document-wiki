@@ -16,6 +16,22 @@ from app.services.retrieval_service import (
 )
 
 
+class _Savepoint:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+
+def _mock_session():
+    """AsyncSession stand-in: begin_nested() is a sync call returning an async CM."""
+    session = AsyncMock()
+    session.begin_nested = MagicMock(side_effect=lambda: _Savepoint())
+    return session
+
+
+
 @pytest.mark.asyncio
 async def test_expand_graph_neighbors_incoming_amendment():
     """Verify 1-hop expansion retrieves incoming amending regulations."""
@@ -148,7 +164,9 @@ def test_format_graph_neighbors_section():
     ]
 
     formatted = format_graph_neighbors_section(neighbors)
-    assert "🔗 **VĂN BẢN & ĐIỀU KHOẢN LIÊN QUAN TRÊN ĐỒ THỊ PHÁP LÝ**" in formatted
+    assert "🔗 **VĂN BẢN & ĐIỀU KHOẢN LIÊN QUAN**" in formatted
+    assert "Bị tác động bởi **50/2024/NĐ-CP" in formatted
+    assert "Văn bản này tác động đến **149/2020/TT-BCA" in formatted
     assert "50/2024/NĐ-CP" in formatted
     assert "149/2020/TT-BCA" in formatted
     assert "Sửa đổi, bổ sung" in formatted
@@ -157,7 +175,7 @@ def test_format_graph_neighbors_section():
 @pytest.mark.asyncio
 async def test_unified_search_integration():
     """Verify unified_search orchestrates exact routing, hybrid arms, and reranking."""
-    session = AsyncMock()
+    session = _mock_session()
     page_id = uuid.uuid4()
     mock_page = WikiPage(
         id=page_id,
