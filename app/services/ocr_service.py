@@ -5,12 +5,181 @@ Supports dynamic configuration from Database with fallback to environment variab
 
 import asyncio
 import base64
+import re
+import unicodedata
 from datetime import datetime, timezone
 from typing import Any, Optional
 
 from loguru import logger
 
 from app.config import settings
+
+
+# ---------------------------------------------------------------------------
+# OCR output validation (ported from Tencent WeKnora ocr_sanitizer.go)
+# ---------------------------------------------------------------------------
+
+# Whole-reply "there is no text" answers that OCR / vision models produce for
+# blank pages. Compared after lowercasing, stripping HTML tags, markdown
+# emphasis and trailing punctuation.
+_KNOWN_EMPTY_REPLIES = frozenset(
+    {
+        "no text",
+        "no text content",
+        "no text found",
+        "no text detected",
+        "no readable text",
+        "no content",
+        "empty",
+        "none",
+        "n/a",
+        "không có văn bản",
+        "không có nội dung",
+        "không có nội dung văn bản",
+        "không có chữ",
+        "không có văn bản nào",
+        "không tìm thấy văn bản",
+        "không tìm thấy nội dung",
+        "không phát hiện văn bản",
+        "không nhận dạng được văn bản",
+        "trang trống",
+        "trang này không có văn bản",
+        "hình ảnh không có văn bản",
+        "ảnh không có văn bản",
+        "无文字内容",
+        "无法识别",
+        "图片中没有文字",
+        "图片中没有可识别的文字",
+    }
+)
+
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+_FULL_FENCE_RE = re.compile(r"^\s*```[a-zA-Z]*[ \t]*\n(.*?)\n\s*```\s*$", re.DOTALL)
+_MANY_NEWLINES_RE = re.compile(r"\n{3,}")
+
+# Repetition detection parameters (same as WeKnora).
+_REP_MAX_PERIOD = 64
+_REP_MIN_SPAN = 512
+_REP_MIN_CYCLES = 32
+_REP_REJECT_RATIO = 0.8
+
+
+def _is_known_empty_reply(text: str) -> bool:
+    plain = _HTML_TAG_RE.sub("", text or "")
+    plain = plain.replace("&#46;", ".")
+    plain = unicodedata.normalize("NFC", plain).strip().lower()
+    plain = plain.strip("*_`#> \t\r\n\"'“”")
+    plain = plain.rstrip(".!?。！？…")
+    plain = " ".join(plain.split())
+    return plain in _KNOWN_EMPTY_REPLIES
+
+
+def _has_readable_char(text: str) -> bool:
+    for ch in text:
+        if ch.isalnum():
+            return True
+        # Math / currency symbols count (e.g. "±"), table delimiters do not.
+        if unicodedata.category(ch).startswith("S") and ch not in "|~`":
+            return True
+    return False
+
+
+def _repetition_coverage(text: str) -> float:
+    """Fraction of (whitespace-normalized) text covered by long periodic runs.
+
+    Counts the union of runs with period 1..64 that span >= 512 chars and
+    >= 32 cycles, so split loops and loops with different periods separated
+    by readable text are all counted, but each char only once. O(64*n).
+    """
+    runes = " ".join(text.split())
+    n = len(runes)
+    if n < _REP_MIN_SPAN:
+        return 0.0
+    coverage = [0] * (n + 1)
+    for period in range(1, min(_REP_MAX_PERIOD, n // _REP_MIN_CYCLES) + 1):
+        matched = 0
+        for i in range(period, n + 1):
+            if i < n and runes[i] == runes[i - period]:
+                matched += 1
+                continue
+            span = matched + period
+            if span >= _REP_MIN_SPAN and span >= period * _REP_MIN_CYCLES:
+                coverage[i - span] += 1
+                coverage[i] -= 1
+            matched = 0
+    active = repeated = 0
+    for i in range(n):
+        active += coverage[i]
+        if active > 0:
+            repeated += 1
+    return repeated / n
+
+
+def _trim_trailing_repetition(text: str) -> str:
+    """Cut a long repetition loop at the end of ``text``, keeping one cycle.
+
+    Decoding loops usually start late in the page and run until the token
+    budget is exhausted. When the loop does not dominate the page (checked by
+    the caller) the readable prefix is kept instead of discarding everything.
+    """
+    n = len(text)
+    if n < _REP_MIN_SPAN:
+        return text
+    best_start: Optional[int] = None
+    for period in range(1, min(_REP_MAX_PERIOD, n // _REP_MIN_CYCLES) + 1):
+        i = n - 1
+        while i - period >= 0 and text[i] == text[i - period]:
+            i -= 1
+        # text[i+1-period : n] is periodic with this period.
+        start = i + 1 - period
+        span = n - start
+        if span >= _REP_MIN_SPAN and span >= period * _REP_MIN_CYCLES:
+            keep_until = start + period
+            if best_start is None or keep_until < best_start:
+                best_start = keep_until
+    if best_start is None:
+        return text
+    return text[:best_start].rstrip()
+
+
+def validate_ocr_text(text: Optional[str], *, truncated: bool = False) -> tuple[str, Optional[str]]:
+    """Validate and clean OCR / vision-LLM output for one page.
+
+    Returns ``(cleaned_text, reason)``. ``reason`` is None when the text is
+    usable; otherwise one of ``"empty_content"``, ``"no_text"``,
+    ``"no_readable_content"``, ``"repetitive_content"``, ``"truncated"`` and
+    the caller should treat the page as if OCR produced nothing.
+    """
+    cleaned = (text or "").strip()
+    m = _FULL_FENCE_RE.match(cleaned)
+    if m:
+        cleaned = m.group(1).strip()
+    cleaned = _MANY_NEWLINES_RE.sub("\n\n", cleaned.replace("\r\n", "\n")).strip()
+
+    if not cleaned:
+        return "", "empty_content"
+    if _is_known_empty_reply(cleaned):
+        return "", "no_text"
+    if not _has_readable_char(_HTML_TAG_RE.sub("", cleaned)):
+        return "", "no_readable_content"
+    if _repetition_coverage(cleaned) >= _REP_REJECT_RATIO:
+        return "", "repetitive_content"
+
+    trimmed = _trim_trailing_repetition(cleaned)
+    if trimmed != cleaned:
+        logger.warning(
+            f"OCR output ends in a repetition loop; trimmed {len(cleaned) - len(trimmed)} chars "
+            f"(kept {len(trimmed)})"
+        )
+        if not trimmed or not _has_readable_char(trimmed):
+            return "", "repetitive_content"
+        cleaned = trimmed
+
+    if truncated:
+        # Partial output (finish_reason == "length") is incomplete and must not
+        # be indexed as a successful page (WeKnora: ErrTruncatedCompletion).
+        return cleaned, "truncated"
+    return cleaned, None
 
 
 def normalize_ocr_base_url(url: str) -> str:
@@ -93,8 +262,13 @@ class OCRService:
         base_url: Optional[str] = None,
         api_key: Optional[str] = None,
         model: Optional[str] = None,
-    ) -> str:
-        """Synchronous helper executed in thread pool for streaming completion."""
+        with_finish_reason: bool = False,
+    ) -> Any:
+        """Synchronous helper executed in thread pool for streaming completion.
+
+        Returns the text; with ``with_finish_reason=True`` returns
+        ``(text, finish_reason)`` so callers can detect truncation ("length").
+        """
         client = self._get_client(base_url=base_url, api_key=api_key)
         target_model = model or settings.ocr_model
         data_url = f"data:{mime_type};base64,{b64_image}"
@@ -117,11 +291,21 @@ class OCRService:
         )
 
         chunks: list[str] = []
+        finish_reason: Optional[str] = None
         for chunk in response:
-            if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
-                chunks.append(chunk.choices[0].delta.content)
+            if not chunk.choices:
+                continue
+            choice = chunk.choices[0]
+            if choice.delta and choice.delta.content:
+                chunks.append(choice.delta.content)
+            fr = getattr(choice, "finish_reason", None)
+            if fr:
+                finish_reason = fr
 
-        return "".join(chunks).strip()
+        text = "".join(chunks).strip()
+        if with_finish_reason:
+            return text, finish_reason
+        return text
 
     async def test_connection(
         self,
@@ -220,7 +404,7 @@ class OCRService:
         start_time = datetime.now(timezone.utc)
 
         try:
-            out_text = await asyncio.to_thread(
+            result = await asyncio.to_thread(
                 self._call_ocr_stream_sync,
                 b64_image,
                 mime_type,
@@ -228,7 +412,13 @@ class OCRService:
                 effective_base_url,
                 effective_api_key,
                 effective_model,
+                with_finish_reason=True,
             )
+            # Tolerate mocks / overrides that still return a plain string.
+            if isinstance(result, tuple):
+                out_text, finish_reason = result
+            else:
+                out_text, finish_reason = result, None
 
             try:
                 from app.ai.tracing import record_generation
@@ -248,9 +438,16 @@ class OCRService:
             except Exception:
                 pass
 
-            if out_text and out_text.strip():
-                return out_text.strip()
-            return None
+            cleaned, reason = validate_ocr_text(
+                out_text, truncated=(finish_reason == "length")
+            )
+            if reason:
+                logger.warning(
+                    f"Dedicated OCR output rejected ({reason}); raw_len={len(out_text or '')}, "
+                    f"finish_reason={finish_reason}; preview: {(out_text or '')[:120]!r}"
+                )
+                return None
+            return cleaned
 
         except Exception as e:
             logger.warning(f"Dedicated OCR failed: {e}")
@@ -277,9 +474,6 @@ class OCRService:
 
 
 ocr_service = OCRService()
-
-
-import re
 
 
 OCR_REFINE_PROMPT = (
@@ -369,6 +563,18 @@ async def refine_ocr_with_llm(
             f"ratio={refined_len / max(draft_len, 1):.2f}); preview: {refined[:200]!r}; keeping OCR draft"
         )
         return None
+
+    # A repetition loop makes the answer *longer* than the draft, so the
+    # length check above does not catch it; validate the content itself.
+    validated, reason = validate_ocr_text(refined)
+    if reason:
+        logger.warning(
+            f"OCR LLM refine output rejected ({reason}); refined_len={refined_len}, "
+            f"draft_len={draft_len}; keeping OCR draft"
+        )
+        return None
+    refined = validated
+    refined_len = len(refined)
 
     logger.info(
         f"OCR LLM refine successful: draft_len={draft_len} -> refined_len={refined_len}"

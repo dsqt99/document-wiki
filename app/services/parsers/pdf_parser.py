@@ -273,7 +273,7 @@ class PDFParser(BaseParser):
                     scanned_indices.append(idx)
 
         # Step 3: Trigger OCR for target pages if providers available
-        from app.services.ocr_service import ocr_service, refine_ocr_with_llm
+        from app.services.ocr_service import ocr_service, refine_ocr_with_llm, validate_ocr_text
 
         is_ocr_ready = ocr_service.is_configured(base_url=ocr_base_url, api_key=ocr_api_key)
         has_vision = bool(vision_provider and ocr_fallback_vision)
@@ -342,6 +342,16 @@ class PDFParser(BaseParser):
                             logger.warning(
                                 f"PDFParser: Vision OCR fallback failed on page {idx+1}: {e}"
                             )
+                        if ocr_res:
+                            cleaned, reason = validate_ocr_text(ocr_res)
+                            if reason:
+                                logger.warning(
+                                    f"PDFParser: Vision OCR fallback output rejected on page "
+                                    f"{idx+1} ({reason}); keeping native text"
+                                )
+                                ocr_res = None
+                            else:
+                                ocr_res = cleaned
 
                     if ocr_res and ocr_res.strip():
                         raw_pages[idx] = ocr_res.strip()
