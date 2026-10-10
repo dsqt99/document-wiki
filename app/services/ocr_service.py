@@ -279,28 +279,49 @@ class OCRService:
 ocr_service = OCRService()
 
 
+import re
+
+
 OCR_REFINE_PROMPT = (
-    "Bạn là chuyên gia hiệu đính văn bản hành chính, pháp luật tiếng Việt.\n"
-    "Dưới đây là bản OCR của trang tài liệu trong ảnh đính kèm. Đối chiếu từng dòng với ảnh và sửa:\n"
-    "- Lỗi nhận dạng ký tự, dấu tiếng Việt, chữ bị dính hoặc tách sai.\n"
-    "- Số hiệu văn bản, ngày tháng, con số, tên riêng, từ viết tắt ngành (CAND, CSGT, PCCC, ANTT, QĐ, NĐ, TT...).\n"
-    "- Cấu trúc bảng (Markdown Table) và đề mục (Phần, Chương, Mục, Điều, Khoản, Điểm).\n"
-    "- Bổ sung phần chữ có trong ảnh nhưng bản OCR bỏ sót.\n"
-    "Quy tắc: chỉ trả về TOÀN BỘ văn bản đã hiệu đính dạng Markdown, không lời bình, không tóm tắt, "
-    "không bọc trong ```; giữ nguyên nội dung đúng, không tự suy diễn.\n\n"
-    "=== BẢN OCR ===\n{draft}\n=== HẾT BẢN OCR ==="
+    "Bạn là trợ lý AI chuyên trách hiệu đính và số hóa văn bản hành chính, pháp luật tiếng Việt.\n"
+    "Nhiệm vụ: Đối chiếu bản OCR thô bên dưới với ảnh chụp trang tài liệu đính kèm để tạo ra văn bản Markdown hoàn chỉnh và chính xác 100%.\n\n"
+    "YÊU CẦU BẮT BUỘC:\n"
+    "1. CHÉP LẠI TOÀN BỘ VĂN BẢN từ đầu đến cuối trang tài liệu (đã sửa toàn bộ lỗi OCR). "
+    "TUYỆT ĐỐI KHÔNG tóm tắt, TUYỆT ĐỐI KHÔNG chỉ liệt kê danh sách lỗi sửa, KHÔNG bỏ sót bất kỳ dòng nào.\n"
+    "2. Sửa triệt để các lỗi nhận dạng: dấu tiếng Việt, chữ dính hoặc ngắt sai, số hiệu văn bản, ngày tháng, bảng biểu (dùng Markdown table), các từ viết tắt chuyên ngành (CAND, CSGT, PCCC, ANTT, QĐ, NĐ, TT...).\n"
+    "3. Bổ sung các đoạn, câu hoặc chữ có trong ảnh nhưng bản OCR bị thiếu.\n"
+    "4. ĐỊNH DẠNG ĐẦU RA: CHỈ xuất duy nhất nội dung văn bản hoàn chỉnh. "
+    "KHÔNG có lời chào hỏi, KHÔNG có câu mở đầu ('Dưới đây là...'), KHÔNG có lời kết hay giải thích.\n\n"
+    "=== BẢN OCR THÔ CẦN HIỆU ĐÍNH ===\n{draft}\n=== HẾT BẢN OCR THÔ ==="
 )
 
-# A refined page much shorter than the OCR draft is most likely truncated.
+# A refined page much shorter than the OCR draft is most likely truncated or a non-compliant summary.
 _MIN_REFINE_RATIO = 0.5
 
 
 def _strip_fences(text: str) -> str:
     t = text.strip()
+    if not t:
+        return ""
+
+    # Check if wrapped completely in ```markdown ... ```
+    m = re.match(r"^```(?:markdown|md)?\s*\n?(.*?)\n?```$", t, re.DOTALL)
+    if m:
+        return m.group(1).strip()
+
+    # If conversational text surrounds a markdown code block, extract the largest block
+    blocks = re.findall(r"```(?:markdown|md)?\s*\n?(.*?)\n?```", t, re.DOTALL)
+    if blocks:
+        largest = max(blocks, key=len).strip()
+        if largest:
+            return largest
+
+    # Fallback: strip leading / trailing fences
     if t.startswith("```"):
-        t = t.split("\n", 1)[1] if "\n" in t else ""
-        if t.rstrip().endswith("```"):
-            t = t.rstrip()[:-3]
+        lines = t.split("\n", 1)
+        t = lines[1] if len(lines) > 1 else ""
+    if t.rstrip().endswith("```"):
+        t = t.rstrip()[:-3]
     return t.strip()
 
 
@@ -309,6 +330,7 @@ async def refine_ocr_with_llm(
     image_bytes: bytes,
     mime_type: str,
     draft: str,
+    max_tokens: int = 4096,
 ) -> Optional[str]:
     """Have the Vision LLM proofread an OCR draft against the page image.
 
@@ -318,16 +340,37 @@ async def refine_ocr_with_llm(
     if vision_provider is None or not draft.strip():
         return None
     try:
+        import inspect
+
+        sig = inspect.signature(vision_provider.analyze_image)
+        kwargs = {}
+        if "max_tokens" in sig.parameters or any(
+            p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+        ):
+            kwargs["max_tokens"] = max_tokens
+
         out = await vision_provider.analyze_image(
             image_bytes,
             mime_type=mime_type,
             prompt=OCR_REFINE_PROMPT.format(draft=draft.strip()),
+            **kwargs,
         )
     except Exception as e:
         logger.warning(f"OCR LLM refine failed: {e}")
         return None
+
     refined = _strip_fences(out or "")
-    if len(refined) < len(draft.strip()) * _MIN_REFINE_RATIO:
-        logger.warning("OCR LLM refine output looks truncated; keeping OCR draft")
+    draft_len = len(draft.strip())
+    refined_len = len(refined)
+
+    if refined_len < draft_len * _MIN_REFINE_RATIO:
+        logger.warning(
+            f"OCR LLM refine output looks truncated (refined_len={refined_len} vs draft_len={draft_len}, "
+            f"ratio={refined_len / max(draft_len, 1):.2f}); preview: {refined[:200]!r}; keeping OCR draft"
+        )
         return None
+
+    logger.info(
+        f"OCR LLM refine successful: draft_len={draft_len} -> refined_len={refined_len}"
+    )
     return refined

@@ -34,3 +34,30 @@ async def test_refine_keeps_draft_on_truncated_or_failed_answer():
     assert await refine_ocr_with_llm(FakeVision(error=RuntimeError("429")), b"img", "image/jpeg", DRAFT) is None
     assert await refine_ocr_with_llm(None, b"img", "image/jpeg", DRAFT) is None
     assert await refine_ocr_with_llm(FakeVision("x"), b"img", "image/jpeg", "  ") is None
+
+
+@pytest.mark.asyncio
+async def test_refine_extracts_markdown_with_conversational_preamble():
+    fixed = "Điều 1. Phạm vi điều chỉnh\nNghị định này quy định về cư trú."
+    answer = f"Dưới đây là văn bản sau khi hiệu đính:\n```markdown\n{fixed}\n```\nHy vọng bản hiệu đính giúp ích cho bạn."
+    vision = FakeVision(answer)
+    assert await refine_ocr_with_llm(vision, b"img", "image/jpeg", DRAFT) == fixed
+
+
+class FakeVisionWithMaxTokens:
+    def __init__(self, answer):
+        self.answer = answer
+        self.max_tokens = None
+
+    async def analyze_image(self, image_data, mime_type="image/jpeg", prompt=None, max_tokens=None):
+        self.max_tokens = max_tokens
+        return self.answer
+
+
+@pytest.mark.asyncio
+async def test_refine_passes_max_tokens():
+    fixed = "Điều 1. Phạm vi điều chỉnh\nNghị định này quy định về cư trú."
+    vision = FakeVisionWithMaxTokens(fixed)
+    res = await refine_ocr_with_llm(vision, b"img", "image/jpeg", DRAFT, max_tokens=2048)
+    assert res == fixed
+    assert vision.max_tokens == 2048

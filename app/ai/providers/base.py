@@ -147,6 +147,7 @@ class VisionProvider(ABC):
         image_data: bytes,
         mime_type: str = "image/jpeg",
         prompt: Optional[str] = None,
+        max_tokens: Optional[int] = None,
     ) -> str:
         """Analyze an image and return a text description."""
         ...

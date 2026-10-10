@@ -341,6 +341,7 @@ class OpenAIVision(VisionProvider):
         image_data: bytes,
         mime_type: str = "image/jpeg",
         prompt: Optional[str] = None,
+        max_tokens: Optional[int] = None,
     ) -> str:
         from datetime import datetime, timezone
         from app.ai.tracing import record_generation
@@ -372,6 +373,8 @@ class OpenAIVision(VisionProvider):
         }
         if not self._is_reasoning_or_gpt5():
             kwargs["temperature"] = 0.2
+        if max_tokens is not None:
+            kwargs["max_completion_tokens" if self._is_reasoning_or_gpt5() else "max_tokens"] = max_tokens
 
         start_time = datetime.now(timezone.utc)
         for attempt in range(3):

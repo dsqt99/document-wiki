@@ -329,6 +329,7 @@ class GoogleVision(VisionProvider):
         image_data: bytes,
         mime_type: str = "image/jpeg",
         prompt: Optional[str] = None,
+        max_tokens: Optional[int] = None,
     ) -> str:
         from datetime import datetime, timezone
         from google.genai import types
@@ -343,12 +344,16 @@ class GoogleVision(VisionProvider):
 
         start_time = datetime.now(timezone.utc)
         try:
+            config_kwargs: dict = {}
+            if max_tokens is not None:
+                config_kwargs["max_output_tokens"] = max_tokens
             response = await self.client.aio.models.generate_content(
                 model=self.config.model_id,
                 contents=[
                     types.Part.from_bytes(data=image_data, mime_type=mime_type),
                     prompt,
                 ],
+                config=types.GenerateContentConfig(**config_kwargs) if config_kwargs else None,
             )
             out_text = response.text or ""
             usage_dict = None
