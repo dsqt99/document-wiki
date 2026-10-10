@@ -1009,7 +1009,7 @@ async def propose_create_page(
         raise HTTPException(
             409,
             f"Slug '{body.slug}' already exists in {body.scope_type}. "
-            "Use propose_wiki_edit to edit the existing page.",
+            "Use edit_wiki_page to edit the existing page.",
         )
 
     suggested_metadata = {

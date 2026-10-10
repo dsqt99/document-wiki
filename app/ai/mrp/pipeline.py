@@ -59,6 +59,14 @@ async def run_commit_phase(
 
     total_created = 0
     total_updated = 0
+    # Pages whose writer failed (content is the failure stub) — never published.
+    from app.services.wiki_write_guard import is_failure_stub
+    failed_slugs = sorted({pr.slug for pr in page_results if is_failure_stub(pr.content_md)})
+    if failed_slugs:
+        logger.warning(
+            f"MRP COMMIT: skipping {len(failed_slugs)} page(s) whose writer failed "
+            f"for source={source.id}: {failed_slugs}"
+        )
 
     # Provision LLM for merge operations
     from app.ai.registry import ProviderRegistry
@@ -76,6 +84,10 @@ async def run_commit_phase(
         pages_updated = 0
 
         for pr in page_results:
+            if is_failure_stub(pr.content_md):
+                # Writer failed: never write the "(Page generation failed…)"
+                # stub — not over an existing page, nor as a new junk page.
+                continue
             try:
                 # Acquire advisory lock per (slug, scope) to prevent race conditions
                 from sqlalchemy import func, select
@@ -193,7 +205,11 @@ async def run_commit_phase(
         src.pipeline_phase = "commit"
         src.wiki_status = "ready"
         src.wiki_progress = 100
-        src.wiki_progress_message = "Done"
+        src.wiki_progress_message = (
+            f"Done ({len(failed_slugs)} page(s) skipped — generation failed: "
+            f"{', '.join(failed_slugs[:5])})"
+            if failed_slugs else "Done"
+        )
         src.wiki_error_message = None
         src.auto_recover_count = 0
         from app.services.source_status import update_source_dual_status
@@ -205,7 +221,11 @@ async def run_commit_phase(
         f"MRP COMMIT complete: +{pages_created} created, ~{pages_updated} updated "
         f"for source={source.id}"
     )
-    return {"pages_created": pages_created, "pages_updated": pages_updated}
+    return {
+        "pages_created": pages_created,
+        "pages_updated": pages_updated,
+        "pages_skipped": failed_slugs,
+    }
 
 
 # ---------------------------------------------------------------------------

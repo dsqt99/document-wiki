@@ -50,7 +50,7 @@ def create_mcp_server() -> FastMCP:
             "## Tool usage order\n"
             "1. `search_wiki` — first stop for most questions (wiki synthesizes sources)\n"
             "2. `read_wiki_page` — read a specific page by slug from search results\n"
-            "3. `read_wiki_index` — browse all available wiki pages\n"
+            "3. `read_wiki_index` — browse the wiki pages you can access\n"
             "4. `get_source_outline` / `get_source_pages` — only for exact citations "
             "or details the wiki has paraphrased\n"
             "\n"

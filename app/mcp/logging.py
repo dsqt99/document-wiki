@@ -100,7 +100,7 @@ def _estimate_result_count(result_text: str, tool_name: str) -> Optional[int]:
             except ValueError:
                 continue
     # Read-style tools that return one page/source — count = 1 on success
-    if tool_name in {"read_wiki_page", "get_source", "review_draft"} and _classify_status(result_text) == "ok":
+    if tool_name in {"read_wiki_page", "get_source"} and _classify_status(result_text) == "ok":
         return 1
     return None
 

@@ -162,7 +162,6 @@ Get a token from an Arkon admin. Tokens are scoped to specific knowledge types �
 |-------|---------|------------|
 | `/arkon-query` | "what do we know about X", "find in KB", "query:" | Any (scoped by token) |
 | `/arkon-edit` | "update wiki", "propose edit", "fix this page" | Contributor+ |
-| `/arkon-review` | "review drafts", "approve draft", "check queue" | Editor/Admin |
 
 Skills live in `skills/`. Claude Code picks them up automatically when working in this repo.
 
@@ -170,4 +169,4 @@ Skills live in `skills/`. Claude Code picks them up automatically when working i
 
 - **Wiki first, sources second.** `search_wiki` → `read_wiki_page` → source drill-down only for precise citations.
 - **Your token is your scope.** RBAC is enforced server-side; "access denied" means contact an admin.
-- **Always confirm before writing.** `propose_wiki_edit` and `edit_wiki_page` modify the live KB — get user approval first.
+- **Always confirm before writing.** `edit_wiki_page` and `create_wiki_page` publish immediately to the live KB (no review queue) — get user approval first.

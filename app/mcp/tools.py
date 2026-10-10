@@ -23,8 +23,6 @@ from app.mcp.logging import current_identity, logged_tool
 from app.mcp.permissions import (
     ANY_AUTHENTICATED,
     CAN_CONTRIBUTE_WIKI,
-    CAN_CREATE_WIKI_DIRECT,
-    CAN_REVIEW_WIKI,
     kb_tool,
 )
 
@@ -150,8 +148,7 @@ async def _get_allowed_source_ids(identity, session: Optional[AsyncSession] = No
 async def _can_review_page(session: AsyncSession, employee, page) -> bool:
     """wiki:write:all globally, or admin.
 
-    Mirrors REST `_can_review` — workspace/project scopes were removed, so
-    there is no per-workspace editor path anymore.
+    Mirrors REST `_can_review`.
     """
     from app.services.permission_engine import _get_user_permissions
     if employee.role == "admin":
@@ -193,8 +190,8 @@ async def _format_oos_hint(session: AsyncSession, oos_hits: list) -> str:
     """Aggregate out-of-scope search hits into a short "ask for access" hint.
 
     Intentionally leaks ONLY (count, scope_type, scope_name) — never titles
-    or summaries — to avoid information disclosure across department or
-    workspace boundaries. A page title can itself be sensitive
+    or summaries — to avoid information disclosure across department
+    boundaries. A page title can itself be sensitive
     (e.g. "Q1 layoffs — Engineering").
     """
     if not oos_hits:
@@ -271,7 +268,7 @@ def register_tools(mcp: FastMCP):
             portal link shown so the user can open or download the original.
 
         If the response includes an "Out-of-scope matches" section, pages matching
-        the query exist but live in a department or workspace the caller is not a
+        the query exist but live in a department the caller is not a
         member of — tell the user to request access instead of assuming it's missing.
 
         Args:
@@ -293,14 +290,8 @@ def register_tools(mcp: FastMCP):
         from app.database import async_session_factory
         from app.services import wiki_service
 
-        # Workspace/project memberships were removed; identity no longer carries
-        # project_ids, so project-scoped filtering is disabled here.
-        proj_uuids = None
-
-        import asyncio
 
         from app.services.retrieval_service import (
-            expand_graph_neighbors,
             format_graph_neighbors_section,
             unified_search,
         )
@@ -323,7 +314,6 @@ def register_tools(mcp: FastMCP):
                 top_k=top_k,
                 allowed_kt_slugs=identity.allowed_knowledge_types,
                 department_ids=identity.department_ids,
-                project_ids=proj_uuids,
                 all_scopes=identity.is_admin,
                 allowed_source_ids=allowed_source_ids,
                 apply_reranker=True,
@@ -335,25 +325,42 @@ def register_tools(mcp: FastMCP):
             ranked = search_out.get("ranked_results", [])
             graph_neighbors = search_out.get("graph_neighbors", [])
             oos_hits = search_out.get("out_of_scope_hits", [])
+            failed_arms = search_out.get("failed_arms", [])
+            total_candidates = search_out.get("total_candidates", len(ranked))
             if oos_hits:
                 oos_hint = await _format_oos_hint(session, oos_hits)
 
+        arm_labels = {"wiki": "trang wiki", "source": "văn bản gốc", "exact": "tra cứu theo số hiệu"}
+        failed_main = [a for a in ("wiki", "source") if a in failed_arms]
+        if len(failed_main) == 2 and not exact_match:
+            return (
+                "Tìm kiếm thất bại: cả trang wiki và văn bản gốc đều bị lỗi. "
+                "Thử lại sau hoặc báo quản trị viên."
+            )
+        failure_note = ""
+        failed_shown = [arm_labels[a] for a in ("wiki", "source", "exact") if a in failed_arms]
+        if failed_shown:
+            failure_note = (
+                f"⚠️ Tìm kiếm trên {', '.join(failed_shown)} bị lỗi; "
+                "kết quả có thể chưa đầy đủ.\n"
+            )
+
         exact_block = ""
-        if exact_match and exact_match.get("matched"):
+        if exact_match and exact_match.get("found"):
             exact_block = (
-                "🎯 **KẾT QUẢ TRA CỨU CHÍNH XÁC VĂN BẢN QUY PHẠM PHÁP LUẬT**:\n"
+                "🎯 **KẾT QUẢ TRA CỨU CHÍNH XÁC THEO SỐ HIỆU VĂN BẢN**:\n"
                 f"- **Văn bản**: {exact_match.get('doc_number', '')} — {exact_match.get('full_path', '')}\n"
                 f"- **Tiêu đề**: {exact_match.get('title') or ''}\n"
                 f"- **Nội dung**:\n{exact_match.get('content', '')}\n"
             )
-            if exact_match.get("validity_callout"):
-                exact_block += f"\n{exact_match['validity_callout']}\n"
+            if exact_match.get("warning_callout"):
+                exact_block += f"\n{exact_match['warning_callout']}\n"
             exact_block += "\n---\n"
 
         if not ranked:
             if exact_block:
-                return exact_block
-            base = f"No knowledge base matches found for: \"{query}\""
+                return failure_note + exact_block
+            base = failure_note + f"No knowledge base matches found for: \"{query}\""
             if oos_hint:
                 return f"{base}\n\n{oos_hint}"
             return base
@@ -371,11 +378,15 @@ def register_tools(mcp: FastMCP):
             return "🔑 từ khóa"  # FTS-only match, no cosine
 
         lines = []
+        if failure_note:
+            lines.append(failure_note)
         if exact_block:
             lines.append(exact_block)
         lines.append(f"**KB search — {len(ranked)} result(s) for: \"{query}\"**\n")
         for kind, _score, hit in ranked:
             score_label = _score_label(hit)
+            if hit.get("exact_match"):
+                score_label = "🎯 khớp chính xác · " + score_label
             if kind == "wiki":
                 page = hit["page"]
                 kt_label = (
@@ -407,6 +418,12 @@ def register_tools(mcp: FastMCP):
                 )
             lines.append(entry)
 
+        if total_candidates > len(ranked):
+            lines.append(
+                f"\n_Hiển thị {len(ranked)}/{total_candidates} ứng viên phù hợp — "
+                f"tăng `top_k` (tối đa 50) hoặc thu hẹp truy vấn để xem thêm._"
+            )
+
         if graph_neighbors:
             lines.append("")
             lines.append(format_graph_neighbors_section(graph_neighbors))
@@ -420,9 +437,9 @@ def register_tools(mcp: FastMCP):
     @logged_tool("read_wiki_index")
     async def read_wiki_index() -> str:
         """
-        Read the wiki catalog (`_index` page).
+        Read the wiki catalog.
 
-        The index lists every wiki page grouped by type, with one-line
+        Lists the wiki pages you can access, grouped by type, with one-line
         summaries. Use this to discover the shape of the wiki before drilling
         into specific pages.
         """
@@ -435,11 +452,12 @@ def register_tools(mcp: FastMCP):
         from app.services import wiki_service
 
         async with async_session_factory() as session:
-            page = await wiki_service.get_page_by_slug(session, wiki_service.INDEX_SLUG)
-
-        if not page:
-            return "_(wiki index not initialized yet)_"
-        return page.content_md
+            return await wiki_service.render_scoped_index(
+                session,
+                allowed_kt_slugs=identity.allowed_knowledge_types,
+                department_ids=identity.department_ids,
+                all_scopes=identity.is_admin,
+            )
 
     @kb_tool(mcp, requires=ANY_AUTHENTICATED)
     @logged_tool("read_wiki_page", query_arg="slug")
@@ -555,87 +573,203 @@ def register_tools(mcp: FastMCP):
         return body
 
     @kb_tool(mcp, requires=ANY_AUTHENTICATED)
-    @logged_tool("get_legal_relations_graph")
-    async def get_legal_relations_graph(
+    @logged_tool("get_document_relations")
+    async def get_document_relations(
         doc_number: Optional[str] = None,
         article_number: Optional[str] = None,
         slug: Optional[str] = None,
+        limit: int = 50,
     ) -> str:
         """
-        Query legal relations graph for a document or article (e.g. amendments, repeals, citations).
-        
+        Relations between documents/articles: amendments, supplements,
+        replacements, repeals, guidance, legal basis and cross-references —
+        in both directions (what this document changes / what changes it).
+
+        Works for any document that carries an official number (decrees,
+        circulars, decisions, official letters, internal regulations…).
+
         Args:
-            doc_number: Official document number (e.g. "136/2020/NĐ-CP").
-            article_number: Article number (e.g. "5", "5a").
-            slug: Optional WikiPage slug for the article.
-            
+            doc_number: Official document number, e.g. "136/2020/NĐ-CP",
+                "123/QĐ-UBND". Partial numbers ("136/2020") are accepted.
+            article_number: Article number ("5", "5a"). With `doc_number`,
+                narrows to one article; without it, the whole document is used.
+            slug: Wiki page slug of an article page (alternative to the above).
+            limit: Max relations per direction (default 50, max 200).
+
         Returns:
-            Structured summary of all modifying, amending, repealing, and cited relations.
+            Validity warnings plus outgoing ("Văn bản này tác động đến") and
+            incoming ("Bị tác động bởi") relations.
         """
         identity, err = await _get_identity()
         if err:
             return err
         assert identity is not None
 
+        import uuid as _uuid
+
+        from sqlalchemy import case, func, or_
+        from sqlalchemy.orm import aliased, configure_mappers, selectinload
+
         from app.database import async_session_factory
-        from app.database.models import LegalUnit, LegalRelation, WikiPage
+        from app.database.models import LegalRelation, LegalUnit, LegalUnitType, WikiPage
+        from app.services.legal_route_service import (
+            _like_escape,
+            _norm_doc_sql,
+            normalize_doc_number,
+        )
         from app.services.legal_service import (
-            get_legal_unit_validity_warnings,
             format_legal_validity_warning_callout,
+            get_legal_unit_validity_warnings,
         )
 
+        limit = min(max(1, limit), 200)
+        configure_mappers()
+        label_map = {
+            "sua_doi": "Sửa đổi", "bo_sung": "Bổ sung", "thay_the": "Thay thế",
+            "bai_bo": "Bãi bỏ", "huong_dan": "Hướng dẫn", "can_cu": "Căn cứ",
+            "dan_chieu": "Dẫn chiếu",
+        }
+
+        def _rtype(r) -> str:
+            v = r.relation_type.value if hasattr(r.relation_type, "value") else str(r.relation_type)
+            return label_map.get(v, v)
+
+        def _unit_ref(u, doc=None, art=None) -> str:
+            d = (u.doc_number if u else None) or doc or "?"
+            a = (u.unit_number if u else None) or art
+            return f"{d} Điều {a}" if a else d
+
         async with async_session_factory() as session:
+            allowed = await _get_allowed_source_ids(identity, session)
+            if allowed is not None and not allowed:
+                return "Bạn chưa được cấp quyền truy cập văn bản nào."
+            allowed_uuids = [_uuid.UUID(s) for s in allowed] if allowed is not None else None
+
+            def _scoped(stmt, unit_cls=LegalUnit):
+                if allowed_uuids is None:
+                    return stmt
+                return stmt.where(unit_cls.source_id.in_(allowed_uuids))
+
             unit = None
             if slug:
-                page_stmt = sa_select(WikiPage).where(WikiPage.slug == slug)
-                page = (await session.execute(page_stmt)).scalar_one_or_none()
-                if page:
-                    unit_stmt = sa_select(LegalUnit).where(LegalUnit.wiki_page_id == page.id)
-                    unit = (await session.execute(unit_stmt)).scalar_one_or_none()
-
-            if not unit and doc_number and article_number:
-                unit_stmt = sa_select(LegalUnit).where(
-                    LegalUnit.doc_number.ilike(doc_number),
-                    LegalUnit.unit_number.ilike(article_number),
+                stmt = (
+                    sa_select(LegalUnit)
+                    .join(WikiPage, WikiPage.id == LegalUnit.wiki_page_id)
+                    .where(WikiPage.slug == slug)
+                    .order_by((LegalUnit.unit_type != LegalUnitType.ARTICLE))
+                    .limit(1)
                 )
-                unit = (await session.execute(unit_stmt)).scalar_one_or_none()
+                unit = (await session.execute(_scoped(stmt))).scalars().first()
+                if not unit and not (doc_number and article_number):
+                    return f"Không tìm thấy điều khoản gắn với trang `{slug}` (hoặc bạn không có quyền)."
 
-            if not unit and doc_number:
-                rel_stmt = sa_select(LegalRelation).where(
-                    LegalRelation.target_doc_number.ilike(doc_number)
-                ).limit(50)
-                relations = (await session.execute(rel_stmt)).scalars().all()
-                if not relations:
-                    return f"Không tìm thấy quan hệ pháp lý nào liên quan đến văn bản `{doc_number}`."
-                lines = [f"### Quan hệ pháp lý của văn bản `{doc_number}` ({len(relations)} quan hệ):\n"]
-                for r in relations:
-                    r_type = r.relation_type.value if hasattr(r.relation_type, "value") else str(r.relation_type)
-                    lines.append(f"- **{r_type}**: Điều {r.target_article_number or '?'} ({r.quote_context or 'N/A'})")
-                return "\n".join(lines)
+            doc_norm = normalize_doc_number(doc_number) if doc_number else ""
+            doc_pat = _like_escape(doc_norm)
+            norm_col = _norm_doc_sql(LegalUnit.doc_number)
+            doc_rank = case(
+                (norm_col == doc_norm, 0),
+                (norm_col.like(f"{doc_pat}%", escape="\\"), 1),
+                else_=2,
+            )
 
-            if not unit:
-                return "Vui lòng cung cấp `doc_number` và `article_number`, hoặc `slug` hợp lệ."
+            if not unit and doc_norm and article_number:
+                stmt = (
+                    sa_select(LegalUnit)
+                    .where(
+                        norm_col.like(f"%{doc_pat}%", escape="\\"),
+                        LegalUnit.unit_type == LegalUnitType.ARTICLE,
+                        func.lower(LegalUnit.unit_number) == article_number.strip().lower(),
+                    )
+                    .order_by(doc_rank, LegalUnit.doc_number)
+                    .limit(1)
+                )
+                unit = (await session.execute(_scoped(stmt))).scalars().first()
 
-            warnings = await get_legal_unit_validity_warnings(session, unit.id)
-            warning_callout = format_legal_validity_warning_callout(warnings)
+            if unit:
+                header = f"## Quan hệ văn bản: {unit.full_path or ''} ({unit.doc_number or 'chưa rõ số hiệu'})"
+                warnings = await get_legal_unit_validity_warnings(session, unit.id)
+                callout = format_legal_validity_warning_callout(warnings)
+                unit_doc_norm = normalize_doc_number(unit.doc_number) if unit.doc_number else None
+                out_where = [LegalRelation.source_unit_id == unit.id]
+                in_conds = [LegalRelation.target_unit_id == unit.id]
+                if unit_doc_norm:
+                    in_conds.append(
+                        (_norm_doc_sql(LegalRelation.target_doc_number) == unit_doc_norm)
+                        & (func.lower(LegalRelation.target_article_number) == (unit.unit_number or "").lower())
+                    )
+            elif doc_norm:
+                # Whole document: relations from any of its units, and relations
+                # that target it by number.
+                header = f"## Quan hệ văn bản: {doc_number}"
+                callout = ""
+                doc_unit_ids = _scoped(
+                    sa_select(LegalUnit.id).where(norm_col.like(f"%{doc_pat}%", escape="\\"))
+                )
+                out_where = [LegalRelation.source_unit_id.in_(doc_unit_ids)]
+                in_conds = [
+                    _norm_doc_sql(LegalRelation.target_doc_number).like(f"%{doc_pat}%", escape="\\"),
+                    LegalRelation.target_unit_id.in_(doc_unit_ids),
+                ]
+            else:
+                return "Vui lòng cung cấp `doc_number` (kèm `article_number` nếu cần) hoặc `slug` hợp lệ."
 
-            out_stmt = sa_select(LegalRelation).where(LegalRelation.source_unit_id == unit.id)
-            out_rels = (await session.execute(out_stmt)).scalars().all()
+            SrcUnit = aliased(LegalUnit)
+            out_stmt = (
+                sa_select(LegalRelation)
+                .options(selectinload(LegalRelation.target_unit))
+                .where(*out_where)
+                .limit(limit + 1)
+            )
+            in_stmt = (
+                sa_select(LegalRelation)
+                .join(SrcUnit, SrcUnit.id == LegalRelation.source_unit_id)
+                .options(selectinload(LegalRelation.source_unit))
+                .where(or_(*in_conds))
+                .limit(limit + 1)
+            )
+            if unit is None:
+                in_stmt = in_stmt.where(~LegalRelation.source_unit_id.in_(doc_unit_ids))
+            out_rels = list((await session.execute(out_stmt)).scalars().all())
+            in_rels = list((await session.execute(_scoped(in_stmt, SrcUnit))).scalars().all())
 
-            lines = [f"## Đồ thị pháp lý: {unit.full_path} ({unit.doc_number or 'Chưa rõ số hiệu'})"]
-            if warning_callout:
-                lines.append("\n" + warning_callout)
+        def _visible_target(r) -> bool:
+            t = r.target_unit
+            return t is None or allowed is None or str(t.source_id) in allowed
 
-            if out_rels:
-                lines.append("\n### Quan hệ tác động / dẫn chiếu ra ngoài:")
-                for r in out_rels:
-                    r_type = r.relation_type.value if hasattr(r.relation_type, "value") else str(r.relation_type)
-                    lines.append(f"- **{r_type}** -> {r.target_doc_number or ''} Điều {r.target_article_number or ''}: {r.quote_context or ''}")
+        lines = [header]
+        if callout:
+            lines.append("\n" + callout)
 
-            if not warnings and not out_rels:
-                lines.append("\n_Không có quan hệ sửa đổi hoặc dẫn chiếu đặc biệt ghi nhận cho điều này._")
+        more_out = len(out_rels) > limit
+        out_rels = out_rels[:limit]
+        if out_rels:
+            lines.append("\n### Văn bản này tác động đến:")
+            for r in out_rels:
+                if _visible_target(r):
+                    ref = _unit_ref(r.target_unit, r.target_doc_number, r.target_article_number)
+                else:  # target exists but is outside the caller's scope
+                    ref = _unit_ref(None, r.target_doc_number, r.target_article_number)
+                src = f" (từ Điều {r.source_unit.unit_number})" if unit is None and r.source_unit and r.source_unit.unit_number else ""
+                quote = f": {r.quote_context}" if r.quote_context else ""
+                lines.append(f"- **{_rtype(r)}** {ref}{src}{quote}")
+            if more_out:
+                lines.append(f"- _… còn thêm — tăng `limit` (hiện {limit}) để xem tiếp._")
 
-            return "\n".join(lines)
+        more_in = len(in_rels) > limit
+        in_rels = in_rels[:limit]
+        if in_rels:
+            lines.append("\n### Bị tác động bởi:")
+            for r in in_rels:
+                ref = _unit_ref(r.source_unit)
+                eff = "" if r.is_effective else " _(không còn hiệu lực)_"
+                quote = f": {r.quote_context}" if r.quote_context else ""
+                lines.append(f"- **{_rtype(r)}** bởi {ref}{eff}{quote}")
+            if more_in:
+                lines.append(f"- _… còn thêm — tăng `limit` (hiện {limit}) để xem tiếp._")
+
+        if not out_rels and not in_rels and not callout:
+            lines.append("\n_Không ghi nhận quan hệ sửa đổi, thay thế hay dẫn chiếu nào._")
+        return "\n".join(lines)
 
     @kb_tool(mcp, requires=ANY_AUTHENTICATED)
     @logged_tool("list_wiki_pages")
@@ -653,7 +787,7 @@ def register_tools(mcp: FastMCP):
             page_type: Filter by type — "entity", "concept", "topic", "source".
             knowledge_type: Filter by KnowledgeType slug.
             query: Optional substring search query (case-insensitive) matched against title, slug, and content.
-            limit: Max pages to return (default: 50).
+            limit: Max pages to return (default: 50, max: 50).
             offset: Number of pages to skip for pagination (default: 0).
 
         Returns:
@@ -667,9 +801,8 @@ def register_tools(mcp: FastMCP):
         from app.database import async_session_factory
         from app.services import wiki_service
 
-        # Workspace/project memberships were removed; identity no longer carries
-        # project_ids, so project-scoped filtering is disabled here.
-        proj_uuids = None
+        limit = min(max(1, limit), 50)
+        offset = max(0, offset)
 
         async with async_session_factory() as session:
             pages = await wiki_service.list_pages(
@@ -678,16 +811,17 @@ def register_tools(mcp: FastMCP):
                 knowledge_type_slug=knowledge_type,
                 allowed_kt_slugs=identity.allowed_knowledge_types,
                 query=query,
-                limit=limit,
+                limit=limit + 1,
                 offset=offset,
                 department_ids=identity.department_ids,
-                project_ids=proj_uuids,
                 all_scopes=identity.is_admin,
             )
 
         if not pages:
             return "No wiki pages match the filters."
 
+        has_more = len(pages) > limit
+        pages = pages[:limit]
         lines = [f"**Wiki pages — {len(pages)} result(s)**\n"]
         for p in pages:
             kt_label = f" [{', '.join(p.knowledge_type_slugs)}]" if p.knowledge_type_slugs else ""
@@ -695,6 +829,8 @@ def register_tools(mcp: FastMCP):
             if p.summary:
                 line += f" — {p.summary}"
             lines.append(line)
+        if has_more:
+            lines.append(f"\n_Còn trang khác — gọi lại với `offset={offset + limit}`._")
         return "\n".join(lines)
 
     # =========================================================================
@@ -1193,44 +1329,47 @@ def register_tools(mcp: FastMCP):
         return "\n".join(lines)
 
     # =========================================================================
-    # Tier 2 — Contribute (member-level, requires review)
+    # Write — edit / create wiki pages (published immediately, no review)
     # =========================================================================
 
     @kb_tool(mcp, requires=CAN_CONTRIBUTE_WIKI)
-    @logged_tool("propose_wiki_edit", query_arg="slug")
-    async def propose_wiki_edit(
+    @logged_tool("edit_wiki_page", query_arg="slug")
+    async def edit_wiki_page(
         slug: str,
         content_md: str,
         note: Optional[str] = None,
         scope_type: Optional[str] = None,
         scope_id: Optional[str] = None,
         base_version: Optional[int] = None,
+        allow_row_removal: bool = False,
     ) -> str:
         """
-        Propose an edit to an existing wiki page. Published immediately as a new page version (no review).
+        Edit an existing wiki page. Published immediately as a new page version.
 
-        Use search_wiki() or read_wiki_index() to find the right slug first.
-        Always confirm with the user before submitting.
+        Read the page with read_wiki_page() first and send the FULL new content
+        (not a diff). Always confirm the change with the user before calling.
 
         Args:
             slug: Target page slug (e.g. "concept/fire-safety").
-            content_md: The full proposed content in Markdown (max 50,000 chars).
-            note: Optional one-line explanation of what you changed and why.
-            scope_type: Optional — "global", "department", or "project". If the
-                same slug exists in multiple scopes you MUST pass this to avoid
-                ambiguity. Defaults to "global".
-            scope_id: Required UUID when scope_type is "department" or "project".
-            base_version: Version of the page this edit is based on. Captured
-                automatically from read_wiki_page; passing the wrong value will
-                cause the reviewer to see a conflict warning.
+            content_md: Full new content in Markdown (max 50,000 chars).
+            note: One-line explanation of what changed and why.
+            scope_type: "global" or "department". Required only when the same
+                slug exists in several scopes.
+            scope_id: Department UUID when scope_type is "department".
+            base_version: Page version your edit is based on (from
+                read_wiki_page). If the page changed since, the edit is refused
+                so you can re-read and re-apply.
+            allow_row_removal: The edit is refused when it drops table rows of
+                the current page. Set True only when the user explicitly asked
+                to delete those rows.
         """
         import uuid as _uuid
-
-        from sqlalchemy import select
 
         from app.database import async_session_factory
         from app.database.models import Employee, WikiPage
         from app.services import wiki_service
+        from app.services.wiki_draft_publish import publish_draft
+        from app.services.wiki_write_guard import check_agent_write
 
         identity, err = await _get_identity()
         if err:
@@ -1239,10 +1378,12 @@ def register_tools(mcp: FastMCP):
 
         if not slug or not content_md.strip():
             return "Error: slug and content_md are required."
-        if slug in ("_index", "_log"):
-            return "Error: cannot propose drafts for reserved pages."
+        if slug in (wiki_service.INDEX_SLUG, wiki_service.LOG_SLUG, wiki_service.HOT_SLUG):
+            return "Error: reserved pages cannot be edited."
         if len(content_md) > 50_000:
             return "Error: content_md exceeds 50,000 character limit."
+        if scope_type and scope_type not in ("global", "department"):
+            return "Error: scope_type must be global or department."
 
         sid: Optional[_uuid.UUID] = None
         if scope_id:
@@ -1250,8 +1391,6 @@ def register_tools(mcp: FastMCP):
                 sid = _uuid.UUID(scope_id)
             except ValueError:
                 return "Error: scope_id must be a valid UUID."
-        if scope_type and scope_type not in ("global", "department", "project"):
-            return "Error: scope_type must be one of global, department, project."
 
         async with async_session_factory() as session:
             if scope_type:
@@ -1261,7 +1400,7 @@ def register_tools(mcp: FastMCP):
             else:
                 # No explicit scope: require the slug to be unambiguous.
                 matches = (await session.execute(
-                    select(WikiPage).where(WikiPage.slug == slug)
+                    sa_select(WikiPage).where(WikiPage.slug == slug)
                 )).scalars().all()
                 if len(matches) > 1:
                     scopes = ", ".join(
@@ -1273,16 +1412,22 @@ def register_tools(mcp: FastMCP):
                     )
                 page = matches[0] if matches else None
             if not page:
-                return f"Page '{slug}' not found. Use read_wiki_index() to browse available pages."
+                return f"Page '{slug}' not found. Use search_wiki() or list_wiki_pages() to find the slug."
 
             employee = await session.get(Employee, identity.employee_id)
             if not employee:
                 return "Error: employee not found."
 
-            if not await _can_contribute_to_page(session, employee, page):
-                if page.scope_type == "project" and page.scope_id:
-                    return f"Error: requires contributor role or above to propose edits to '{slug}'."
-                return "Error: insufficient permission to propose wiki edits."
+            if not (
+                await _can_review_page(session, employee, page)
+                or await _can_contribute_to_page(session, employee, page)
+            ):
+                return f"Error: insufficient permission to edit '{slug}'."
+
+            if not allow_row_removal:
+                refusal = check_agent_write(page.content_md, content_md)
+                if refusal:
+                    return f"Error: {refusal}"
 
             effective_base = base_version if base_version is not None else page.version
             if (
@@ -1302,7 +1447,6 @@ def register_tools(mcp: FastMCP):
                 base_version=effective_base,
             )
             draft.page = page
-            from app.services.wiki_draft_publish import publish_draft
             try:
                 published = await publish_draft(session, draft, employee)
             except wiki_service.DraftConflictError as e:
@@ -1313,634 +1457,11 @@ def register_tools(mcp: FastMCP):
                 )
             await session.commit()
 
-        return (
-            f"Edit published for `{slug}` → v{published.version} (no review needed). "
-            f"Note: {note or '(none)'}"
-        )
-
-    # =========================================================================
-    # Tier 3 — Direct Edit (editor/admin only, no review)
-    # =========================================================================
-
-    @kb_tool(mcp, requires=CAN_CREATE_WIKI_DIRECT)
-    @logged_tool("edit_wiki_page", query_arg="slug")
-    async def edit_wiki_page(
-        slug: str,
-        content_md: str,
-        change_note: Optional[str] = None,
-        scope_type: Optional[str] = None,
-        scope_id: Optional[str] = None,
-    ) -> str:
-        """
-        Directly edit a wiki page. Requires editor or admin role.
-        Creates a revision in history immediately — no review step.
-
-        Use propose_wiki_edit() instead if you only have contributor access.
-
-        Args:
-            slug: Target page slug.
-            content_md: Full new content in Markdown.
-            change_note: Optional one-line description of the change.
-            scope_type: Optional — "global", "department", or "project". If the
-                same slug exists in multiple scopes you MUST pass this. Defaults
-                to "global" when only one match exists.
-            scope_id: Required UUID when scope_type is "department" or "project".
-        """
-        import uuid as _uuid
-
-        from sqlalchemy import select
-
-        from app.database import async_session_factory
-        from app.database.models import Employee, WikiPage
-        from app.services import wiki_service
-
-        identity, err = await _get_identity()
-        if err:
-            return err
-        assert identity is not None
-
-        if not slug or not content_md.strip():
-            return "Error: slug and content_md are required."
-        if slug in ("_index", "_log"):
-            return "Error: cannot directly edit reserved pages."
-
-        sid: Optional[_uuid.UUID] = None
-        if scope_id:
-            try:
-                sid = _uuid.UUID(scope_id)
-            except ValueError:
-                return "Error: scope_id must be a valid UUID."
-        if scope_type and scope_type not in ("global", "department", "project"):
-            return "Error: scope_type must be one of global, department, project."
-
-        async with async_session_factory() as session:
-            if scope_type:
-                page = await wiki_service.get_page_by_slug(
-                    session, slug, scope_type=scope_type, scope_id=sid,
-                )
-            else:
-                matches = (await session.execute(
-                    select(WikiPage).where(WikiPage.slug == slug)
-                )).scalars().all()
-                if len(matches) > 1:
-                    scopes = ", ".join(
-                        f"{m.scope_type}:{m.scope_id or 'global'}" for m in matches
-                    )
-                    return (
-                        f"Error: slug '{slug}' exists in multiple scopes ({scopes}). "
-                        "Re-call with scope_type and scope_id."
-                    )
-                page = matches[0] if matches else None
-            if not page:
-                return f"Page '{slug}' not found."
-
-            employee = await session.get(Employee, identity.employee_id)
-            if not employee:
-                return "Error: employee not found."
-
-            if not await _can_review_page(session, employee, page):
-                if page.scope_type == "project" and page.scope_id:
-                    return f"Error: requires editor role or above to directly edit '{slug}'."
-                return "Error: requires wiki:write:all permission to directly edit global wiki pages. Use propose_wiki_edit() instead."
-
-            await wiki_service.direct_edit_page(session, page, employee.id, content_md.strip(), change_note)
-            edited_scope_type = page.scope_type or "global"
-            edited_scope_id = page.scope_id
-            await wiki_service.regenerate_index(
-                session, scope_type=edited_scope_type, scope_id=edited_scope_id,
-            )
-            await wiki_service.append_log(
-                session,
-                f"Edited page: {page.title} ({slug}) → v{page.version} via MCP by {employee.name or employee.email}",
-                scope_type=edited_scope_type,
-                scope_id=edited_scope_id,
-            )
-            await session.commit()
-            await session.refresh(page)
-
-        return f"Page `{slug}` updated to v{page.version}."
-
-    # =========================================================================
-    # Tier 4 — Review (editor/admin only)
-    # =========================================================================
-
-    @kb_tool(mcp, requires=CAN_REVIEW_WIKI)
-    @logged_tool("list_pending_drafts")
-    async def list_pending_drafts(
-        workspace_id: Optional[str] = None,
-        limit: int = 50,
-        offset: int = 0,
-    ) -> str:
-        """
-        List pending wiki drafts awaiting editor review. Permission filtering
-        is enforced at the SQL level so pagination is correct.
-
-        Args:
-            workspace_id: Deprecated and ignored — workspace/project scopes
-                          have been removed.
-            limit: Max drafts to return (default: 50).
-            offset: Number of drafts to skip for pagination (default: 0).
-        """
-        from sqlalchemy import select
-        from sqlalchemy.orm import selectinload
-
-        from app.database import async_session_factory
-        from app.database.models import (
-            Employee,
-            WikiPage,
-            WikiPageDraft,
-        )
-        from app.services.permission_engine import _get_user_permissions
-
-        identity, err = await _get_identity()
-        if err:
-            return err
-        assert identity is not None
-
-        async with async_session_factory() as session:
-            employee = await session.get(Employee, identity.employee_id)
-            if not employee:
-                return "Error: employee not found."
-
-            perms = _get_user_permissions(employee)
-            is_admin = employee.role == "admin"
-            can_global = is_admin or "wiki:write:all" in perms
-
-            stmt = (
-                select(WikiPageDraft)
-                .join(WikiPage, WikiPage.id == WikiPageDraft.page_id)
-                .where(WikiPageDraft.status == "pending")
-                .options(
-                    selectinload(WikiPageDraft.page),
-                    selectinload(WikiPageDraft.author),
-                )
-                .order_by(WikiPageDraft.created_at.asc())
-                .offset(offset)
-                .limit(limit)
-            )
-
-            # Workspace/project scopes were removed; only global reviewers
-            # (wiki:write:all / admin) can review. Everyone else sees nothing.
-            if not can_global:
-                return "No pending drafts you have permission to review."
-
-            drafts = (await session.execute(stmt)).scalars().all()
-
-            lines = []
-            for draft in drafts:
-                page = draft.page
-                if not page:
-                    continue
-                author = draft.author
-                lines.append(
-                    f"- **{page.slug}** | Draft `{draft.id}` | "
-                    f"by {author.name if author else 'unknown'} | "
-                    f"{draft.created_at.strftime('%Y-%m-%d %H:%M')} | "
-                    f"note: {draft.note or '(none)'}"
-                )
-
-        if not lines:
-            return "No pending drafts found."
-        return f"**{len(lines)} pending draft(s):**\n\n" + "\n".join(lines)
-
-    @kb_tool(mcp, requires=CAN_REVIEW_WIKI)
-    @logged_tool("review_draft", query_arg="draft_id")
-    async def review_draft(draft_id: str) -> str:
-        """
-        Get full content of a pending draft for review.
-        Returns the draft content alongside the current page content for comparison.
-
-        Args:
-            draft_id: UUID of the draft (from list_pending_drafts).
-        """
-        import uuid as _uuid
-
-        from sqlalchemy import select
-        from sqlalchemy.orm import selectinload
-
-        from app.database import async_session_factory
-        from app.database.models import Employee, WikiPageDraft
-
-        identity, err = await _get_identity()
-        if err:
-            return err
-        assert identity is not None
-
-        try:
-            did = _uuid.UUID(draft_id)
-        except ValueError:
-            return "Error: invalid draft ID format."
-
-        async with async_session_factory() as session:
-            draft = (await session.execute(
-                select(WikiPageDraft)
-                .where(WikiPageDraft.id == did)
-                .options(
-                    selectinload(WikiPageDraft.page),
-                    selectinload(WikiPageDraft.author),
-                )
-            )).scalar_one_or_none()
-            if not draft:
-                return f"Draft `{draft_id}` not found."
-
-            employee = await session.get(Employee, identity.employee_id)
-            if not employee:
-                return "Error: employee not found."
-
-            page = draft.page
-            if not page:
-                return "Error: parent wiki page not found."
-
-            if not await _can_review_page(session, employee, page):
-                return "Error: insufficient permission to review drafts for this page."
-
-            author = draft.author
-
-        return (
-            f"## Draft `{draft_id}`\n"
-            f"**Page:** `{page.slug}` — {page.title}\n"
-            f"**Author:** {author.name if author else 'unknown'}\n"
-            f"**Status:** {draft.status}\n"
-            f"**Note:** {draft.note or '(none)'}\n\n"
-            f"---\n\n"
-            f"### Proposed content\n\n{draft.content_md}\n\n"
-            f"---\n\n"
-            f"### Current page content (v{page.version})\n\n{page.content_md or '_(empty)_'}"
-        )
-
-    @kb_tool(mcp, requires=CAN_REVIEW_WIKI)
-    @logged_tool("approve_draft", query_arg="draft_id")
-    async def approve_draft(
-        draft_id: str,
-        reviewer_note: Optional[str] = None,
-        edited_content_md: Optional[str] = None,
-        allow_conflict: bool = False,
-    ) -> str:
-        """
-        Approve a pending wiki draft. Requires editor or admin role.
-
-        The draft content (or your edited version) is written directly to the wiki page.
-        A revision is created in history.
-
-        Args:
-            draft_id: UUID of the draft to approve.
-            reviewer_note: Optional note to the author explaining the decision.
-            edited_content_md: Optional — provide this to approve with your own edits
-                               instead of the author's original content.
-            allow_conflict: Set true to overwrite when the page has advanced past
-                            the draft's base_version. Defaults to false (returns
-                            a conflict error so the reviewer can re-base instead).
-        """
-        import uuid as _uuid
-
-        from sqlalchemy import select
-        from sqlalchemy.orm import selectinload
-
-        from app.database import async_session_factory
-        from app.database.models import Employee, WikiPageDraft
-        from app.services import wiki_service
-
-        identity, err = await _get_identity()
-        if err:
-            return err
-        assert identity is not None
-
-        try:
-            did = _uuid.UUID(draft_id)
-        except ValueError:
-            return "Error: invalid draft ID format."
-
-        async with async_session_factory() as session:
-            draft = (await session.execute(
-                select(WikiPageDraft)
-                .where(WikiPageDraft.id == did)
-                .options(selectinload(WikiPageDraft.page))
-            )).scalar_one_or_none()
-            if not draft:
-                return f"Draft `{draft_id}` not found."
-            if draft.status != "pending":
-                return f"Error: draft is already {draft.status}."
-
-            employee = await session.get(Employee, identity.employee_id)
-            if not employee:
-                return "Error: employee not found."
-
-            page = draft.page
-            if not page:
-                return "Error: parent wiki page not found."
-
-            if not await _can_review_page(session, employee, page):
-                return "Error: insufficient permission to approve drafts for this page."
-
-            # Authors cannot approve their own drafts (admins exempt).
-            if employee.role != "admin" and draft.author_id == employee.id:
-                return "Error: you cannot approve your own draft. Ask another editor to review it."
-
-            try:
-                await wiki_service.approve_draft(
-                    session, draft, employee.id,
-                    reviewer_note=reviewer_note,
-                    edited_content_md=edited_content_md,
-                    allow_conflict=allow_conflict,
-                )
-            except wiki_service.DraftConflictError as e:
-                return (
-                    f"Conflict: {e}. Re-call with allow_conflict=true to overwrite "
-                    "or supply edited_content_md after merging the latest changes."
-                )
-            approved_scope_type = page.scope_type or "global"
-            approved_scope_id = page.scope_id
-            await wiki_service.regenerate_index(
-                session, scope_type=approved_scope_type, scope_id=approved_scope_id,
-            )
-            await wiki_service.append_log(
-                session,
-                f"Approved draft for: {page.title} ({page.slug}) → v{page.version} via MCP by {employee.name or employee.email}",
-                scope_type=approved_scope_type,
-                scope_id=approved_scope_id,
-            )
-            from app.services import contribution_service
-            from app.services.contribution_service import wiki_draft_adapter
-            await contribution_service.notify_approved(
-                session, wiki_draft_adapter, draft, employee,
-                version_label=f"v{page.version}",
-            )
-            await session.commit()
-
-        return f"Draft `{draft_id}` approved. Page `{page.slug}` updated to v{page.version}."
-
-    @kb_tool(mcp, requires=CAN_REVIEW_WIKI)
-    @logged_tool("reject_draft", query_arg="draft_id")
-    async def reject_draft(draft_id: str, reviewer_note: str) -> str:
-        """
-        Reject a pending wiki draft. reviewer_note is required — the author needs
-        to understand why their proposal was not accepted.
-
-        Args:
-            draft_id: UUID of the draft to reject.
-            reviewer_note: Required explanation for the author.
-        """
-        import uuid as _uuid
-
-        from sqlalchemy import select
-        from sqlalchemy.orm import selectinload
-
-        from app.database import async_session_factory
-        from app.database.models import Employee, WikiPageDraft
-        from app.services import wiki_service
-
-        identity, err = await _get_identity()
-        if err:
-            return err
-        assert identity is not None
-
-        if not reviewer_note or not reviewer_note.strip():
-            return "Error: reviewer_note is required when rejecting a draft."
-
-        try:
-            did = _uuid.UUID(draft_id)
-        except ValueError:
-            return "Error: invalid draft ID format."
-
-        async with async_session_factory() as session:
-            draft = (await session.execute(
-                select(WikiPageDraft)
-                .where(WikiPageDraft.id == did)
-                .options(selectinload(WikiPageDraft.page))
-            )).scalar_one_or_none()
-            if not draft:
-                return f"Draft `{draft_id}` not found."
-            if draft.status != "pending":
-                return f"Error: draft is already {draft.status}."
-
-            employee = await session.get(Employee, identity.employee_id)
-            if not employee:
-                return "Error: employee not found."
-
-            page = draft.page
-            if not page:
-                return "Error: parent wiki page not found."
-
-            if not await _can_review_page(session, employee, page):
-                return "Error: insufficient permission to reject drafts for this page."
-
-            await wiki_service.reject_draft(session, draft, employee.id, reviewer_note.strip())
-            from app.services import contribution_service
-            from app.services.contribution_service import wiki_draft_adapter
-            await contribution_service.notify_rejected(
-                session, wiki_draft_adapter, draft, employee, reason=reviewer_note.strip(),
-            )
-            await session.commit()
-
-        return f"Draft `{draft_id}` rejected. Note to author: {reviewer_note}"
-
-    # =========================================================================
-    # Tier 5 — needs_revision flow (request changes / resubmit / withdraw)
-    # =========================================================================
-
-    @kb_tool(mcp, requires=CAN_REVIEW_WIKI)
-    @logged_tool("request_changes_on_draft", query_arg="draft_id")
-    async def request_changes_on_draft(draft_id: str, reviewer_note: str) -> str:
-        """
-        Send a pending wiki draft back to the author for revisions.
-
-        Use this instead of reject() when the contribution is on the right
-        track but needs edits. The author can then resubmit via
-        resubmit_draft() — the draft is kept and its revision_round bumps.
-
-        Args:
-            draft_id: UUID of the pending draft.
-            reviewer_note: Required — explain what needs to change.
-        """
-        import uuid as _uuid
-
-        from sqlalchemy import select
-        from sqlalchemy.orm import selectinload
-
-        from app.database import async_session_factory
-        from app.database.models import Employee, WikiPageDraft
-        from app.services import contribution_service
-        from app.services.contribution_service import (
-            InvalidTransition,
-            wiki_draft_adapter,
-        )
-
-        identity, err = await _get_identity()
-        if err:
-            return err
-        assert identity is not None
-
-        if not reviewer_note or not reviewer_note.strip():
-            return "Error: reviewer_note is required when requesting changes."
-
-        try:
-            did = _uuid.UUID(draft_id)
-        except ValueError:
-            return "Error: invalid draft ID format."
-
-        async with async_session_factory() as session:
-            draft = (await session.execute(
-                select(WikiPageDraft)
-                .where(WikiPageDraft.id == did)
-                .options(selectinload(WikiPageDraft.page))
-            )).scalar_one_or_none()
-            if not draft:
-                return f"Draft `{draft_id}` not found."
-
-            employee = await session.get(Employee, identity.employee_id)
-            if not employee:
-                return "Error: employee not found."
-
-            page = draft.page
-            if not page:
-                return "Error: parent wiki page not found."
-            if not await _can_review_page(session, employee, page):
-                return "Error: insufficient permission to review drafts for this page."
-
-            try:
-                await contribution_service.request_changes(
-                    session, wiki_draft_adapter, draft, employee, reviewer_note.strip(),
-                )
-            except InvalidTransition as e:
-                return f"Error: {e}"
-            await session.commit()
-
-        return (
-            f"Draft `{draft_id}` returned to author with note: {reviewer_note}\n"
-            f"The author can resubmit when ready."
-        )
+        return f"Page `{slug}` updated to v{published.version}. Note: {note or '(none)'}"
 
     @kb_tool(mcp, requires=CAN_CONTRIBUTE_WIKI)
-    @logged_tool("resubmit_draft", query_arg="draft_id")
-    async def resubmit_draft(
-        draft_id: str,
-        content_md: str,
-        note: Optional[str] = None,
-    ) -> str:
-        """
-        Resubmit a draft that a reviewer sent back for changes (status:
-        needs_revision). Author-only. Bumps revision_round and snapshots the
-        prior submission to the rounds history.
-
-        Args:
-            draft_id: UUID of the draft to resubmit.
-            content_md: New full content (max 50,000 chars).
-            note: Optional one-line author note about this round.
-        """
-        import uuid as _uuid
-
-        from sqlalchemy import select
-        from sqlalchemy.orm import selectinload
-
-        from app.database import async_session_factory
-        from app.database.models import Employee, WikiPageDraft
-        from app.services import contribution_service
-        from app.services.contribution_service import InvalidTransition
-
-        identity, err = await _get_identity()
-        if err:
-            return err
-        assert identity is not None
-
-        if not content_md or not content_md.strip():
-            return "Error: content_md is required."
-        if len(content_md) > 50_000:
-            return "Error: content_md exceeds 50,000 character limit."
-
-        try:
-            did = _uuid.UUID(draft_id)
-        except ValueError:
-            return "Error: invalid draft ID format."
-
-        async with async_session_factory() as session:
-            draft = (await session.execute(
-                select(WikiPageDraft)
-                .where(WikiPageDraft.id == did)
-                .options(selectinload(WikiPageDraft.page))
-            )).scalar_one_or_none()
-            if not draft:
-                return f"Draft `{draft_id}` not found."
-
-            employee = await session.get(Employee, identity.employee_id)
-            if not employee:
-                return "Error: employee not found."
-
-            try:
-                await contribution_service.resubmit_wiki_draft(
-                    session, draft, employee, content_md.strip(), author_note=note,
-                )
-            except InvalidTransition as e:
-                return f"Error: {e}"
-            await session.commit()
-
-        return (
-            f"Draft `{draft_id}` resubmitted (round {draft.revision_round}). "
-            "Reviewers have been notified."
-        )
-
-    @kb_tool(mcp, requires=CAN_CONTRIBUTE_WIKI)
-    @logged_tool("withdraw_draft", query_arg="draft_id")
-    async def withdraw_draft(draft_id: str) -> str:
-        """
-        Withdraw your own draft (pending or needs_revision). Removes it from
-        the reviewer queue. Author-only — admins can also withdraw via API.
-
-        Args:
-            draft_id: UUID of the draft to withdraw.
-        """
-        import uuid as _uuid
-
-        from sqlalchemy import select
-        from sqlalchemy.orm import selectinload
-
-        from app.database import async_session_factory
-        from app.database.models import Employee, WikiPageDraft
-        from app.services import contribution_service
-        from app.services.contribution_service import (
-            InvalidTransition,
-            wiki_draft_adapter,
-        )
-
-        identity, err = await _get_identity()
-        if err:
-            return err
-        assert identity is not None
-
-        try:
-            did = _uuid.UUID(draft_id)
-        except ValueError:
-            return "Error: invalid draft ID format."
-
-        async with async_session_factory() as session:
-            draft = (await session.execute(
-                select(WikiPageDraft)
-                .where(WikiPageDraft.id == did)
-                .options(selectinload(WikiPageDraft.page))
-            )).scalar_one_or_none()
-            if not draft:
-                return f"Draft `{draft_id}` not found."
-
-            employee = await session.get(Employee, identity.employee_id)
-            if not employee:
-                return "Error: employee not found."
-
-            try:
-                await contribution_service.withdraw(
-                    session, wiki_draft_adapter, draft, employee,
-                )
-            except InvalidTransition as e:
-                return f"Error: {e}"
-            await session.commit()
-
-        return f"Draft `{draft_id}` withdrawn."
-
-    # =========================================================================
-    # Tier 6 — Create new pages (propose for contributors, direct for editors)
-    # =========================================================================
-
-    @kb_tool(mcp, requires=CAN_CONTRIBUTE_WIKI)
-    @logged_tool("propose_wiki_create", query_arg="slug")
-    async def propose_wiki_create(
+    @logged_tool("create_wiki_page", query_arg="slug")
+    async def create_wiki_page(
         slug: str,
         title: str,
         content_md: str,
@@ -1951,20 +1472,19 @@ def register_tools(mcp: FastMCP):
         note: Optional[str] = None,
     ) -> str:
         """
-        Create a brand new wiki page (published immediately, no review). Contributor+ may file.
-        The page is materialised when an editor approves the draft.
+        Create a new wiki page. Published immediately.
 
-        Use search_wiki() first to check whether a similar page already
-        exists — proposing duplicates wastes reviewer time.
+        Use search_wiki() first to make sure a similar page does not already
+        exist. Always confirm with the user before calling.
 
         Args:
-            slug: Unique URL slug, no whitespace, not _index or _log.
+            slug: Unique URL slug, no whitespace, not a reserved slug (_index, _log).
             title: Display title.
             content_md: Full Markdown content (max 50,000 chars).
             page_type: One of entity | concept | source | topic.
             knowledge_type_slugs: KB taxonomy tags (controls RBAC visibility).
-            scope_type: "global" | "department" | "project".
-            scope_id: Required UUID when scope_type is department or project.
+            scope_type: "global" or "department".
+            scope_id: Department UUID when scope_type is "department".
             note: One-line description of why this page should exist.
         """
         import uuid as _uuid
@@ -1972,6 +1492,7 @@ def register_tools(mcp: FastMCP):
         from app.database import async_session_factory
         from app.database.models import Employee
         from app.services import wiki_service
+        from app.services.wiki_draft_publish import publish_draft
 
         identity, err = await _get_identity()
         if err:
@@ -1981,16 +1502,16 @@ def register_tools(mcp: FastMCP):
         if not slug or not title or not content_md.strip():
             return "Error: slug, title, and content_md are required."
         slug = slug.strip()
-        if slug in ("_index", "_log"):
-            return "Error: '_index' and '_log' are reserved slugs."
+        if slug in (wiki_service.INDEX_SLUG, wiki_service.LOG_SLUG, wiki_service.HOT_SLUG):
+            return "Error: this slug is reserved."
         if len(content_md) > 50_000:
             return "Error: content_md exceeds 50,000 character limit."
         if any(c.isspace() for c in slug):
             return "Error: slug must not contain whitespace."
         if page_type not in wiki_service.PAGE_TYPES:
             return f"Error: page_type must be one of {sorted(wiki_service.PAGE_TYPES)}."
-        if scope_type not in ("global", "department", "project"):
-            return "Error: scope_type must be global, department, or project."
+        if scope_type not in ("global", "department"):
+            return "Error: scope_type must be global or department."
 
         sid: Optional[_uuid.UUID] = None
         if scope_id:
@@ -1998,27 +1519,29 @@ def register_tools(mcp: FastMCP):
                 sid = _uuid.UUID(scope_id)
             except ValueError:
                 return "Error: scope_id must be a valid UUID."
+        if scope_type == "department" and sid is None:
+            return "Error: scope_id is required when scope_type is department."
+        if scope_type == "global":
+            sid = None
 
         async with async_session_factory() as session:
             employee = await session.get(Employee, identity.employee_id)
             if not employee:
                 return "Error: employee not found."
 
-            # Permission gate matching REST propose_create_page.
             if employee.role != "admin":
                 from app.services.permission_engine import (
                     _get_user_permissions,
                     has_any_permission,
                 )
                 perms = _get_user_permissions(employee)
-                if scope_type == "department" and sid:
+                if scope_type == "department":
                     if "wiki:write:all" not in perms and not (
                         "wiki:write:own_dept" in perms and sid in employee.department_ids
                     ):
-                        return "Error: insufficient permission to propose pages in this department."
-                else:
-                    if not has_any_permission(list(perms), "wiki", "write"):
-                        return "Error: insufficient permission to propose new pages."
+                        return "Error: insufficient permission to create pages in this department."
+                elif not has_any_permission(list(perms), "wiki", "write"):
+                    return "Error: insufficient permission to create wiki pages."
 
             existing = await wiki_service.get_page_by_slug(
                 session, slug, scope_type=scope_type, scope_id=sid,
@@ -2026,7 +1549,7 @@ def register_tools(mcp: FastMCP):
             if existing is not None:
                 return (
                     f"Error: page '{slug}' already exists in {scope_type}. "
-                    "Use propose_wiki_edit() to suggest changes instead."
+                    "Use edit_wiki_page() to change it instead."
                 )
 
             suggested_metadata = {
@@ -2046,117 +1569,14 @@ def register_tools(mcp: FastMCP):
                 draft_kind="create",
                 suggested_metadata=suggested_metadata,
             )
-            from app.services.wiki_draft_publish import publish_draft
             try:
-                await publish_draft(session, draft, employee)
+                page = await publish_draft(session, draft, employee)
             except (wiki_service.CreateDraftSlugConflict, ValueError) as e:
                 await session.rollback()
                 return f"Error: could not create page '{slug}': {e}"
             await session.commit()
 
-        return (
-            f"Page `{slug}` created (no review needed). "
-            f"Note: {note or '(none)'}"
-        )
-
-    @kb_tool(mcp, requires=CAN_CREATE_WIKI_DIRECT)
-    @logged_tool("create_wiki_page", query_arg="slug")
-    async def create_wiki_page(
-        slug: str,
-        title: str,
-        content_md: str,
-        page_type: str = "concept",
-        knowledge_type_slugs: Optional[list[str]] = None,
-        scope_type: str = "global",
-        scope_id: Optional[str] = None,
-    ) -> str:
-        """
-        Directly create a new wiki page. Editor/admin only — no review step.
-
-        Use propose_wiki_create() instead if you only have contributor access.
-
-        Args:
-            slug: Unique URL slug.
-            title: Display title.
-            content_md: Full Markdown content.
-            page_type: entity | concept | source | topic.
-            knowledge_type_slugs: KB taxonomy tags.
-            scope_type: "global" | "department" | "project".
-            scope_id: UUID when scope_type is department or project.
-        """
-        import uuid as _uuid
-
-        from app.database import async_session_factory
-        from app.database.models import Employee
-        from app.services import wiki_service
-
-        identity, err = await _get_identity()
-        if err:
-            return err
-        assert identity is not None
-
-        if not slug or not title or not content_md.strip():
-            return "Error: slug, title, and content_md are required."
-        slug = slug.strip()
-        if slug in ("_index", "_log"):
-            return "Error: '_index' and '_log' are reserved slugs."
-        if any(c.isspace() for c in slug):
-            return "Error: slug must not contain whitespace."
-        if page_type not in wiki_service.PAGE_TYPES:
-            return f"Error: page_type must be one of {sorted(wiki_service.PAGE_TYPES)}."
-        if scope_type not in ("global", "department", "project"):
-            return "Error: scope_type must be global, department, or project."
-
-        sid: Optional[_uuid.UUID] = None
-        if scope_id:
-            try:
-                sid = _uuid.UUID(scope_id)
-            except ValueError:
-                return "Error: scope_id must be a valid UUID."
-
-        async with async_session_factory() as session:
-            employee = await session.get(Employee, identity.employee_id)
-            if not employee:
-                return "Error: employee not found."
-
-            # Permission: wiki:write:all globally, or admin. (Workspace/project
-            # scopes were removed, so there is no per-workspace editor path.)
-            if employee.role != "admin":
-                from app.services.permission_engine import _get_user_permissions
-                perms = _get_user_permissions(employee)
-                if "wiki:write:all" not in perms:
-                    return "Error: requires wiki:write:all permission. Use propose_wiki_create() instead."
-
-            existing = await wiki_service.get_page_by_slug(
-                session, slug, scope_type=scope_type, scope_id=sid,
-            )
-            if existing is not None:
-                return f"Error: page '{slug}' already exists in {scope_type}."
-
-            page = await wiki_service.apply_create(
-                session,
-                slug=slug, title=title, page_type=page_type,
-                content_md=content_md.strip(), summary="",
-                knowledge_type_slugs=list(knowledge_type_slugs or []),
-                source_ids=[],
-                scope_type=scope_type, scope_id=sid,
-            )
-            await wiki_service.regenerate_index(
-                session, scope_type=scope_type, scope_id=sid,
-            )
-            await wiki_service.append_log(
-                session,
-                f"Created page: {title} ({slug}) via MCP by {employee.name or employee.email}",
-                scope_type=scope_type, scope_id=sid,
-            )
-            try:
-                from app.services.wiki_chunk_service import index_wiki_page_chunks
-                await index_wiki_page_chunks(session, page)
-            except Exception as e:
-                logger.warning(f"Failed to generate embeddings for MCP created page {slug}: {e}")
-            await session.commit()
-
-        return f"Page `{slug}` created at v{page.version}."
+        return f"Page `{slug}` created at v{page.version}. Note: {note or '(none)'}"
 
     # =========================================================================
     # Spreadsheet / Tabular Analytics via DuckDB
@@ -2209,7 +1629,7 @@ def register_tools(mcp: FastMCP):
 
             # Verify permissions/scope
             allowed_ids = await _get_allowed_source_ids(identity, session)
-            if allowed_ids is not None and source.id not in allowed_ids:
+            if allowed_ids is not None and str(source.id) not in allowed_ids:
                 return f"Access denied to source '{source_id}'."
 
             file_bytes = storage_service.download_file(source.minio_key)

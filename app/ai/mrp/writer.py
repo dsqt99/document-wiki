@@ -22,6 +22,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.providers.base import EmbeddingProvider, LLMProvider
 from app.config import settings
+from app.services.wiki_write_guard import (
+    check_machine_rewrite,
+    make_failure_stub,
+    missing_row_identities,
+    table_row_identities,
+)
 from app.utils.progress import ProgressTracker
 
 if TYPE_CHECKING:
@@ -44,6 +50,18 @@ _BUDGET_RESERVE_RATIO = 0.7
 _PASS_BUDGET_RATIO = 0.5
 _MAX_EXTEND_RETRIES = 2
 _TIER_B_PROXIMITY_CHARS = 5_000
+# A multipass extend/polish pass must not drop more than this share of the
+# draft's table row identities (in addition to the length checks).
+_PASS_MAX_ROW_LOSS = 0.2
+
+
+def _pass_drops_rows(before: str, after: str) -> bool:
+    """True if a rewrite pass lost > _PASS_MAX_ROW_LOSS of the draft's table row identities."""
+    before_ids = table_row_identities(before)
+    if not before_ids:
+        return False
+    missing = missing_row_identities(before, after)
+    return len(missing) / len(before_ids) > _PASS_MAX_ROW_LOSS
 
 # ---------------------------------------------------------------------------
 # Dataclass
@@ -1207,13 +1225,16 @@ async def _write_page_multipass(
             except Exception as exc:
                 logger.warning(f"MRP MULTIPASS extend pass {i} failed for '{own_slug}': {exc}")
                 break
-            if len(new_draft) >= len(attempt_draft) * _EXTEND_SHRINK_THRESHOLD:
+            if (
+                len(new_draft) >= len(attempt_draft) * _EXTEND_SHRINK_THRESHOLD
+                and not _pass_drops_rows(attempt_draft, new_draft)
+            ):
                 draft = new_draft
                 success = True
                 break
             logger.warning(
-                f"MRP MULTIPASS extend pass {i} attempt {attempt+1} shrunk "
-                f"{len(attempt_draft)}→{len(new_draft)} for '{own_slug}'"
+                f"MRP MULTIPASS extend pass {i} attempt {attempt+1} shrunk or dropped table rows "
+                f"{len(attempt_draft)}→{len(new_draft)} chars for '{own_slug}'"
             )
         if not success:
             for sec in batch.sections:
@@ -1228,12 +1249,12 @@ async def _write_page_multipass(
             polished = await _writer_pass_polish(
                 llm, draft, image_markers, all_plan_slugs, own_slug,
             )
-            if len(polished) >= len(draft) * 0.95:
+            if len(polished) >= len(draft) * 0.95 and not _pass_drops_rows(draft, polished):
                 draft = polished
             else:
                 logger.warning(
-                    f"MRP MULTIPASS polish shrunk {len(draft)}→{len(polished)} "
-                    f"for '{own_slug}', keeping pre-polish draft"
+                    f"MRP MULTIPASS polish shrunk or dropped table rows {len(draft)}→{len(polished)} "
+                    f"chars for '{own_slug}', keeping pre-polish draft"
                 )
         except Exception as exc:
             logger.warning(f"MRP MULTIPASS polish failed for '{own_slug}': {exc}")
@@ -1363,9 +1384,23 @@ async def run_refine_phase(
                 except Exception as e:
                     err_msg = f"{type(e).__name__}: {str(e)}"
                     logger.error(f"MRP REFINE writer failed for '{slug}': {err_msg}")
-                    content_md = f"# {title}\n\n(Page generation failed: {err_msg[:200]})"
+                    # The stub is kept in the draft for diagnostics only: the
+                    # COMMIT phase (pipeline.run_commit_phase) and
+                    # wiki_service.apply_update both refuse to publish it.
+                    content_md = make_failure_stub(title, err_msg)
                     summary = title
                     citations = []
+                else:
+                    # The single-pass/complex UPDATE paths never compared the
+                    # rewrite with the stored page. Flag it here; the commit
+                    # phase merges (new source) or apply_update's guard refuses.
+                    if existing_content:
+                        reason = check_machine_rewrite(existing_content, content_md)
+                        if reason:
+                            logger.warning(
+                                f"MRP REFINE '{slug}': UPDATE rewrite would be refused "
+                                f"against existing page: {reason}"
+                            )
 
                 return PageWriteResult(
                     slug=slug,

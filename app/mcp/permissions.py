@@ -88,9 +88,9 @@ def kb_tool(mcp, *, requires: ToolRequirement = ANY_AUTHENTICATED, **fastmcp_kwa
 
     Usage::
 
-        @kb_tool(mcp, requires=CAN_REVIEW_WIKI)
-        @logged_tool("approve_draft", query_arg="draft_id")
-        async def approve_draft(draft_id: str) -> str: ...
+        @kb_tool(mcp, requires=CAN_CONTRIBUTE_WIKI)
+        @logged_tool("edit_wiki_page", query_arg="slug")
+        async def edit_wiki_page(slug: str, content_md: str) -> str: ...
 
     The requirement is stashed on the function via `REQUIRES_ATTR` so the
     middleware can read it back off the FastMCP `Tool.fn` reference. We then

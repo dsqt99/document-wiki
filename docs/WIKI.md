@@ -188,7 +188,7 @@ Editors can edit a page directly — no review step. The change takes effect imm
 
 - **Portal:** Open wiki page → Edit button
 - **API:** `PUT /api/wiki/pages/{slug}`
-- **MCP:** `edit_wiki_page(slug, content_md, change_note)`
+- **MCP:** `edit_wiki_page(slug, content_md, note?, scope_type?, scope_id?, base_version?, allow_row_removal=False)` — published immediately as a new version
 
 Requires: **workspace editor+** for workspace-scoped pages, or **`wiki:write:all`** for global pages.
 
@@ -198,7 +198,7 @@ Contributors propose edits that go through editor review before being applied.
 
 - **Portal:** Open wiki page → Propose Edit
 - **API:** `POST /api/wiki/pages/{slug}/drafts`
-- **MCP:** `propose_wiki_edit(slug, content_md, note)`
+- **MCP:** no draft tool — MCP edits publish immediately via `edit_wiki_page(slug, content_md, note)` (contributor+, see [MCP.md](MCP.md))
 
 Requires: **workspace contributor+** for workspace-scoped pages, or **`wiki:write:own_dept`** for global pages.
 
@@ -316,22 +316,14 @@ The existing `WikiDraftBanner` on `/wiki/[slug]` is intentionally kept for casua
 - `POST /api/wiki/drafts/{id}/approve` — approve (optionally with edited content)
 - `POST /api/wiki/drafts/{id}/reject` — reject (reviewer_note required)
 
-**Via MCP (for Claude Desktop editors):**
-- `list_pending_drafts(workspace_id?)` — see pending drafts
-- `review_draft(draft_id)` — read draft vs current content
-- `approve_draft(draft_id, reviewer_note?, edited_content_md?, allow_conflict?)`
-- `reject_draft(draft_id, reviewer_note)`
-- `request_changes_on_draft(draft_id, reviewer_note)` — send back without rejecting
-- `resubmit_draft(draft_id, content_md, note?)` — author resubmits after changes
-- `withdraw_draft(draft_id)` — author withdraws their own draft
+**Via MCP:** there are no draft-review tools. MCP writes (`edit_wiki_page`, `create_wiki_page`) publish immediately.
 
 **Bulk approve** for queue cleanup:
 - `POST /api/wiki/drafts/bulk-approve` `{draft_ids: [...], allow_conflict?, reviewer_note?}` — per-draft savepoint, returns `{added, skipped, errored, results[]}`.
 
 **Create-kind drafts** (propose a brand-new page rather than editing one):
 - `POST /api/wiki/drafts/create` — contributor-level, becomes a `WikiPageDraft(draft_kind="create", page_id=NULL)` with `suggested_metadata` (slug, title, page_type, scope). The reviewer can override metadata before materialising the page on approve.
-- MCP: `propose_wiki_create(slug, title, content_md, ...)`
-- Direct create (editor+, no review): `create_wiki_page(slug, title, content_md, ...)`
+- MCP: `create_wiki_page(slug, title, content_md, page_type?, knowledge_type_slugs?, scope_type?, scope_id?, note?)` — contributor+, published immediately (no draft); fails if the slug already exists (use `edit_wiki_page`)
 
 ---
 

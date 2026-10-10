@@ -142,7 +142,7 @@ in your answer so the user can verify.
 
 ## MCP Tool Reference
 
-Tools are organized in four tiers by permission level.
+Tools are organized in two tiers by permission level: Read and Write.
 
 ### Tool visibility by identity
 
@@ -153,17 +153,17 @@ if the caller's `ResolvedIdentity` could actually use it. This is enforced by
 | Caller | Visible tiers |
 |---|---|
 | Admin (`role = admin`) | All tiers |
-| Org perm `wiki:write:all` | Read + Contribute + Review + Direct-write |
-| Workspace editor (in any workspace) | Read + Contribute + Review + Direct-write |
-| Org perm `wiki:write:own_dept` | Read + Contribute |
-| Workspace contributor (in any workspace) | Read + Contribute |
+| Org perm `wiki:write:all` | Read + Write |
+| Workspace editor (in any workspace) | Read + Write |
+| Org perm `wiki:write:own_dept` | Read + Write |
+| Workspace contributor (in any workspace) | Read + Write |
 | Workspace viewer only / read-only employee | Read |
 | Unauthenticated / invalid token | Read, with an "Authenticate to use" hint prepended to every description |
 
 **Visibility is a UX gate, not a security boundary.** A client may still invoke
 any tool by name regardless of whether it appeared in the catalog. Per-tool
-permission checks inside tool bodies (e.g. `_can_review_page` for a specific
-draft's parent page) remain authoritative and MUST NOT be removed.
+permission checks inside tool bodies (e.g. `_can_review_page` / `_can_contribute_to_page`
+for a specific wiki page) remain authoritative and MUST NOT be removed.
 
 Role / token changes are not pushed mid-session. To pick up a new role, the
 client should reconnect to the MCP server.
@@ -173,11 +173,13 @@ client should reconnect to the MCP server.
 ### Tier 1 — Read (all authenticated employees)
 
 #### `search_wiki`
-Semantic search across the knowledge wiki. Results are filtered to the employee's permission scope.
+Hybrid search (semantic + keyword + exact document-number match) across wiki pages and verbatim source documents. Results are filtered to the employee's permission scope.
 
 ```
-search_wiki(query: str, top_k: int = 5) → list of pages with similarity scores
+search_wiki(query: str, top_k: int = 10) → ranked wiki pages + source passages with scores
 ```
+
+When the query contains an official document number (e.g. `136/2020/NĐ-CP`), exact matches are pinned to the top and labelled "🎯 khớp chính xác". If one of the search arms fails, the response includes a warning that results may be incomplete.
 
 #### `read_wiki_page`
 Read the full markdown content of a specific wiki page.
@@ -190,14 +192,26 @@ read_wiki_page(slug: str) → page content, title, summary, backlinks, version
 Browse wiki pages by type or knowledge category.
 
 ```
-list_wiki_pages(page_type?: str, knowledge_type_slug?: str, limit: int = 20)
+list_wiki_pages(page_type?: str, knowledge_type?: str, query?: str, limit: int = 50, offset: int = 0)
 ```
+
+`limit` is capped at 50; when more pages exist the response includes an `offset` hint for the next page.
 
 #### `read_wiki_index`
 Get the full wiki catalog (all pages with slug, type, summary).
 
 ```
 read_wiki_index() → catalog of all accessible pages
+```
+
+Only pages the caller can access are listed (same for the `arkon://wiki-index` resource).
+
+#### `get_document_relations`
+Relations between numbered documents/articles — amendments, supplements, replacements, repeals, guidance, legal basis, cross-references — in both directions. Works for any document with an official number (decrees, circulars, decisions, official letters, internal regulations).
+
+```
+get_document_relations(doc_number?: str, article_number?: str, slug?: str, limit: int = 50)
+→ validity warnings + outgoing ("Văn bản này tác động đến") and incoming ("Bị tác động bởi") relations
 ```
 
 #### `list_sources`
@@ -251,124 +265,47 @@ get_knowledge_type_docs(knowledge_type_slug: str) → documents in this category
 
 ---
 
-### Tier 2 — Contribute (workspace contributor+, or `wiki:write:own_dept`)
+### Tier 2 — Write (contributor+, i.e. `CAN_CONTRIBUTE_WIKI`)
 
-#### `propose_wiki_edit`
-Propose an edit to an existing wiki page. Creates a pending draft that goes through editor review before being applied.
+Wiki edits publish immediately — there is no draft queue and no review step. Every write creates a new page version in history. **Always confirm the change with the user before calling a write tool.**
+
+#### `edit_wiki_page`
+Edit an existing wiki page. Published immediately as a new version. Allowed when the caller can review **or** contribute to the page.
 
 ```
-propose_wiki_edit(slug: str, content_md: str, note?: str)
-→ "Draft submitted. An editor will review it. Draft ID: ..."
+edit_wiki_page(
+  slug: str,
+  content_md: str,
+  note?: str,
+  scope_type?: "global" | "department",
+  scope_id?: str,
+  base_version?: int,
+  allow_row_removal: bool = False,
+) → "Page `{slug}` updated to v{version}. Note: ..."
 ```
+
+- Read the page with `read_wiki_page()` first and send the **full** new content (not a diff, max 50,000 chars). Pass the version you read as `base_version`; if the page changed since, the edit is refused — re-read and re-apply the change.
+- **Row-removal guard:** an edit that drops table rows of the current page is refused. Set `allow_row_removal=True` only when the user explicitly asked to delete those rows.
+- If the slug exists in several scopes, the call fails with the candidate scopes — re-call with `scope_type` / `scope_id`.
+- Reserved pages (`_index`, `_log`) cannot be edited.
 
 Use `search_wiki()` or `read_wiki_index()` to find the right slug first.
 
----
-
-### Tier 3 — Direct Edit (workspace editor+, or `wiki:write:all` for global pages)
-
-#### `edit_wiki_page`
-Directly edit a wiki page. The change takes effect immediately — no review step. A revision is created in history.
-
-```
-edit_wiki_page(slug: str, content_md: str, change_note?: str)
-→ "Page '{slug}' updated to v{version}."
-```
-
-Use `propose_wiki_edit()` instead if you only have contributor access.
-
----
-
-### Tier 4 — Review (workspace editor+, or `wiki:write:all`)
-
-#### `list_pending_drafts`
-List pending wiki drafts awaiting your review. Optionally filter by workspace.
-
-```
-list_pending_drafts(workspace_id?: str)
-→ formatted list with draft_id, page_slug, author, created_at, note
-```
-
-#### `review_draft`
-Read the full content of a pending draft alongside the current page content for comparison.
-
-```
-review_draft(draft_id: str)
-→ proposed content + current page content side by side
-```
-
-#### `approve_draft`
-Approve a pending draft. Optionally provide edited content before approving.
-
-```
-approve_draft(draft_id: str, reviewer_note?: str, edited_content_md?: str)
-→ "Draft approved. Page updated to v{version}."
-```
-
-#### `reject_draft`
-Reject a pending draft. `reviewer_note` is required — the contributor needs to know why.
-
-```
-reject_draft(draft_id: str, reviewer_note: str)
-→ "Draft rejected."
-```
-
----
-
-### Tier 5 — needs_revision flow (workspace editor+ / author)
-
-#### `request_changes_on_draft`
-Send a pending draft back to the author for revisions without rejecting it. The draft is kept and its `revision_round` will bump on resubmit.
-
-```
-request_changes_on_draft(draft_id: str, reviewer_note: str)
-→ "Draft returned to author with note: ..."
-```
-
-#### `resubmit_draft`
-Author resubmits a draft that was sent back. Bumps `revision_round`, snapshots the previous content + AI verdict to `wiki_draft_rounds`, flips status back to `pending`, and re-enqueues AI pre-review.
-
-```
-resubmit_draft(draft_id: str, content_md: str, note?: str)
-→ "Draft resubmitted (round N). Reviewers have been notified."
-```
-
-#### `withdraw_draft`
-Author withdraws their own pending or needs-revision draft.
-
-```
-withdraw_draft(draft_id: str)
-→ "Draft withdrawn."
-```
-
----
-
-### Tier 6 — Create new pages
-
-#### `propose_wiki_create`
-Propose a brand-new wiki page (contributor+). The page is materialised when an editor approves the draft — the reviewer can override the suggested slug / title / page_type / tags before commit.
-
-```
-propose_wiki_create(
-  slug, title, content_md,
-  page_type="concept",
-  knowledge_type_slugs=[],
-  scope_type="global", scope_id?,
-  note?,
-) → "Create draft submitted (Draft ID: ...). An editor will review."
-```
-
 #### `create_wiki_page`
-Directly create a new wiki page (editor / admin — no review).
+Create a brand-new wiki page (contributor+). Published immediately at v1.
 
 ```
 create_wiki_page(
   slug, title, content_md,
-  page_type="concept",
-  knowledge_type_slugs=[],
-  scope_type="global", scope_id?,
-) → "Page '{slug}' created at v1."
+  page_type="concept",          # entity | concept | source | topic
+  knowledge_type_slugs?=[],
+  scope_type="global",          # global | department
+  scope_id?,                    # required for department
+  note?,
+) → "Page `{slug}` created at v1. Note: ..."
 ```
+
+Fails if the slug already exists in that scope — use `edit_wiki_page()` instead. Run `search_wiki()` first to avoid duplicates.
 
 ---
 

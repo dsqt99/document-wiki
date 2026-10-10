@@ -77,7 +77,7 @@ Khác biệt hoàn toàn với các giải pháp RAG chỉ chia nhỏ tài liệ
 Document Wiki cung cấp giao thức **Model Context Protocol (MCP)** chuẩn hóa, cho phép các AI Clients (Claude Desktop, Claude.ai, Chatbot WebUI, AI Agents) kết nối nhanh chóng thông qua **OAuth 2.1 + PKCE** hoặc **Bearer Token**:
 - **Nhóm công cụ tra cứu Wiki:** `search_wiki`, `read_wiki_page`, `list_wiki_pages`, `read_wiki_index`.
 - **Nhóm công cụ tài liệu nguồn:** `get_source`, `get_source_outline`, `get_source_pages`, `list_sources`.
-- **Nhóm công cụ quy trình biên tập:** `propose_wiki_edit`, `edit_wiki_page`, `list_pending_drafts`, `review_draft`, `approve_draft`, `reject_draft`.
+- **Nhóm công cụ biên tập:** `edit_wiki_page`, `create_wiki_page` (xuất bản ngay, không còn hàng chờ duyệt).
 - **Nhóm công cụ danh mục:** `list_knowledge_types`, `get_knowledge_type_docs`.
 
 ### 🧰 Quản lý & Phân phối AI Skills

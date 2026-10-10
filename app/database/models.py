@@ -1348,7 +1348,7 @@ class MCPQueryLog(Base):
     )
     tool_name: Mapped[str] = mapped_column(
         String(80), nullable=False,
-        comment="MCP tool invoked: search_wiki, read_wiki_page, propose_wiki_edit, ...",
+        comment="MCP tool invoked: search_wiki, read_wiki_page, edit_wiki_page, ...",
     )
     query_text: Mapped[Optional[str]] = mapped_column(
         Text, nullable=True,
