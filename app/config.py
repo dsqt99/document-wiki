@@ -79,7 +79,7 @@ class Settings(BaseSettings):
 
     # --- MRP Pipeline ---
     mrp_auto_approve_plan: bool = Field(
-        default=False,
+        default=True,
         description="If True, compilation plans are auto-approved without human review",
     )
     mrp_multipass_writer_enabled: bool = Field(
@@ -91,8 +91,8 @@ class Settings(BaseSettings):
         description="Maximum size of an uploaded source file (matches the 50 MB limit in the upload dialog).",
     )
     auto_approve_extraction_threshold_tokens: int = Field(
-        default=200_000,
-        description="Doc <= this many tokens after extraction auto-proceeds. Larger docs pause at status='awaiting_approval' for human review.",
+        default=0,
+        description="Docs larger than this many tokens pause at status='awaiting_approval' for human review. 0 disables the gate (auto-approve everything).",
     )
     extraction_approval_ttl_hours: int = Field(
         default=24,

@@ -401,9 +401,10 @@ async def dispatch_dual_pipeline(
             await asyncio.shield(mark_wiki_error(source.id, (str(e) or type(e).__name__)[:500]))
             raise
 
-    # Branch B: gate large documents behind human approval (A keeps running).
+    # Branch B: optionally gate large documents behind human approval (A keeps
+    # running). Threshold 0 = no gate.
     threshold = settings.auto_approve_extraction_threshold_tokens
-    if token_count > threshold:
+    if threshold and token_count > threshold:
         agg = await set_branch_state(
             source.id, "wiki", status="awaiting_approval", progress=55,
             message=f"Awaiting approval for wiki compilation: {token_count:,} tokens > {threshold:,} threshold",

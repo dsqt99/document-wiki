@@ -141,3 +141,20 @@ async def test_dispatch_small_doc_sets_wiki_state_before_enqueue():
         await worker.dispatch_dual_pipeline(session, src, MagicMock(), token_count=10)
     assert calls == [("state", "processing"), ("enqueue", None)]
     assert src.job_id == "job-1"
+
+
+@pytest.mark.asyncio
+async def test_dispatch_large_doc_auto_proceeds_when_gate_disabled():
+    from app import worker
+
+    src = _src(attempt_id=uuid.uuid4())
+    session = MagicMock()
+    session.commit = AsyncMock()
+    with patch.object(worker, "commit_and_enqueue_chunk_branch", AsyncMock()), \
+         patch("app.services.legal_service.is_legal_source", AsyncMock(return_value=False)), \
+         patch.object(worker, "set_branch_state", AsyncMock(return_value="processing")) as sbs, \
+         patch.object(worker, "enqueue_post_extraction_pipeline", AsyncMock(return_value="job-1")) as mrp, \
+         patch.object(worker.settings, "auto_approve_extraction_threshold_tokens", 0):
+        await worker.dispatch_dual_pipeline(session, src, MagicMock(), token_count=5_000_000)
+    mrp.assert_awaited_once()
+    assert sbs.await_args.kwargs["status"] == "processing"
