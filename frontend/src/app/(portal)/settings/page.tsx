@@ -4,10 +4,10 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { PageHeader } from "@/components/shared/page-header";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmbeddingSettingsCard } from "@/components/settings/embedding-settings-card";
 import { DocumentProcessingSettingsCard } from "@/components/settings/document-processing-settings-card";
 import { OcrSettingsCard } from "@/components/settings/ocr-settings-card";
-import { NotificationChannelsCard } from "@/components/settings/notification-channels-card";
 import { RolesPermissionsCard } from "@/components/settings/roles-permissions-card";
 import {
   ModelCatalogCard,
@@ -77,37 +77,50 @@ export default function SettingsPage() {
         description="Configure AI providers for embedding, LLM, and vision processing."
       />
 
-      <div className="flex flex-col gap-6">
-        <DocumentProcessingSettingsCard />
+      <Tabs defaultValue="config" className="gap-6">
+        <TabsList variant="line">
+          <TabsTrigger value="config">
+            <span className="material-symbols-outlined text-base">tune</span>
+            Cấu hình
+          </TabsTrigger>
+          <TabsTrigger value="permissions">
+            <span className="material-symbols-outlined text-base">admin_panel_settings</span>
+            Ma trận phân quyền
+          </TabsTrigger>
+        </TabsList>
 
-        <OcrSettingsCard />
+        <TabsContent value="config" className="flex flex-col gap-6">
+          <DocumentProcessingSettingsCard />
 
-        <RolesPermissionsCard />
+          <OcrSettingsCard />
 
-        <EmbeddingSettingsCard />
+          <EmbeddingSettingsCard />
 
-        <ModelCatalogCard
-          title="LLM Model"
-          description="Used for entity extraction, planning, and wiki compilation."
-          icon="psychology"
-          catalogUrl="/api/settings/llm/catalog"
-          switchUrl="/api/settings/llm/switch"
-          kind="llm"
-          renderMeta={llmMeta}
-        />
+          <ModelCatalogCard
+            title="LLM Model"
+            description="Used for entity extraction, planning, and wiki compilation."
+            icon="psychology"
+            catalogUrl="/api/settings/llm/catalog"
+            switchUrl="/api/settings/llm/switch"
+            kind="llm"
+            renderMeta={llmMeta}
+          />
 
-        <ModelCatalogCard
-          title="Vision Model"
-          description="Used for image analysis during document ingestion."
-          icon="visibility"
-          catalogUrl="/api/settings/vision/catalog"
-          switchUrl="/api/settings/vision/switch"
-          kind="vision"
-          renderMeta={visionMeta}
-        />
+          <ModelCatalogCard
+            title="Vision Model"
+            description="Used for image analysis during document ingestion."
+            icon="visibility"
+            catalogUrl="/api/settings/vision/catalog"
+            switchUrl="/api/settings/vision/switch"
+            kind="vision"
+            renderMeta={visionMeta}
+          />
+        </TabsContent>
 
-        <NotificationChannelsCard />
-      </div>
+        <TabsContent value="permissions">
+          <RolesPermissionsCard />
+        </TabsContent>
+      </Tabs>
     </>
   );
 }
