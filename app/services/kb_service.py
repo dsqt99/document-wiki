@@ -9,6 +9,7 @@ Provider-agnostic: uses ProviderRegistry to resolve embedding/LLM/vision
 providers from app_config at runtime.
 """
 
+import re
 import uuid
 from typing import Optional
 
@@ -182,29 +183,51 @@ def _sanitize_caption_for_alt(caption: str) -> str:
 def _inline_image_markers(pages_data: list[dict], images: list[ImageInfo]) -> None:
     """Inject markdown image markers into per-page text.
 
-    Each image becomes `![caption](image://<uuid>)` appended at the end of the
-    page it came from. The wiki compiler is instructed to preserve these
-    markers in the most contextually-relevant wiki page, drop irrelevant ones,
-    and never invent UUIDs. Mutates pages_data in place.
+    Each image becomes `![caption](image://<uuid>)`. When the parser left a
+    `<!--img:ref-->` placeholder (DOCX), the marker replaces it so the picture
+    stays where it was in the document; otherwise it is appended at the end of
+    the page it came from. Leftover placeholders (images too small to keep)
+    are removed. The wiki compiler is instructed to preserve these markers in
+    the most contextually-relevant wiki page, drop irrelevant ones, and never
+    invent UUIDs. Mutates pages_data in place.
     """
-    if not images:
-        return
+    from app.services.parsers.base import IMAGE_PLACEHOLDER_RE
 
+    by_ref: dict[str, str] = {}
     by_page: dict[int, list[str]] = {}
     for img in images:
         if not img.image_id:
             continue
         alt = _sanitize_caption_for_alt(img.caption or "")
         marker = f"![{alt}](image://{img.image_id})"
-        page_num = img.page_number or 1
-        by_page.setdefault(page_num, []).append(marker)
+        if img.ref:
+            by_ref[img.ref] = marker
+        else:
+            by_page.setdefault(img.page_number or 1, []).append(marker)
 
-    if not by_page:
-        return
+    placed: set[str] = set()
+
+    def _swap(m: "re.Match[str]") -> str:
+        marker = by_ref.get(m.group(1))
+        if not marker or m.group(1) in placed:
+            return ""
+        placed.add(m.group(1))
+        return f"\n\n{marker}\n\n"
 
     for page in pages_data:
-        pnum = page.get("page_number") or 1
-        markers = by_page.get(pnum)
+        content = page.get("content") or ""
+        if "<!--img:" in content:
+            content = IMAGE_PLACEHOLDER_RE.sub(_swap, content)
+            content = re.sub(r"\n{3,}", "\n\n", content)
+        page["content"] = content
+
+    # Images whose position is unknown (or never referenced) go to page end.
+    for ref, marker in by_ref.items():
+        if ref not in placed:
+            by_page.setdefault(1, []).append(marker)
+
+    for page in pages_data:
+        markers = by_page.get(page.get("page_number") or 1)
         if not markers:
             continue
         joined = "\n\n".join(markers)

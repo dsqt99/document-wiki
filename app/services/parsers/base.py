@@ -1,7 +1,17 @@
 """Base interface for all file parsers."""
 
+import re
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
+
+# Parsers mark where an embedded picture sat (keyed by its package ref, e.g. a
+# DOCX relationship id). Ingest swaps these for `image://<uuid>` markers once
+# the images are stored; anything left over is stripped.
+IMAGE_PLACEHOLDER_RE = re.compile(r"<!--img:([\w.-]+)-->")
+
+
+def image_placeholder(ref: str) -> str:
+    return f"<!--img:{ref}-->"
 
 
 class BaseParser(ABC):

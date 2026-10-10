@@ -2,6 +2,8 @@
 Admin settings router — provider config, connection testing, dashboard stats.
 """
 
+import base64
+import re
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -13,6 +15,7 @@ from app.database.models import Department, Employee, Source
 from app.database.repository import Repository
 from app.services.audit_service import log_audit
 from app.services.auth_service import get_current_user, require_permission
+from app.services.parsers.base import IMAGE_PLACEHOLDER_RE
 
 router = APIRouter()
 
@@ -405,6 +408,29 @@ class TestExtractionResponse(BaseModel):
     error: Optional[str] = None
 
 
+# Pictures are inlined into the extraction preview as data URIs, capped so a
+# photo-heavy document does not balloon the response.
+_PREVIEW_IMAGE_BUDGET = 8 * 1024 * 1024
+
+
+def _preview_images(text: str, blobs: dict, budget: list[int]) -> str:
+    """Swap `<!--img:ref-->` placeholders for inline images (or drop them)."""
+    if "<!--img:" not in text:
+        return text
+
+    def _swap(m) -> str:
+        item = blobs.get(m.group(1))
+        if not item or len(item[1]) < 2048:
+            return ""
+        mime, data = item
+        if len(data) > budget[0] or not mime.startswith("image/"):
+            return "\n\n*[Ảnh — quá dung lượng xem trước]*\n\n"
+        budget[0] -= len(data)
+        return f"\n\n![Ảnh](data:{mime};base64,{base64.b64encode(data).decode()})\n\n"
+
+    return re.sub(r"\n{3,}", "\n\n", IMAGE_PLACEHOLDER_RE.sub(_swap, text))
+
+
 @router.post("/settings/test-extraction", response_model=TestExtractionResponse)
 async def test_extraction(
     file: UploadFile = File(...),
@@ -504,16 +530,23 @@ async def test_extraction(
 
         latency_ms = max(1, int((time.perf_counter() - start_t) * 1000))
 
-        pages = [
-            PagePreviewItem(
+        image_blobs = {}
+        if ext == "docx" and any("<!--img:" in (p.get("content") or "") for p in pages_raw):
+            from app.services.image_service import docx_image_blobs
+            image_blobs = docx_image_blobs(content)
+
+        pages = []
+        img_budget = [_PREVIEW_IMAGE_BUDGET]
+        for i, p in enumerate(pages_raw):
+            text = p.get("content", "") or ""
+            plain = IMAGE_PLACEHOLDER_RE.sub("", text)
+            pages.append(PagePreviewItem(
                 page_number=p.get("page_number", i + 1),
-                content=p.get("content", ""),
+                content=_preview_images(text, image_blobs, img_budget),
                 is_ocr=bool(p.get("is_ocr", False)),
-                char_count=p.get("char_count", len(p.get("content", ""))),
-                word_count=p.get("word_count", len(p.get("content", "").split())),
-            )
-            for i, p in enumerate(pages_raw)
-        ]
+                char_count=p.get("char_count", len(plain)),
+                word_count=p.get("word_count", len(plain.split())),
+            ))
 
         ocr_pages_count = sum(1 for p in pages if p.is_ocr)
         total_words = sum(p.word_count for p in pages)

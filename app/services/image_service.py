@@ -48,7 +48,11 @@ class ImageInfo:
         size_bytes: int,
         caption: Optional[str] = None,
         image_id: Optional[str] = None,
+        ref: Optional[str] = None,
     ):
+        # Package ref (DOCX relationship id) matching the parser's
+        # `<!--img:ref-->` placeholder, so the image lands at its position.
+        self.ref = ref
         self.minio_key = minio_key
         self.page_number = page_number
         self.image_index = image_index
@@ -138,7 +142,7 @@ def extract_images_from_docx(
         return images
 
     image_index = 0
-    for rel in doc.part.rels.values():
+    for rid, rel in doc.part.rels.items():
         if "image" in rel.reltype:
             try:
                 img_blob = rel.target_part.blob
@@ -163,6 +167,7 @@ def extract_images_from_docx(
                     image_index=image_index,
                     content_type=content_type,
                     size_bytes=len(img_blob),
+                    ref=rid,
                 ))
                 image_index += 1
 
@@ -172,6 +177,25 @@ def extract_images_from_docx(
 
     logger.info(f"Extracted {len(images)} images from DOCX (source {source_id})")
     return images
+
+
+def docx_image_blobs(file_data: bytes) -> dict[str, tuple[str, bytes]]:
+    """{relationship id: (content_type, bytes)} for DOCX pictures (no upload)."""
+    from docx import Document
+
+    out: dict[str, tuple[str, bytes]] = {}
+    try:
+        doc = Document(io.BytesIO(file_data))
+    except Exception:
+        return out
+    for rid, rel in doc.part.rels.items():
+        if "image" in rel.reltype:
+            try:
+                part = rel.target_part
+                out[rid] = (part.content_type or "image/png", part.blob)
+            except Exception:
+                continue
+    return out
 
 
 def extract_images_from_pptx(

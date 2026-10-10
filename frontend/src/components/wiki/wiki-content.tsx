@@ -21,6 +21,8 @@ const IMAGE_REF_RE = /image:\/\/([0-9a-fA-F-]{36})/g;
 // `image://<uuid>` so our img renderer receives the original src.
 function wikiUrlTransform(url: string): string {
   if (url.startsWith("image://")) return url;
+  // Inline pictures from the extraction preview (settings test lab).
+  if (/^data:image\/(png|jpe?g|gif|webp|bmp);base64,/i.test(url)) return url;
   if (/^(https?:|mailto:|tel:|#|\/|\.\/|\.\.\/)/i.test(url)) return url;
   return "";
 }

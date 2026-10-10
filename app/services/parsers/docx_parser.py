@@ -15,7 +15,7 @@ except ImportError:
     docx = None
 
 from app.core.text_normalizer import normalize_text
-from app.services.parsers.base import BaseParser
+from app.services.parsers.base import BaseParser, image_placeholder
 from app.services.parsers.pdf_parser import enhance_vietnamese_headings
 
 
@@ -66,6 +66,16 @@ def _table_to_markdown(table: Any) -> str:
     return "\n".join(lines)
 
 
+def _image_placeholders(element: Any) -> str:
+    """`<!--img:rIdN-->` for each picture in the element, so the ingest step can
+    put the extracted image back at its original position."""
+    try:
+        rids = element.xpath(".//a:blip/@r:embed")
+    except Exception:
+        return ""
+    return " ".join(image_placeholder(rid) for rid in rids)
+
+
 def _has_page_break(paragraph_element: Any) -> bool:
     """Check if a paragraph element contains a page break."""
     xml_str = paragraph_element.xml
@@ -102,6 +112,10 @@ class DocxParser(BaseParser):
             if isinstance(child, CT_P):
                 p = Paragraph(child, doc)
                 text = p.text.strip()
+                pics = _image_placeholders(child)
+                if not text and pics:
+                    current_page_lines.append(pics)
+                    pics = ""
                 if not text:
                     if _has_page_break(child):
                         if current_page_lines:
@@ -121,6 +135,8 @@ class DocxParser(BaseParser):
                     text = f"# {text}"
 
                 current_page_lines.append(text)
+                if pics:
+                    current_page_lines.append(pics)
 
                 if _has_page_break(child):
                     pages.append("\n\n".join(current_page_lines))
