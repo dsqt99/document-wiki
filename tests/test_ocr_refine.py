@@ -61,3 +61,25 @@ async def test_refine_passes_max_tokens():
     res = await refine_ocr_with_llm(vision, b"img", "image/jpeg", DRAFT, max_tokens=2048)
     assert res == fixed
     assert vision.max_tokens == 2048
+
+
+@pytest.mark.asyncio
+async def test_refine_rejects_text_not_in_draft():
+    # The model "continues" the law from memory: much longer than the page.
+    invented = DRAFT.replace("Pham", "Phạm") + "\n" + "Điều 2. Đối tượng áp dụng\nNghị định này áp dụng với cơ quan, tổ chức, cá nhân.\n" * 6
+    assert await refine_ocr_with_llm(FakeVision(invented), b"img", "image/jpeg", DRAFT) is None
+
+
+@pytest.mark.asyncio
+async def test_refine_rejects_rewritten_page():
+    rewritten = "Chương này nói về phạm vi áp dụng của văn bản liên quan đến việc đăng ký nơi ở."
+    assert await refine_ocr_with_llm(FakeVision(rewritten), b"img", "image/jpeg", DRAFT) is None
+
+
+def test_refine_drift_ignores_diacritic_fixes():
+    from app.services.ocr_service import refine_drift
+
+    draft = "Nghi đinh nay quy đinh ve cu tru va quan ly cu tru tren lanh tho Viet Nam"
+    fixed = "Nghị định này quy định về cư trú và quản lý cư trú trên lãnh thổ Việt Nam"
+    assert refine_drift(draft, fixed) is None
+    assert refine_drift(draft, fixed + " va nhiem vu cua cong an xa") is None

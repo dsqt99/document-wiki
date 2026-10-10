@@ -477,20 +477,57 @@ ocr_service = OCRService()
 
 
 OCR_REFINE_PROMPT = (
-    "Bạn là trợ lý AI chuyên trách hiệu đính và số hóa văn bản hành chính, pháp luật tiếng Việt.\n"
-    "Nhiệm vụ: Đối chiếu bản OCR thô bên dưới với ảnh chụp trang tài liệu đính kèm để tạo ra văn bản Markdown hoàn chỉnh và chính xác 100%.\n\n"
-    "YÊU CẦU BẮT BUỘC:\n"
-    "1. CHÉP LẠI TOÀN BỘ VĂN BẢN từ đầu đến cuối trang tài liệu (đã sửa toàn bộ lỗi OCR). "
-    "TUYỆT ĐỐI KHÔNG tóm tắt, TUYỆT ĐỐI KHÔNG chỉ liệt kê danh sách lỗi sửa, KHÔNG bỏ sót bất kỳ dòng nào.\n"
-    "2. Sửa triệt để các lỗi nhận dạng: dấu tiếng Việt, chữ dính hoặc ngắt sai, số hiệu văn bản, ngày tháng, bảng biểu (dùng Markdown table), các từ viết tắt chuyên ngành (CAND, CSGT, PCCC, ANTT, QĐ, NĐ, TT...).\n"
-    "3. Bổ sung các đoạn, câu hoặc chữ có trong ảnh nhưng bản OCR bị thiếu.\n"
-    "4. ĐỊNH DẠNG ĐẦU RA: CHỈ xuất duy nhất nội dung văn bản hoàn chỉnh. "
-    "KHÔNG có lời chào hỏi, KHÔNG có câu mở đầu ('Dưới đây là...'), KHÔNG có lời kết hay giải thích.\n\n"
-    "=== BẢN OCR THÔ CẦN HIỆU ĐÍNH ===\n{draft}\n=== HẾT BẢN OCR THÔ ==="
+    "Bạn là người soát lỗi chính tả cho bản OCR của MỘT trang văn bản hành chính/pháp luật tiếng Việt. "
+    "Ảnh đính kèm là đúng trang đó.\n\n"
+    "NGUYÊN TẮC: Bản OCR bên dưới là bản gốc. Bạn chỉ sửa lỗi nhận dạng ký tự, KHÔNG viết lại văn bản.\n\n"
+    "ĐƯỢC PHÉP sửa (chỉ khi nhìn rõ trên ảnh):\n"
+    "- Dấu tiếng Việt sai/thiếu (\"Nghi đinh\" → \"Nghị định\").\n"
+    "- Ký tự nhận dạng nhầm, chữ dính hoặc tách sai, số và ngày tháng đọc sai, số hiệu văn bản sai.\n"
+    "- Dòng có trong ảnh mà bản OCR bỏ sót: chép đúng nguyên văn từ ảnh vào đúng vị trí.\n"
+    "- Bảng bị vỡ cấu trúc: dựng lại thành bảng Markdown, giữ nguyên chữ trong ô.\n\n"
+    "NGHIÊM CẤM:\n"
+    "- Thêm bất kỳ nội dung nào KHÔNG nhìn thấy trên ảnh trang này. Không viết tiếp sang Điều/Khoản/trang sau, "
+    "không bổ sung nội dung văn bản theo hiểu biết hay trí nhớ của bạn, kể cả khi trang kết thúc giữa câu.\n"
+    "- Diễn đạt lại, thay từ đồng nghĩa, sửa văn phong, tóm tắt, đổi thứ tự dòng, bỏ dòng.\n"
+    "- Chuẩn hóa hay \"sửa\" nội dung mà ảnh không cho thấy rõ là sai. Không chắc thì GIỮ NGUYÊN như bản OCR.\n"
+    "- Thêm lời chào, lời giải thích, tiêu đề hay ghi chú của bạn.\n\n"
+    "ĐẦU RA: chỉ toàn văn trang đã soát lỗi, cùng thứ tự dòng với bản OCR.\n\n"
+    "=== BẢN OCR ===\n{draft}\n=== HẾT BẢN OCR ==="
 )
 
 # A refined page much shorter than the OCR draft is most likely truncated or a non-compliant summary.
 _MIN_REFINE_RATIO = 0.5
+# Proofreading changes characters, not content. Compared on accent-folded
+# words (so diacritic fixes count as unchanged): the answer must keep most of
+# the draft and add little that the draft did not have — otherwise the model
+# rewrote the page or wrote text from memory.
+_MAX_REFINE_RATIO = 1.6
+_MIN_DRAFT_KEPT = 0.7
+_MAX_NEW_WORDS = 0.35
+
+
+def _fold_words(text: str) -> list[str]:
+    t = unicodedata.normalize("NFD", (text or "").lower().replace("đ", "d"))
+    t = "".join(c for c in t if unicodedata.category(c) != "Mn")
+    return re.findall(r"\w+", t)
+
+
+def refine_drift(draft: str, refined: str) -> Optional[str]:
+    """Why `refined` is not a proofread of `draft`, or None when it is."""
+    from difflib import SequenceMatcher
+
+    if len(refined) > len(draft) * _MAX_REFINE_RATIO + 200:
+        return f"too_long ({len(refined)} vs draft {len(draft)} chars)"
+    a, b = _fold_words(draft), _fold_words(refined)
+    if not a or not b:
+        return None
+    same = sum(m.size for m in SequenceMatcher(None, a, b, autojunk=False).get_matching_blocks())
+    kept, new = same / len(a), (len(b) - same) / len(b)
+    if kept < _MIN_DRAFT_KEPT:
+        return f"draft_not_kept (kept={kept:.2f})"
+    if new > _MAX_NEW_WORDS:
+        return f"too_much_new_text (new={new:.2f})"
+    return None
 
 
 def _strip_fences(text: str) -> str:
@@ -561,6 +598,14 @@ async def refine_ocr_with_llm(
         logger.warning(
             f"OCR LLM refine output looks truncated (refined_len={refined_len} vs draft_len={draft_len}, "
             f"ratio={refined_len / max(draft_len, 1):.2f}); preview: {refined[:200]!r}; keeping OCR draft"
+        )
+        return None
+
+    drift = refine_drift(draft.strip(), refined)
+    if drift:
+        logger.warning(
+            f"OCR LLM refine output rejected ({drift}): not a proofread of the OCR draft; "
+            f"preview: {refined[:200]!r}; keeping OCR draft"
         )
         return None
 
