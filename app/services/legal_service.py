@@ -71,7 +71,10 @@ def parse_legal_metadata(text: str, file_name: str = "") -> dict[str, Any]:
 
     from Vietnamese legal document preambles or filename fallbacks.
     """
-    preamble = text[:4000] if text else ""
+    from app.services.legal_hierarchy_parser import strip_markup
+
+    # Markdown/HTML from PDF extraction ('**LUẬT**', '_Căn cứ ..._') would defeat the header regexes.
+    preamble = "\n".join(strip_markup(ln) for ln in text[:4000].splitlines()) if text else ""
     meta: dict[str, Any] = {
         "doc_type": None,
         "doc_number": None,
@@ -221,6 +224,8 @@ def parse_legal_metadata(text: str, file_name: str = "") -> dict[str, Any]:
                         raw_title_block = after_type[:250].strip()
                     
                     clean_title = " ".join(raw_title_block.split())
+                    if len(clean_title) > 250:
+                        clean_title = clean_title[:250].rsplit(" ", 1)[0] + "…"
                     if clean_title:
                         meta["official_title"] = clean_title
                 break

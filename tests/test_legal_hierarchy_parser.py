@@ -107,3 +107,58 @@ def test_amending_law_quoted_text_boundary():
     assert art1.is_amending is True
     assert "Điều 5. Điều kiện an toàn" in art1.content
     assert "Điều 5a. Điều kiện phòng cháy" in art1.content
+
+
+SAMPLE_MARKDOWN_LAW = """
+**Điều 1. Phạm vi điều chỉnh**
+
+Luật này quy định về đường sắt.
+
+**Điều 2. Phân loại**
+
+<mark>a) Đường sắt tốc độ cao; b) Đường sắt thường.</mark> **Điều 3. Khổ đường sắt**
+
+1. Khổ đường tiêu chuẩn là 1435 mm.
+
+**QUY ĐỊNH CHUNG VỀ ĐẦU TƯ XÂY DỰNG ĐƯỜNG SẮT Điều 4. Quy hoạch đường sắt**
+
+Nội dung quy hoạch.
+
+### Điều 51 của Luật Đầu tư số 143/2025/QH15 quy định như sau:
+
+“ **_Điều 51. Hiệu lực thi hành_**
+
+_1. Luật này có hiệu lực thi hành từ ngày 01 tháng 03 năm 2026._
+
+## **Điều 5. Hiệu lực thi hành**
+
+Luật này có hiệu lực từ ngày 01 tháng 7 năm 2026.
+"""
+
+
+def test_markdown_glued_headings_and_lost_closing_quote():
+    tree = LegalHierarchyParser().parse(SAMPLE_MARKDOWN_LAW)
+    arts = tree.get_all_articles()
+    assert [a.number for a in arts] == ["1", "2", "3", "4", "5"]
+    assert arts[2].title == "Khổ đường sắt"
+    assert arts[3].title == "Quy hoạch đường sắt"
+    # The in-text reference and its quoted footnote stay inside Điều 4.
+    assert "Luật Đầu tư" in arts[3].content
+    assert arts[4].title == "Hiệu lực thi hành"
+
+
+def test_quoted_next_article_is_not_closed_when_number_repeats_later():
+    text = """
+Điều 1. Sửa đổi Nghị định số 136/2020/NĐ-CP
+1. Sửa đổi Điều 2 như sau:
+“
+Điều 2. Giải thích từ ngữ
+Nội dung mới.
+”
+Điều 2. Hiệu lực thi hành
+Nghị định này có hiệu lực từ ngày ký.
+"""
+    arts = LegalHierarchyParser().parse(text).get_all_articles()
+    assert [a.number for a in arts] == ["1", "2"]
+    assert "Điều 2. Giải thích từ ngữ" in arts[0].content
+    assert arts[1].title == "Hiệu lực thi hành"

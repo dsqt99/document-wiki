@@ -66,9 +66,13 @@ class LegalDocumentTree:
     chapters: List[LegalChapter] = field(default_factory=list)
     unattached_articles: List[LegalArticle] = field(default_factory=list)
     appendices: List[Dict[str, Any]] = field(default_factory=list)
+    # Articles in document order, filled by the parser (unattached ones may precede chapters).
+    ordered_articles: List[LegalArticle] = field(default_factory=list, repr=False)
 
     def get_all_articles(self) -> List[LegalArticle]:
         """Return all articles across all chapters and unattached sections in order."""
+        if self.ordered_articles:
+            return list(self.ordered_articles)
         res: List[LegalArticle] = []
         for ch in self.chapters:
             res.extend(ch.articles)
@@ -84,6 +88,59 @@ RE_ARTICLE = re.compile(r"^(?:#+\s*)?Điều\s+(\d+[a-z]?)\.?\s*(.*)$", re.IGNOR
 RE_CLAUSE = re.compile(r"^(\d+)\.\s+(.*)$")
 RE_POINT = re.compile(r"^([a-zđ])\)\s+(.*)$")
 RE_APPENDIX = re.compile(r"^(?:#+\s*)?PHỤ\s+LỤC(?:\s+([A-Z0-9IVX]+))?[:\.]?\s*(.*)$", re.IGNORECASE)
+_MD_LEAD = re.compile(r"^(?:[#>]+\s*)+")
+_QUOTE_CHARS = re.compile(r'["“”]')
+_MD_EMPH = re.compile(r"\*\*|__|(?<!\w)[*_]|[*_](?!\w)")
+
+
+# PDF->markdown extraction sometimes glues a heading onto the previous line:
+#   "...cấp I, II, III, IV.</mark> **Điều 8. Khổ đường sắt**"
+#   "**BẢO ĐẢM TRẬT TỰ, AN TOÀN GIAO THÔNG ĐƯỜNG SẮT Điều 51. Hoạt động ...**"
+#   "**Điều 39.**<sup>45</sup> **_(được bãi bỏ)_ Điều 40.**<sup>46</sup> ..."
+_GLUED_BOLD_ARTICLE = re.compile(
+    r"(?:(?<=\S)[ \t]+(?=(?:\*\*|__?|<mark>)+Điều\s+\d+[a-z]?\.)"
+    r"|(?<=[*_>])[ \t]+(?=Điều\s+\d+[a-z]?\.))"
+)
+_HTML_FOOTNOTE = re.compile(r"<sup>.*?</sup>", re.IGNORECASE)
+_HTML_TAG = re.compile(r"</?[a-zA-Z][^>]*>")
+_GLUED_CAPS_ARTICLE = re.compile(r"^(.*?\S)[ \t]+(Điều\s+\d+[a-z]?\.\s)", re.MULTILINE)
+
+
+def strip_markup(line: str) -> str:
+    """Strip markdown/HTML decoration (#, >, **bold**, <mark>, footnote <sup>) so '**Điều 2. X**' matches."""
+    line = _HTML_TAG.sub("", _HTML_FOOTNOTE.sub("", line))
+    return _MD_EMPH.sub("", _MD_LEAD.sub("", line)).strip()
+
+
+def _unglue_caps(m: "re.Match[str]") -> str:
+    prefix = m.group(1)
+    bare = strip_markup(prefix)
+    # Only an ALL-CAPS chapter/section title may precede a glued heading.
+    if not bare or not any(c.isalpha() for c in bare) or bare != bare.upper():
+        return m.group(0)
+    return f"{prefix}\n{'**' if prefix.startswith('**') else ''}{m.group(2)}"
+
+
+def _split_glued_headings(text: str) -> str:
+    text = _GLUED_BOLD_ARTICLE.sub("\n", text)
+    return _GLUED_CAPS_ARTICLE.sub(_unglue_caps, text)
+
+
+def _match_article(trimmed: str) -> Optional["re.Match[str]"]:
+    """RE_ARTICLE, minus in-text references like 'Điều 51 của Luật Đầu tư ...'."""
+    m = RE_ARTICLE.match(trimmed)
+    if not m:
+        return None
+    after_num = trimmed[m.end(1):]
+    title = m.group(2)
+    if not after_num.lstrip().startswith(".") and title[:1].islower():
+        return None
+    return m
+
+
+def _article_seq(num: str) -> Optional[int]:
+    digits = re.match(r"\d+", num)
+    return int(digits.group(0)) if digits else None
 
 
 class LegalHierarchyParser:
@@ -95,12 +152,18 @@ class LegalHierarchyParser:
         if not full_text or not full_text.strip():
             return tree
 
-        normalized_text = normalize_text(full_text)
+        normalized_text = _split_glued_headings(normalize_text(full_text))
         lines = normalized_text.split("\n")
 
         # Parsing states
         in_preamble = True
         in_quote = False
+        last_article_seq: Optional[int] = None
+        # Headings outside quotes, used to tell a lost closing quote from a quoted article.
+        heading_seqs = [
+            _article_seq(m.group(1)) if (m := _match_article(strip_markup(ln))) and not _QUOTE_CHARS.search(ln) else None
+            for ln in lines
+        ]
         current_chapter: Optional[LegalChapter] = None
         current_article: Optional[LegalArticle] = None
         current_clause: Optional[LegalClause] = None
@@ -127,11 +190,12 @@ class LegalHierarchyParser:
                     current_chapter.articles.append(current_article)
                 else:
                     tree.unattached_articles.append(current_article)
+                tree.ordered_articles.append(current_article)
                 current_article = None
                 article_lines = []
 
-        for line in lines:
-            trimmed = line.strip()
+        for idx, line in enumerate(lines):
+            trimmed = strip_markup(line)
             if not trimmed:
                 if in_preamble:
                     preamble_lines.append(line)
@@ -142,6 +206,18 @@ class LegalHierarchyParser:
             # Update quote tracking
             # Count quote marks: standard ASCII " and typographic “ ”
             quote_marks = trimmed.count('"') + trimmed.count('“') + trimmed.count('”')
+            # A closing quote lost at a page break would swallow the rest of the document:
+            # close it at the next sequential article heading, unless that number is
+            # repeated later (then this one is a quoted article of an amended text).
+            seq = heading_seqs[idx]
+            if (
+                in_quote
+                and seq is not None
+                and last_article_seq is not None
+                and seq == last_article_seq + 1
+                and seq not in heading_seqs[idx + 1:]
+            ):
+                in_quote = False
             if quote_marks % 2 != 0:
                 in_quote = not in_quote
                 if current_article and in_quote:
@@ -167,17 +243,18 @@ class LegalHierarchyParser:
 
             # Capture Chapter title if on subsequent line
             if current_chapter and not current_chapter.title and not current_article:
-                if not RE_SECTION.match(trimmed) and not RE_ARTICLE.match(trimmed) and not RE_CHAPTER.match(trimmed):
+                if not RE_SECTION.match(trimmed) and not _match_article(trimmed) and not RE_CHAPTER.match(trimmed):
                     current_chapter.title = trimmed
                     continue
 
             # Check for Article transition
-            m_art = RE_ARTICLE.match(trimmed)
+            m_art = _match_article(trimmed)
             if m_art:
                 _commit_current_article()
                 in_preamble = False
                 art_num = m_art.group(1).strip()
                 art_title = m_art.group(2).strip()
+                last_article_seq = _article_seq(art_num)
 
                 current_article = LegalArticle(
                     number=art_num,

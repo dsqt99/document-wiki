@@ -30,7 +30,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.dialects.postgresql import ENUM as PgEnum
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, validates
 
 # ---------------------------------------------------------------------------
 # Enums
@@ -204,6 +204,13 @@ class Source(Base):
     contributor: Mapped[Optional["Employee"]] = relationship(
         foreign_keys=[contributed_by_employee_id]
     )
+
+    @validates("progress_message", "chunk_progress_message", "wiki_progress_message")
+    def _clip_progress_message(self, _key: str, value: Optional[str]) -> Optional[str]:
+        # VARCHAR(500): an over-long status line (e.g. a huge doc title) must not fail the whole flush.
+        if value is not None and len(value) > 500:
+            return value[:499] + "…"
+        return value
 
 
 class SourceDepartment(Base):
