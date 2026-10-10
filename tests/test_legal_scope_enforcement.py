@@ -54,3 +54,55 @@ async def test_legal_service_respects_department_scope():
 
         # Check regenerate_index was called for department scope
         mock_regen.assert_called_with(mock_session, scope_type="department", scope_id=dept_id)
+
+
+@pytest.mark.asyncio
+async def test_legal_finalize_stops_embedding_after_consecutive_failures():
+    """An embedding outage must not burn the job timeout one page at a time,
+    and the legal graph must already be committed before embedding starts."""
+    mock_source = MagicMock()
+    mock_source.id = uuid.uuid4()
+    mock_source.title = "Luật thử nghiệm"
+    mock_source.file_name = "luat.pdf"
+    mock_source.full_text = "\n".join(f"Điều {i}. Nội dung điều {i}" for i in range(1, 11))
+    mock_source.knowledge_type_id = None
+
+    events = []
+    mock_session = AsyncMock()
+    mock_session.commit.side_effect = lambda: events.append("commit")
+
+    async def _graph(*a, **k):
+        events.append("graph")
+
+    async def _chunks(*a, **k):
+        events.append("chunk")
+        raise RuntimeError("Connection error")
+
+    provider = MagicMock()
+    provider.embed_batch = AsyncMock(side_effect=RuntimeError("Connection error"))
+
+    with patch("app.services.wiki_service.resolve_wiki_scopes", new_callable=AsyncMock, return_value=[("global", None)]), \
+         patch("app.services.wiki_service.upsert_page", new_callable=AsyncMock) as mock_upsert, \
+         patch("app.services.wiki_service.regenerate_index", new_callable=AsyncMock), \
+         patch("app.services.wiki_service.append_log", new_callable=AsyncMock), \
+         patch("app.services.legal_service.ingest_legal_graph", side_effect=_graph), \
+         patch("app.services.legal_relation_extractor.relink_legal_relations", new_callable=AsyncMock), \
+         patch("app.services.legal_service.get_spec", return_value=MagicMock(id="spec")), \
+         patch("app.services.legal_service.index_wiki_page_chunks", side_effect=_chunks), \
+         patch("app.services.legal_service.ProviderRegistry") as mock_registry_cls, \
+         patch("app.services.source_status.update_source_dual_status", new_callable=AsyncMock):
+        registry = MagicMock()
+        registry.get_active_embedding_spec_id = AsyncMock(return_value="spec")
+        registry.get_embedding = AsyncMock(return_value=provider)
+        mock_registry_cls.return_value = registry
+        mock_upsert.side_effect = lambda *a, **k: MagicMock(slug=k["slug"], title=k["title"], id=uuid.uuid4())
+
+        result = await finalize_legal_source(mock_session, mock_source, AsyncMock())
+
+    assert result["status"] == "ready"
+    # 11 pages = 1 batch of page embeddings; the breaker trips after 3 failures in total.
+    assert provider.embed_batch.await_count == 1
+    assert events.count("chunk") == 2
+    # Graph is committed before any embedding call.
+    g = events.index("graph")
+    assert "commit" in events[g:events.index("chunk")]

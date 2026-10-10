@@ -666,7 +666,10 @@ async def finalize_legal_source(session: AsyncSession, source: Source, tracker: 
         )
         from app.services.legal_relation_extractor import relink_legal_relations
         await relink_legal_relations(session, source_id=source.id)
+        # Persist now: the embedding phase below is slow and may be cancelled by the job timeout.
+        await session.commit()
     except Exception as e:
+        await session.rollback()
         logger.warning(f"Failed to ingest legal graph for source {source.id}: {e}")
 
     # 3. Compute vector embeddings (Page-level and Chunk-level)
@@ -674,9 +677,15 @@ async def finalize_legal_source(session: AsyncSession, source: Source, tracker: 
     await tracker.update(70, f"Đang tạo vector embeddings cho {total_pages} trang Wiki...")
 
     if embedding_provider and embedding_spec:
+        # Stop calling the embedding service after this many consecutive failures
+        # (outage): pages stay readable/keyword-searchable and can be re-embedded later.
+        max_consecutive_failures = 3
+        consecutive_failures = 0
         # A. Page-level embedding in batches
         batch_size = 16
         for b_start in range(0, total_pages, batch_size):
+            if consecutive_failures >= max_consecutive_failures:
+                break
             b_pages = pages_to_index[b_start : b_start + batch_size]
             texts_to_embed = [
                 f"{p.title}\n\n{p.summary}\n\n{(p.content_md or '')[:4000]}"
@@ -696,7 +705,9 @@ async def finalize_legal_source(session: AsyncSession, source: Source, tracker: 
                         summary=p.summary,
                         content_md=p.content_md,
                     )
+                consecutive_failures = 0
             except Exception as e:
+                consecutive_failures += 1
                 logger.warning(f"Batch page embedding failed for pages {b_start}-{b_start+len(b_pages)}: {e}")
 
             # Update progress between 70% and 85%
@@ -705,9 +716,17 @@ async def finalize_legal_source(session: AsyncSession, source: Source, tracker: 
 
         # B. Section-level chunk embeddings
         for idx, p in enumerate(pages_to_index):
+            if consecutive_failures >= max_consecutive_failures:
+                logger.warning(
+                    f"Embedding service unavailable — skipped semantic indexing for "
+                    f"{total_pages - idx} page(s) of source {source.id}; re-embed them later."
+                )
+                break
             try:
                 await index_wiki_page_chunks(session, p, spec_id=embedding_spec.id)
+                consecutive_failures = 0
             except Exception as e:
+                consecutive_failures += 1
                 logger.warning(f"Chunk embedding failed for page '{p.slug}': {e}")
 
             if idx % 10 == 0 or idx == total_pages - 1:
