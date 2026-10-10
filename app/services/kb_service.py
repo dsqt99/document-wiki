@@ -253,6 +253,10 @@ async def _load_doc_processing_config() -> dict:
                 "ocr_llm_refine": _bool(await cfg.get("ocr_llm_refine"), False),
                 "strip_headers_footers": _bool(await cfg.get("pdf_strip_headers_footers"), True),
                 "enhance_headings": _bool(await cfg.get("pdf_enhance_headings"), True),
+                "ocr_base_url": await cfg.get("ocr_base_url"),
+                "ocr_api_key": await cfg.get("ocr_api_key"),
+                "ocr_model": await cfg.get("ocr_model"),
+                "ocr_prompt": await cfg.get("ocr_prompt"),
             }
     except Exception as e:
         logger.warning(f"Document processing config unavailable, using defaults: {e}")
@@ -284,8 +288,12 @@ async def _extract_text_from_file(
             ("ocr_llm_refine", "ocr_llm_refine"),
             ("strip_headers_footers", "strip_headers_footers"),
             ("enhance_headings", "enhance_headings"),
+            ("ocr_base_url", "ocr_base_url"),
+            ("ocr_api_key", "ocr_api_key"),
+            ("ocr_model", "ocr_model"),
+            ("ocr_prompt", "ocr_prompt"),
         )
-        if src in doc_cfg
+        if src in doc_cfg and doc_cfg[src] is not None
     }
 
     if ext == "pdf":
