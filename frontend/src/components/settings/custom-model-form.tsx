@@ -22,6 +22,16 @@ const EMBEDDING_DIMENSIONS = [768, 1024, 1536, 3072];
 
 type SavedModel = { id: string };
 
+/** Stored fields of a custom model, for editing. */
+export type EditableModel = {
+  id: string;
+  model_id: string;
+  label: string;
+  base_url?: string | null;
+  protocol?: string | null;
+  dimension?: number;
+};
+
 type Suggestion = { id: string; dim?: number; hint?: string };
 
 /** Well-known embedding models per provider (dim = native output size). */
@@ -60,6 +70,7 @@ export function CustomModelForm({
   kind,
   provider = "custom",
   existingModelIds = [],
+  initial,
   onSaved,
   onCancel,
 }: {
@@ -67,22 +78,25 @@ export function CustomModelForm({
   provider?: ProviderGroup;
   /** Model ids already listed under this provider (hidden from the dropdown). */
   existingModelIds?: string[];
+  /** Model being edited; omitted = add a new one. */
+  initial?: EditableModel;
   onSaved: (id: string) => void;
   onCancel: () => void;
 }) {
   const isCustom = provider === "custom";
-  const [label, setLabel] = useState("");
-  const [baseUrl, setBaseUrl] = useState("");
-  const [modelId, setModelId] = useState("");
+  const editing = !!initial;
+  const [label, setLabel] = useState(initial && initial.label !== initial.model_id ? initial.label : "");
+  const [baseUrl, setBaseUrl] = useState(initial?.base_url ?? "");
+  const [modelId, setModelId] = useState(initial?.model_id ?? "");
   const [apiKey, setApiKey] = useState("");
-  const [protocol, setProtocol] = useState("openai");
-  const [dimension, setDimension] = useState(1024);
+  const [protocol, setProtocol] = useState(initial?.protocol ?? "openai");
+  const [dimension, setDimension] = useState(initial?.dimension ?? 1024);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   // Models reported by the endpoint (GET /models); null = not loaded yet.
   const [discovered, setDiscovered] = useState<string[] | null>(null);
   const [discovering, setDiscovering] = useState(false);
-  const [manual, setManual] = useState(false);
+  const [manual, setManual] = useState(editing);
   const [probe, setProbe] = useState<{ busy: boolean; ok: boolean; text: string } | null>(null);
 
   const known = (kind === "embedding" ? EMBEDDING_SUGGESTIONS[provider] : []).filter(
@@ -169,6 +183,7 @@ export function CustomModelForm({
           api_key: (isCustom && apiKey.trim()) || undefined,
           protocol: isCustom ? protocol : undefined,
           dimension: kind === "embedding" ? dimension : undefined,
+          original_id: initial?.id,
         },
       });
       onSaved(saved.id);
@@ -277,7 +292,7 @@ export function CustomModelForm({
               type="password"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
-              placeholder="Bỏ trống nếu endpoint không cần key"
+              placeholder={editing ? "Để trống = giữ key hiện tại" : "Bỏ trống nếu endpoint không cần key"}
               className="bg-background text-xs"
             />
           </div>
@@ -344,7 +359,7 @@ export function CustomModelForm({
           onClick={handleSave}
           className="bg-primary text-primary-foreground px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-primary/90 disabled:opacity-50"
         >
-          {saving ? "Đang lưu…" : "Lưu model"}
+          {saving ? "Đang lưu…" : editing ? "Lưu thay đổi" : "Lưu model"}
         </button>
         <button
           onClick={onCancel}
@@ -367,6 +382,7 @@ export async function deleteCustomModel(kind: CustomModelKind, id: string) {
 export async function saveCustomModelKey(
   kind: CustomModelKind,
   spec: {
+    id: string;
     model_id: string;
     label: string;
     group?: string;
@@ -387,6 +403,7 @@ export async function saveCustomModelKey(
       protocol: spec.protocol ?? "openai",
       dimension: kind === "embedding" ? spec.dimension : undefined,
       api_key: apiKey,
+      original_id: spec.id,
     },
   });
 }

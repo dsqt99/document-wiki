@@ -26,6 +26,7 @@ from app.ai.custom_models import (
     PROVIDERS,
     CustomModel,
     delete_custom,
+    get_api_key,
     get_custom,
     is_custom,
     list_custom,
@@ -89,6 +90,8 @@ class CustomModelIn(BaseModel):
     dimension: Optional[int] = None
     # None or a masked value ("••••…") keeps the stored key.
     api_key: Optional[str] = None
+    # Id of the model being edited; None = add a new model.
+    original_id: Optional[str] = None
 
 
 class OcrModelOut(BaseModel):
@@ -242,12 +245,33 @@ async def save_custom_model(
         dimension = body.dimension
 
     spec_id = make_id(body.kind, model_id, dimension)
+    existing = await get_custom(db, body.kind, spec_id)
+    original = None
+    if body.original_id is not None:
+        original = await get_custom(db, body.kind, body.original_id)
+        if original is None:
+            raise HTTPException(status_code=404, detail="Model not found")
+    renamed = original is not None and original.id != spec_id
+    if existing is not None and (original is None or renamed):
+        raise HTTPException(status_code=409, detail="Model này đã có trong danh sách.")
+    if renamed and (await _active_ids(db)).get(body.kind) == original.id:
+        raise HTTPException(
+            status_code=409,
+            detail="Model đang dùng: không đổi được tên model/số chiều. Chuyển sang model khác trước.",
+        )
+
+    api_key = _new_key(body.api_key)
+    if renamed and api_key is None:
+        # Carry the old model's own key over to its new id.
+        api_key = await get_api_key(db, body.kind, original.id) or None
     model = CustomModel(
         id=spec_id, kind=body.kind, model_id=model_id,
         label=(body.label or "").strip() or model_id,
         base_url=base_url, protocol=protocol, dimension=dimension, provider=body.provider,
     )
-    await save_custom(db, model, _new_key(body.api_key))
+    if renamed:
+        await delete_custom(db, body.kind, original.id)
+    await save_custom(db, model, api_key)
     # Keep the OCR keys in sync when the edited model is the OCR model in use.
     if body.kind == "ocr" and (await _active_ids(db))["ocr"] == spec_id:
         await _apply_ocr(db, spec_id, None)

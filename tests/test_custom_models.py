@@ -190,3 +190,55 @@ async def test_legacy_custom_models_default_to_custom_group(store):
     (m,) = await cm.list_custom(None, "llm")
     assert m.provider == "custom"
     assert await cm.resolve_api_key(None, m) == ""
+
+
+@pytest.mark.asyncio
+async def test_edit_custom_model_renames_and_keeps_key(store, monkeypatch):
+    from fastapi import HTTPException
+
+    from app.routers import admin_custom_models as r
+
+    class FakeDb:
+        async def commit(self):
+            pass
+
+    async def no_audit(*args, **kwargs):
+        pass
+
+    monkeypatch.setattr(r, "log_audit", no_audit)
+    db = FakeDb()
+
+    def body(**kw):
+        return r.CustomModelIn(kind="embedding", base_url="http://vllm.local/v1", **kw)
+
+    await r.save_custom_model(body(model_id="bge-m3", dimension=1024, api_key="k1"), db, None)
+    # Adding the same model again is a duplicate.
+    with pytest.raises(HTTPException) as e:
+        await r.save_custom_model(body(model_id="bge-m3", dimension=1024), db, None)
+    assert e.value.status_code == 409
+
+    # Edit: new model name + dimension moves the entry and its key.
+    out = await r.save_custom_model(
+        body(model_id="e5-base", dimension=768, label="E5", original_id="custom/1024/bge-m3"), db, None
+    )
+    assert out.id == "custom/768/e5-base" and out.label == "E5"
+    assert [m.id for m in await cm.list_custom(None, "embedding")] == ["custom/768/e5-base"]
+    assert await cm.get_api_key(None, "embedding", "custom/768/e5-base") == "k1"
+
+    # The model in use cannot change id.
+    store["active_embedding_model"] = "custom/768/e5-base"
+    monkeypatch.setattr(r, "_active_ids", lambda db: _async({"embedding": "custom/768/e5-base"}))
+    with pytest.raises(HTTPException) as e:
+        await r.save_custom_model(
+            body(model_id="e5-large", dimension=1024, original_id="custom/768/e5-base"), db, None
+        )
+    assert e.value.status_code == 409
+    # ...but its label/endpoint can still be edited in place.
+    out = await r.save_custom_model(
+        body(model_id="e5-base", dimension=768, label="E5 v2", original_id="custom/768/e5-base"), db, None
+    )
+    assert out.label == "E5 v2"
+
+
+async def _async(value):
+    return value

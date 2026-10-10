@@ -147,6 +147,7 @@ export function ProviderModelPicker<S extends PickerSpec>({
     asGroup((activeSpec ?? specs.find((s) => s.id === selectedId) ?? specs[0])?.group),
   );
   const [adding, setAdding] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [providerKey, setProviderKey] = useState<{ group: ProviderGroup | null; value: string }>({
     group: null,
     value: "",
@@ -222,6 +223,7 @@ export function ProviderModelPicker<S extends PickerSpec>({
   function switchTab(g: ProviderGroup) {
     setTab(g);
     setAdding(false);
+    setEditingId(null);
     setMessage(null);
   }
 
@@ -321,6 +323,24 @@ export function ProviderModelPicker<S extends PickerSpec>({
             {tabSpecs.map((spec) => {
               const isActive = spec.id === activeId;
               const isChecked = spec.id === selectedId;
+              if (spec.custom && spec.id === editingId) {
+                return (
+                  <CustomModelForm
+                    key={spec.id}
+                    kind={kind}
+                    provider={tab}
+                    initial={spec}
+                    existingModelIds={tabSpecs.filter((s) => s.id !== spec.id).map((s) => s.model_id)}
+                    onCancel={() => setEditingId(null)}
+                    onSaved={async (id) => {
+                      setEditingId(null);
+                      if (spec.id === selectedId) onSelect(id);
+                      await onChanged();
+                      flash(true, "Đã lưu thay đổi");
+                    }}
+                  />
+                );
+              }
               return (
                 <label
                   key={spec.id}
@@ -364,19 +384,34 @@ export function ProviderModelPicker<S extends PickerSpec>({
                     )}
                     {spec.notes && <p className="text-[11px] text-muted-foreground/80 mt-0.5 italic">{spec.notes}</p>}
                   </div>
-                  {spec.custom && !isActive && (
-                    <button
-                      type="button"
-                      disabled={disabled || busy}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        removeModel(spec);
-                      }}
-                      title="Xóa model"
-                      className="text-muted-foreground hover:text-destructive disabled:opacity-50"
-                    >
-                      <span className="material-symbols-outlined text-base">delete</span>
-                    </button>
+                  {spec.custom && (
+                    <div className="flex shrink-0 items-center gap-0.5">
+                      <button
+                        type="button"
+                        disabled={disabled || busy}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setAdding(false);
+                          setEditingId(spec.id);
+                        }}
+                        title="Sửa model"
+                        className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+                      >
+                        <span className="material-symbols-outlined text-base">edit</span>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={disabled || busy || isActive}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          removeModel(spec);
+                        }}
+                        title={isActive ? "Model đang dùng — chuyển sang model khác trước khi xóa" : "Xóa model"}
+                        className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <span className="material-symbols-outlined text-base">delete</span>
+                      </button>
+                    </div>
                   )}
                 </label>
               );
@@ -423,7 +458,10 @@ export function ProviderModelPicker<S extends PickerSpec>({
             <button
               type="button"
               disabled={disabled}
-              onClick={() => setAdding(true)}
+              onClick={() => {
+                setEditingId(null);
+                setAdding(true);
+              }}
               className="self-start flex items-center gap-1 text-xs font-medium text-primary hover:underline disabled:opacity-50"
             >
               <span className="material-symbols-outlined text-sm">add</span>
