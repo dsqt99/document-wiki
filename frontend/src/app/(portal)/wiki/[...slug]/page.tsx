@@ -449,6 +449,10 @@ export default function WikiPageViewer() {
         },
       }
     );
+    // Review is disabled: the edit is published immediately — reload it.
+    const scopeParams = isScoped ? `?scope_type=${scopeType}&scope_id=${scopeId}` : "";
+    const fresh = await api<WikiPageDetail>(`/api/wiki/pages/${encodeURIComponent(fullSlug)}${scopeParams}`);
+    setPage(fresh);
     setMode("view");
   };
 
@@ -783,13 +787,9 @@ export default function WikiPageViewer() {
                   )}
                   <WikiEditor
                     initialContent={page.content_md}
-                    noteLabel={canEdit ? "Change note" : "Proposal note"}
-                    notePlaceholder={
-                      canEdit
-                        ? "Briefly describe what you changed (optional)"
-                        : "Describe your proposed change (optional)"
-                    }
-                    saveLabel={canEdit ? "Save Edit" : "Submit Proposal"}
+                    noteLabel="Change note"
+                    notePlaceholder="Briefly describe what you changed (optional)"
+                    saveLabel="Save Edit"
                     onSave={canEdit ? handleSaveEdit : handleSaveProposal}
                     onCancel={() => setMode("view")}
                   />

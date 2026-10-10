@@ -34,6 +34,7 @@ from app.services.permission_engine import (
     has_any_permission,
 )
 from app.services.wiki_chunk_service import index_wiki_page_chunks
+from app.services.wiki_draft_publish import publish_draft
 from loguru import logger
 
 router = APIRouter()
@@ -535,6 +536,24 @@ async def _draft_response(db: AsyncSession, draft: WikiPageDraft) -> DraftRespon
 # Endpoints
 # ---------------------------------------------------------------------------
 
+async def _publish_or_raise(db: AsyncSession, draft: WikiPageDraft, user: Employee) -> None:
+    """Review is disabled: apply the freshly proposed draft right away."""
+    try:
+        await publish_draft(db, draft, user)
+    except wiki_service.DraftConflictError as e:
+        await db.rollback()
+        raise HTTPException(
+            409,
+            f"Trang đã được cập nhật lên v{e.current_version} sau khi bạn mở. Tải lại trang rồi sửa lại.",
+        )
+    except wiki_service.CreateDraftSlugConflict as e:
+        await db.rollback()
+        raise HTTPException(409, f"Slug '{e.slug}' đã tồn tại.")
+    except ValueError as e:
+        await db.rollback()
+        raise HTTPException(400, str(e))
+
+
 @router.post("/wiki/pages/{slug:path}/drafts", response_model=DraftResponse, status_code=201)
 async def propose_draft(
     slug: str,
@@ -542,7 +561,7 @@ async def propose_draft(
     db: AsyncSession = Depends(get_db),
     user: Employee = Depends(get_current_user),
 ):
-    """Propose an edit to an existing wiki page. Creates a pending draft for editor review."""
+    """Edit an existing wiki page. The draft is recorded and published immediately (no review)."""
     if slug in (wiki_service.INDEX_SLUG, wiki_service.LOG_SLUG):
         raise HTTPException(400, "Cannot propose drafts for reserved pages")
 
@@ -580,8 +599,8 @@ async def propose_draft(
     draft.page = page
     if hasattr(body, "branch_id") and body.branch_id:
         draft.branch_id = body.branch_id
-    await log_audit(db, user, "create", "wiki_draft", str(draft.id), reason=f"draft for: {slug}")
-    await contribution_service.notify_submitted(db, wiki_draft_adapter, draft, user)
+    await log_audit(db, user, "update", "wiki_draft", str(draft.id), reason=f"published edit: {slug}")
+    await _publish_or_raise(db, draft, user)
     await db.commit()
     await db.refresh(draft)
     return await _draft_response(db, draft)
@@ -1017,9 +1036,9 @@ async def propose_create_page(
         draft.branch_id = body.branch_id
     await log_audit(
         db, user, "create", "wiki_draft", str(draft.id),
-        reason=f"propose new page: {body.slug}",
+        reason=f"published new page: {body.slug}",
     )
-    await contribution_service.notify_submitted(db, wiki_draft_adapter, draft, user)
+    await _publish_or_raise(db, draft, user)
     await db.commit()
     await db.refresh(draft)
     return await _draft_response(db, draft)

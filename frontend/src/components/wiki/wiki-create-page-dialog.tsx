@@ -140,7 +140,7 @@ export function WikiCreatePageDialog({
             : `?scopeType=${scope_type}&scopeId=${scope_id}`;
         router.push(`/wiki/${page.slug}${qs}`);
       } else {
-        const draft = await api<DraftResponse>("/api/wiki/drafts/create", {
+        await api<DraftResponse>("/api/wiki/drafts/create", {
           method: "POST",
           body: {
             slug,
@@ -153,11 +153,13 @@ export function WikiCreatePageDialog({
             note: note || null,
           },
         });
+        // Review is disabled: the page is published immediately.
         onOpenChange(false);
-        // Drafts land in the reviewer queue — no page exists yet. Just close.
-        // The user will get a notification when it is approved.
-        // eslint-disable-next-line no-console
-        console.info("Draft submitted:", draft.id);
+        const qs =
+          scope_type === "global"
+            ? ""
+            : `?scopeType=${scope_type}&scopeId=${scope_id}`;
+        router.push(`/wiki/${slug}${qs}`);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Submit failed";
@@ -174,12 +176,12 @@ export function WikiCreatePageDialog({
           <DialogTitle>
             {effectiveMode === "direct"
               ? t("wiki.createTitle", "Create new page")
-              : t("wiki.proposeTitle", "Propose new page")}
+              : t("wiki.createTitle", "Create new page")}
           </DialogTitle>
           <DialogDescription>
             {effectiveMode === "direct"
               ? t("wiki.createDesc", "The page is created immediately and added to the index.")
-              : t("wiki.proposeDesc", "An editor will review the proposal before the page is materialised.")}
+              : t("wiki.createDesc", "The page is created immediately and added to the index.")}
           </DialogDescription>
         </DialogHeader>
 

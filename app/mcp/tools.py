@@ -1207,7 +1207,7 @@ def register_tools(mcp: FastMCP):
         base_version: Optional[int] = None,
     ) -> str:
         """
-        Propose an edit to an existing wiki page. Creates a pending draft for editor review.
+        Propose an edit to an existing wiki page. Published immediately as a new page version (no review).
 
         Use search_wiki() or read_wiki_index() to find the right slug first.
         Always confirm with the user before submitting.
@@ -1302,16 +1302,20 @@ def register_tools(mcp: FastMCP):
                 base_version=effective_base,
             )
             draft.page = page
-            from app.services import contribution_service
-            from app.services.contribution_service import wiki_draft_adapter
-            await contribution_service.notify_submitted(
-                session, wiki_draft_adapter, draft, employee,
-            )
+            from app.services.wiki_draft_publish import publish_draft
+            try:
+                published = await publish_draft(session, draft, employee)
+            except wiki_service.DraftConflictError as e:
+                await session.rollback()
+                return (
+                    f"Error: page '{slug}' is now v{e.current_version} (your edit was based on "
+                    f"v{e.base_version}). Re-read the page and re-apply your change."
+                )
             await session.commit()
 
         return (
-            f"Draft submitted for `{slug}` (Draft ID: `{draft.id}`, based on v{effective_base}).\n"
-            f"An editor will review it. Note: {note or '(none)'}"
+            f"Edit published for `{slug}` → v{published.version} (no review needed). "
+            f"Note: {note or '(none)'}"
         )
 
     # =========================================================================
@@ -1947,7 +1951,7 @@ def register_tools(mcp: FastMCP):
         note: Optional[str] = None,
     ) -> str:
         """
-        Propose a brand new wiki page for review. Contributor+ may file.
+        Create a brand new wiki page (published immediately, no review). Contributor+ may file.
         The page is materialised when an editor approves the draft.
 
         Use search_wiki() first to check whether a similar page already
@@ -1967,8 +1971,7 @@ def register_tools(mcp: FastMCP):
 
         from app.database import async_session_factory
         from app.database.models import Employee
-        from app.services import contribution_service, wiki_service
-        from app.services.contribution_service import wiki_draft_adapter
+        from app.services import wiki_service
 
         identity, err = await _get_identity()
         if err:
@@ -2043,14 +2046,16 @@ def register_tools(mcp: FastMCP):
                 draft_kind="create",
                 suggested_metadata=suggested_metadata,
             )
-            await contribution_service.notify_submitted(
-                session, wiki_draft_adapter, draft, employee,
-            )
+            from app.services.wiki_draft_publish import publish_draft
+            try:
+                await publish_draft(session, draft, employee)
+            except (wiki_service.CreateDraftSlugConflict, ValueError) as e:
+                await session.rollback()
+                return f"Error: could not create page '{slug}': {e}"
             await session.commit()
 
         return (
-            f"Create draft submitted for new page `{slug}` "
-            f"(Draft ID: `{draft.id}`).\nAn editor will review and approve. "
+            f"Page `{slug}` created (no review needed). "
             f"Note: {note or '(none)'}"
         )
 
