@@ -146,8 +146,9 @@ class RerankerService:
         documents: List[dict[str, Any]],
         text_key: str = "text",
     ) -> List[dict[str, Any]]:
-        """Call remote TEI / Infinity / BGE rerank API."""
-        endpoint = f"{self.base_url}/rerank"
+        """Call remote vLLM / Jina / Cohere-style or TEI rerank API."""
+        # Accept either a base URL ('https://host/v1') or the full endpoint ('https://host/v1/rerank').
+        endpoint = self.base_url if self.base_url.endswith("/rerank") else f"{self.base_url}/rerank"
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
@@ -156,13 +157,15 @@ class RerankerService:
         payload = {
             "model": self.model,
             "query": query,
-            "texts": texts,
+            "documents": texts,
+            "top_n": len(texts),
         }
 
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(endpoint, json=payload, headers=headers)
             if resp.status_code != 200:
-                # Try fallback endpoint without model param if TEI
+                # TEI format: 'texts' instead of 'documents', no model param
+                logger.debug(f"Reranker {endpoint} returned {resp.status_code}; retrying with TEI payload")
                 resp = await client.post(
                     endpoint,
                     json={"query": query, "texts": texts},
