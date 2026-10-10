@@ -227,6 +227,7 @@ async def _load_doc_processing_config() -> dict:
                 "excel_engine": await cfg.get("excel_parser_engine") or "openpyxl",
                 "ocr_mode": await cfg.get("ocr_mode") or "auto",
                 "ocr_fallback_vision": _bool(await cfg.get("ocr_fallback_vision"), True),
+                "ocr_llm_refine": _bool(await cfg.get("ocr_llm_refine"), False),
                 "strip_headers_footers": _bool(await cfg.get("pdf_strip_headers_footers"), True),
                 "enhance_headings": _bool(await cfg.get("pdf_enhance_headings"), True),
             }
@@ -257,6 +258,7 @@ async def _extract_text_from_file(
             ("engine", "pdf_engine"),
             ("ocr_mode", "ocr_mode"),
             ("ocr_fallback_vision", "ocr_fallback_vision"),
+            ("ocr_llm_refine", "ocr_llm_refine"),
             ("strip_headers_footers", "strip_headers_footers"),
             ("enhance_headings", "enhance_headings"),
         )

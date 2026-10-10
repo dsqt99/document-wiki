@@ -202,6 +202,7 @@ class PDFParser(BaseParser):
         ocr_model: Optional[str] = None,
         ocr_prompt: Optional[str] = None,
         ocr_fallback_vision: bool = True,
+        ocr_llm_refine: bool = False,
         db: Optional[Any] = None,
         **kwargs: Any,
     ) -> List[Dict[str, Any]]:
@@ -272,7 +273,7 @@ class PDFParser(BaseParser):
                     scanned_indices.append(idx)
 
         # Step 3: Trigger OCR for target pages if providers available
-        from app.services.ocr_service import ocr_service
+        from app.services.ocr_service import ocr_service, refine_ocr_with_llm
 
         is_ocr_ready = ocr_service.is_configured(base_url=ocr_base_url, api_key=ocr_api_key)
         has_vision = bool(vision_provider and ocr_fallback_vision)
@@ -320,6 +321,15 @@ class PDFParser(BaseParser):
                             logger.warning(
                                 f"PDFParser: dedicated OCR failed on page {idx+1}: {e}"
                             )
+
+                    # OCR + LLM: the Vision model proofreads the OCR draft
+                    # against the page image (more accurate, ~2x slower).
+                    if ocr_res and ocr_res.strip() and ocr_llm_refine and vision_provider:
+                        refined = await refine_ocr_with_llm(
+                            vision_provider, img_bytes, "image/jpeg", ocr_res
+                        )
+                        if refined:
+                            ocr_res = refined
 
                     if (not ocr_res or not ocr_res.strip()) and has_vision:
                         try:

@@ -277,3 +277,57 @@ class OCRService:
 
 
 ocr_service = OCRService()
+
+
+OCR_REFINE_PROMPT = (
+    "Bạn là chuyên gia hiệu đính văn bản hành chính, pháp luật tiếng Việt.\n"
+    "Dưới đây là bản OCR của trang tài liệu trong ảnh đính kèm. Đối chiếu từng dòng với ảnh và sửa:\n"
+    "- Lỗi nhận dạng ký tự, dấu tiếng Việt, chữ bị dính hoặc tách sai.\n"
+    "- Số hiệu văn bản, ngày tháng, con số, tên riêng, từ viết tắt ngành (CAND, CSGT, PCCC, ANTT, QĐ, NĐ, TT...).\n"
+    "- Cấu trúc bảng (Markdown Table) và đề mục (Phần, Chương, Mục, Điều, Khoản, Điểm).\n"
+    "- Bổ sung phần chữ có trong ảnh nhưng bản OCR bỏ sót.\n"
+    "Quy tắc: chỉ trả về TOÀN BỘ văn bản đã hiệu đính dạng Markdown, không lời bình, không tóm tắt, "
+    "không bọc trong ```; giữ nguyên nội dung đúng, không tự suy diễn.\n\n"
+    "=== BẢN OCR ===\n{draft}\n=== HẾT BẢN OCR ==="
+)
+
+# A refined page much shorter than the OCR draft is most likely truncated.
+_MIN_REFINE_RATIO = 0.5
+
+
+def _strip_fences(text: str) -> str:
+    t = text.strip()
+    if t.startswith("```"):
+        t = t.split("\n", 1)[1] if "\n" in t else ""
+        if t.rstrip().endswith("```"):
+            t = t.rstrip()[:-3]
+    return t.strip()
+
+
+async def refine_ocr_with_llm(
+    vision_provider: Any,
+    image_bytes: bytes,
+    mime_type: str,
+    draft: str,
+) -> Optional[str]:
+    """Have the Vision LLM proofread an OCR draft against the page image.
+
+    Returns the corrected text, or None (keep the draft) on failure or when
+    the answer looks truncated.
+    """
+    if vision_provider is None or not draft.strip():
+        return None
+    try:
+        out = await vision_provider.analyze_image(
+            image_bytes,
+            mime_type=mime_type,
+            prompt=OCR_REFINE_PROMPT.format(draft=draft.strip()),
+        )
+    except Exception as e:
+        logger.warning(f"OCR LLM refine failed: {e}")
+        return None
+    refined = _strip_fences(out or "")
+    if len(refined) < len(draft.strip()) * _MIN_REFINE_RATIO:
+        logger.warning("OCR LLM refine output looks truncated; keeping OCR draft")
+        return None
+    return refined

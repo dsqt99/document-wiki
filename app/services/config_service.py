@@ -80,6 +80,7 @@ DEFAULT_CONFIG_VALUES: dict[str, str] = {
     ),
     "ocr_mode": "auto",
     "ocr_fallback_vision": "true",
+    "ocr_llm_refine": "false",
     "pdf_parser_engine": "pymupdf4llm",
     "excel_parser_engine": "openpyxl",
     "pdf_strip_headers_footers": "true",
@@ -121,6 +122,7 @@ ALL_CONFIG_KEYS = [
     "ocr_prompt",
     "ocr_mode",
     "ocr_fallback_vision",
+    "ocr_llm_refine",            # OCR + Vision LLM proofreading (slower, more accurate)
 
     # --- Document Processing & Parsing ---
     "pdf_parser_engine",

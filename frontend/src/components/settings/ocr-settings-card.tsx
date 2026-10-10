@@ -17,6 +17,11 @@ type OCRResponse = {
   page_number?: number;
   total_pages?: number;
   error?: string | null;
+  raw_text?: string | null;
+  ocr_latency_ms?: number;
+  refine_model?: string | null;
+  refine_latency_ms?: number;
+  refine_error?: string | null;
 };
 
 type OcrModel = {
@@ -33,6 +38,21 @@ type OcrModel = {
 type OcrCatalog = { active_spec_id: string | null; specs: OcrModel[] };
 
 type ConnResult = { success: boolean; message: string; latency_ms: number };
+
+const OCR_MODES = [
+  {
+    refine: false,
+    icon: "bolt",
+    title: "Chỉ OCR",
+    desc: "Nhanh, chi phí thấp. Phù hợp bản scan rõ nét.",
+  },
+  {
+    refine: true,
+    icon: "auto_fix_high",
+    title: "OCR + LLM hiệu đính",
+    desc: "Model Vision đối chiếu ảnh và sửa bản OCR — chính xác nhất, thời gian xử lý ~2×.",
+  },
+];
 
 export function OcrSettingsCard() {
   const [catalog, setCatalog] = useState<OcrCatalog | null>(null);
@@ -52,6 +72,11 @@ export function OcrSettingsCard() {
   const [targetPage, setTargetPage] = useState(1);
   const [testLoading, setTestLoading] = useState(false);
   const [testResult, setTestResult] = useState<OCRResponse | null>(null);
+  // null = follow the saved processing mode.
+  const [labRefine, setLabRefine] = useState<boolean | null>(null);
+  const [resultTab, setResultTab] = useState<"refined" | "raw">("refined");
+  const [modeSaving, setModeSaving] = useState(false);
+  const [modeError, setModeError] = useState("");
 
   useEffect(() => {
     void refresh();
@@ -84,6 +109,25 @@ export function OcrSettingsCard() {
   const activeModel = catalog?.specs.find((x) => x.id === catalog.active_spec_id) ?? null;
   const willSwitch = !!selectedModel && selectedModel.id !== catalog?.active_spec_id;
   const conn = connResult && connResult.id === selectedId ? connResult : null;
+  const refineMode = settings.ocr_llm_refine === "true" || settings.ocr_llm_refine === true;
+  const runRefine = labRefine ?? refineMode;
+
+  async function saveMode(refine: boolean) {
+    if (refine === refineMode) return;
+    setModeSaving(true);
+    setModeError("");
+    try {
+      await api("/api/settings", {
+        method: "PUT",
+        body: { settings: { ocr_llm_refine: refine ? "true" : "false" } },
+      });
+      setSettings((s) => ({ ...s, ocr_llm_refine: refine ? "true" : "false" }));
+    } catch (err) {
+      setModeError(err instanceof Error ? err.message : "Không lưu được chế độ OCR");
+    } finally {
+      setModeSaving(false);
+    }
+  }
 
   async function handleActivate() {
     if (!selectedModel) return;
@@ -155,12 +199,14 @@ export function OcrSettingsCard() {
     formData.append("file", testFile);
     formData.append("target_page", String(targetPage));
     formData.append("model_spec_id", selectedModel.id);
+    formData.append("llm_refine", String(runRefine));
+    setResultTab("refined");
 
     try {
       const res = await api<OCRResponse>("/api/settings/test-ocr", {
         method: "POST",
         body: formData,
-        timeoutMs: 180_000,
+        timeoutMs: runRefine ? 360_000 : 180_000,
       });
       setTestResult(res);
       if (res.page_number) setTargetPage(res.page_number);
@@ -260,6 +306,44 @@ export function OcrSettingsCard() {
             )}
           </ActivateBar>
 
+          {/* Processing mode */}
+          <div className="flex flex-col gap-2">
+            <span className="text-xs font-medium text-foreground">Chế độ xử lý trang scan</span>
+            <div role="radiogroup" className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {OCR_MODES.map((m) => {
+                const on = refineMode === m.refine;
+                return (
+                  <button
+                    key={m.title}
+                    type="button"
+                    role="radio"
+                    aria-checked={on}
+                    disabled={modeSaving}
+                    onClick={() => void saveMode(m.refine)}
+                    className={`flex items-start gap-2.5 rounded-lg border p-3 text-left transition-colors disabled:opacity-60 ${
+                      on ? "border-primary bg-primary/5" : "border-border hover:bg-accent/30"
+                    }`}
+                  >
+                    <span className={`material-symbols-outlined text-lg ${on ? "text-primary" : "text-muted-foreground"}`}>
+                      {m.icon}
+                    </span>
+                    <span className="flex flex-col gap-0.5">
+                      <span className="text-sm font-medium text-foreground">{m.title}</span>
+                      <span className="text-[11px] leading-snug text-muted-foreground">{m.desc}</span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              {refineMode
+                ? "Bước hiệu đính dùng model đang chọn ở mục Vision Model."
+                : "Áp dụng cho các tài liệu tải lên sau khi lưu."}
+              {modeSaving && " Đang lưu…"}
+            </p>
+            {modeError && <p className="text-xs text-destructive">{modeError}</p>}
+          </div>
+
           {/* Test lab */}
           <div className="rounded-xl border border-border/70 bg-muted/10 p-4">
             <div className="mb-3 flex items-center justify-between">
@@ -322,6 +406,12 @@ export function OcrSettingsCard() {
                   </div>
                 )}
 
+                <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-background p-2 text-xs">
+                  <input type="checkbox" checked={runRefine} onChange={(e) => setLabRefine(e.target.checked)} />
+                  <span className="flex-1">Hiệu đính bằng LLM</span>
+                  <span className="material-symbols-outlined text-sm text-muted-foreground">auto_fix_high</span>
+                </label>
+
                 <Button
                   size="sm"
                   onClick={handleRunOcr}
@@ -331,7 +421,13 @@ export function OcrSettingsCard() {
                   <span className={`material-symbols-outlined text-sm ${testLoading ? "animate-spin" : ""}`}>
                     {testLoading ? "progress_activity" : "document_scanner"}
                   </span>
-                  {testLoading ? "Đang quét OCR..." : "Chạy OCR"}
+                  {testLoading
+                    ? runRefine
+                      ? "Đang OCR + hiệu đính..."
+                      : "Đang quét OCR..."
+                    : runRefine
+                      ? "Chạy OCR + LLM"
+                      : "Chạy OCR"}
                 </Button>
                 <p className="text-[11px] text-muted-foreground">
                   Chạy bằng model đang chọn ở trên (không cần bấm &quot;Dùng model này&quot;), với API key đã lưu.
@@ -343,14 +439,39 @@ export function OcrSettingsCard() {
                   title="Kết quả OCR"
                   icon="text_fields"
                   loading={testLoading}
-                  loadingTitle="Đang nhận diện văn bản..."
-                  content={testResult?.success ? testResult.text : null}
+                  loadingTitle={runRefine ? "Đang nhận diện và hiệu đính văn bản..." : "Đang nhận diện văn bản..."}
+                  content={
+                    testResult?.success
+                      ? resultTab === "raw" && testResult.raw_text
+                        ? testResult.raw_text
+                        : testResult.text
+                      : null
+                  }
+                  tabs={
+                    testResult?.success && testResult.raw_text
+                      ? [
+                          { key: "refined", label: "Sau LLM" },
+                          { key: "raw", label: "OCR thô" },
+                        ]
+                      : undefined
+                  }
+                  activeTab={resultTab}
+                  onTab={(k) => setResultTab(k === "raw" ? "raw" : "refined")}
                   error={testResult && !testResult.success ? testResult.error || "OCR thất bại" : null}
                   successLabel={testResult?.success ? "Thành công" : null}
                   telemetry={
                     testResult?.success ? (
                       <>
-                        <Stat icon="timer">{(testResult.latency_ms / 1000).toFixed(2)}s</Stat>
+                        <Stat icon="timer">
+                          {(testResult.latency_ms / 1000).toFixed(2)}s
+                          {!!testResult.refine_latency_ms &&
+                            ` (OCR ${((testResult.ocr_latency_ms ?? 0) / 1000).toFixed(1)}s + LLM ${(
+                              testResult.refine_latency_ms / 1000
+                            ).toFixed(1)}s)`}
+                        </Stat>
+                        {testResult.refine_error && (
+                          <span className="text-amber-600 dark:text-amber-400">{testResult.refine_error}</span>
+                        )}
                         <Stat icon="format_quote">
                           {testResult.words_count.toLocaleString()} từ · {testResult.chars_count.toLocaleString()} ký tự
                         </Stat>
@@ -361,6 +482,7 @@ export function OcrSettingsCard() {
                         )}
                         <span className="ml-auto rounded border border-border/60 bg-background px-2 text-[10px] font-semibold text-foreground">
                           {testResult.model}
+                          {testResult.raw_text && testResult.refine_model && ` + ${testResult.refine_model}`}
                         </span>
                       </>
                     ) : null

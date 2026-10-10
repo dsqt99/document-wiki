@@ -232,6 +232,23 @@ class TestOCRResponse(BaseModel):
     page_number: int = 1
     total_pages: int = 1
     error: Optional[str] = None
+    # OCR + LLM mode: the OCR draft before LLM proofreading, and timings.
+    raw_text: Optional[str] = None
+    ocr_latency_ms: int = 0
+    refine_model: Optional[str] = None
+    refine_latency_ms: int = 0
+    refine_error: Optional[str] = None
+
+
+async def _active_vision(db: AsyncSession):
+    """(Vision provider, its model label) or (None, None) when unset."""
+    from app.ai.registry import ProviderRegistry
+
+    provider = await ProviderRegistry(db).get_vision()
+    if provider is None:
+        return None, None
+    cfg = getattr(provider, "config", None)
+    return provider, getattr(cfg, "model_id", None) or getattr(cfg, "model", None)
 
 
 @router.post("/settings/test-ocr", response_model=TestOCRResponse)
@@ -243,9 +260,13 @@ async def test_ocr(
     override_model: Optional[str] = Form(None),
     override_prompt: Optional[str] = Form(None),
     model_spec_id: Optional[str] = Form(None),
+    llm_refine: bool = Form(False),
     db: AsyncSession = Depends(get_db),
 ):
-    """Run OCR on a single image or selected page of a PDF for testing/preview."""
+    """Run OCR on a single image or selected page of a PDF for testing/preview.
+
+    With ``llm_refine`` the Vision LLM then proofreads the OCR draft against
+    the page image (the "OCR + LLM" mode)."""
     import time
     from app.config import settings
     from app.services.config_service import ConfigService
@@ -311,6 +332,27 @@ async def test_ocr(
                 total_pages=total_doc_pages,
             )
 
+        ocr_latency_ms = latency_ms
+        raw_text = None
+        refine_model = None
+        refine_latency_ms = 0
+        refine_error = None
+        if llm_refine:
+            from app.services.ocr_service import refine_ocr_with_llm
+
+            vision, refine_model = await _active_vision(db)
+            if vision is None:
+                refine_error = "Chưa cấu hình Vision Model để hiệu đính."
+            else:
+                t1 = time.perf_counter()
+                refined = await refine_ocr_with_llm(vision, image_bytes, mime_type, text)
+                refine_latency_ms = max(1, int((time.perf_counter() - t1) * 1000))
+                if refined:
+                    raw_text, text = text, refined
+                else:
+                    refine_error = "LLM không trả về kết quả hợp lệ — giữ bản OCR."
+            latency_ms = max(1, int((time.perf_counter() - start_t) * 1000))
+
         return TestOCRResponse(
             success=True,
             text=text,
@@ -320,6 +362,11 @@ async def test_ocr(
             words_count=len(text.split()),
             page_number=current_page_num,
             total_pages=total_doc_pages,
+            raw_text=raw_text,
+            ocr_latency_ms=ocr_latency_ms,
+            refine_model=refine_model,
+            refine_latency_ms=refine_latency_ms,
+            refine_error=refine_error,
         )
     except Exception as e:
         latency_ms = max(1, int((time.perf_counter() - start_t) * 1000))
@@ -371,6 +418,7 @@ async def test_extraction(
     override_ocr_base_url: Optional[str] = Form(None),
     override_ocr_api_key: Optional[str] = Form(None),
     override_ocr_model: Optional[str] = Form(None),
+    ocr_llm_refine: Optional[bool] = Form(None),
     db: AsyncSession = Depends(get_db),
 ):
     """Test full document extraction pipeline with per-page preview and stats."""
@@ -395,6 +443,12 @@ async def test_extraction(
         eff_enhance = (await cfg.get("pdf_enhance_headings")) != "false"
     else:
         eff_enhance = enhance_headings
+
+    if ocr_llm_refine is None:
+        eff_refine = (await cfg.get("ocr_llm_refine")) == "true"
+    else:
+        eff_refine = ocr_llm_refine
+    refine_vision = (await _active_vision(db))[0] if eff_refine else None
 
     eff_max_pages = max_pages if max_pages > 0 else None
     start_t = time.perf_counter()
@@ -423,6 +477,9 @@ async def test_extraction(
                 ocr_base_url=override_ocr_base_url,
                 ocr_api_key=override_ocr_api_key,
                 ocr_model=override_ocr_model,
+                ocr_llm_refine=eff_refine,
+                vision_provider=refine_vision,
+                ocr_fallback_vision=False,
                 db=db,
             )
         elif ext in ("xlsx", "xls"):
