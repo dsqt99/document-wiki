@@ -344,3 +344,66 @@ async def select_ocr_model(
     )
     await db.commit()
     return {"active_spec_id": body.model_spec_id}
+
+
+# ---------------------------------------------------------------------------
+# Model discovery ("Tải danh sách model" in the add form)
+# ---------------------------------------------------------------------------
+
+class EndpointIn(BaseModel):
+    kind: str
+    provider: str = "custom"
+    # Custom endpoints only; known providers use their own URL and stored key.
+    base_url: Optional[str] = None
+    api_key: Optional[str] = None
+
+
+class DiscoverOut(BaseModel):
+    models: list[str]
+
+
+async def resolve_probe_endpoint(db: AsyncSession, body: EndpointIn) -> tuple[str, str]:
+    """(OpenAI-compatible base_url, api_key) for probing a model not saved yet."""
+    from app.ai.custom_models import _OPENAI_COMPAT_URLS
+    from app.services.config_service import ConfigService, vision_api_key_for
+
+    if body.provider not in PROVIDERS:
+        raise HTTPException(status_code=400, detail=f"provider must be one of {PROVIDERS}")
+    typed_key = _new_key(body.api_key)
+    if body.provider == "custom":
+        base_url = (body.base_url or "").strip()
+        if not base_url.startswith(("http://", "https://")):
+            raise HTTPException(status_code=400, detail="Base URL must start with http:// or https://")
+        # Local servers (vLLM, Ollama) often need no auth; the SDK refuses an empty key.
+        return base_url, typed_key or "none"
+    svc = ConfigService(db)
+    key = typed_key or await svc.get(provider_key_config_key(body.kind, body.provider))
+    if not key and body.kind == "ocr":
+        key = await svc.get(vision_api_key_for(body.provider))
+    if not key:
+        raise HTTPException(
+            status_code=400, detail=f"Chưa có API key {body.provider}. Lưu key trước."
+        )
+    return _OPENAI_COMPAT_URLS[body.provider], key
+
+
+@router.post("/settings/models/discover", response_model=DiscoverOut)
+async def discover_models(
+    body: EndpointIn,
+    db: AsyncSession = Depends(get_db),
+    _user: Employee = require_permission("org:settings:manage"),
+):
+    """List model ids served by an endpoint (GET /models)."""
+    import openai
+
+    base_url, api_key = await resolve_probe_endpoint(db, body)
+    client = openai.AsyncOpenAI(base_url=base_url, api_key=api_key, timeout=15, max_retries=0)
+    try:
+        page = await client.models.list()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Không lấy được danh sách model: {e}")
+    # Gemini's OpenAI-compatible endpoint prefixes ids with "models/".
+    ids = sorted({m.id.removeprefix("models/") for m in page.data if m.id})
+    if body.kind == "embedding" and body.provider != "custom":
+        ids = [i for i in ids if "embed" in i]
+    return DiscoverOut(models=ids)

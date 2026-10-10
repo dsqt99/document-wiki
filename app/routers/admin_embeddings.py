@@ -363,3 +363,124 @@ async def backfill_source_chunks(
     pool = await get_arq_pool()
     job = await pool.enqueue_job("backfill_source_chunks_task", limit)
     return SourceChunkBackfillOut(job_id=job.job_id if job else None)
+
+
+# ---------------------------------------------------------------------------
+# Test lab: probe a model's dimension, compare texts with a saved model
+# ---------------------------------------------------------------------------
+
+class ProbeDimensionIn(BaseModel):
+    provider: str = "custom"
+    base_url: Optional[str] = None
+    api_key: Optional[str] = None
+    model_id: str
+
+
+class ProbeDimensionOut(BaseModel):
+    dimension: int
+    supported: bool
+    latency_ms: int
+
+
+@router.post("/settings/embeddings/probe-dimension", response_model=ProbeDimensionOut)
+async def probe_dimension(
+    body: ProbeDimensionIn,
+    db: AsyncSession = Depends(get_db),
+    _user: Employee = require_permission("org:settings:manage"),
+):
+    """Embed one short text (no `dimensions` param) to read the native vector size."""
+    import time
+
+    import openai
+
+    from app.ai.custom_models import EMBEDDING_DIMENSIONS
+    from app.routers.admin_custom_models import EndpointIn, resolve_probe_endpoint
+
+    base_url, api_key = await resolve_probe_endpoint(
+        db, EndpointIn(kind="embedding", provider=body.provider, base_url=body.base_url, api_key=body.api_key)
+    )
+    client = openai.AsyncOpenAI(base_url=base_url, api_key=api_key, timeout=30, max_retries=0)
+    start = time.perf_counter()
+    try:
+        resp = await client.embeddings.create(model=body.model_id.strip(), input="Xin chào")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Gọi embedding thất bại: {e}")
+    dim = len(resp.data[0].embedding)
+    return ProbeDimensionOut(
+        dimension=dim,
+        supported=dim in EMBEDDING_DIMENSIONS,
+        latency_ms=int((time.perf_counter() - start) * 1000),
+    )
+
+
+class EmbeddingTestIn(BaseModel):
+    model_spec_id: str
+    query: str
+    passages: list[str] = []
+
+
+class EmbeddingTestOut(BaseModel):
+    success: bool
+    model: str = ""
+    dimension: int = 0
+    expected_dimension: int = 0
+    latency_ms: int = 0
+    # Cosine similarity of the query to each passage, in input order.
+    similarities: list[float] = []
+    preview: list[float] = []  # first values of the query vector
+    error: Optional[str] = None
+
+
+def _cosine(a: list[float], b: list[float]) -> float:
+    import math
+
+    dot = sum(x * y for x, y in zip(a, b))
+    na = math.sqrt(sum(x * x for x in a))
+    nb = math.sqrt(sum(y * y for y in b))
+    return dot / (na * nb) if na and nb else 0.0
+
+
+@router.post("/settings/embeddings/test", response_model=EmbeddingTestOut)
+async def test_embedding_model(
+    body: EmbeddingTestIn,
+    db: AsyncSession = Depends(get_db),
+    _user: Employee = require_permission("org:settings:manage"),
+):
+    """Embed a query + passages with the given (not necessarily active) model."""
+    import time
+
+    from app.ai.registry import ProviderRegistry
+
+    query = body.query.strip()[:2000]
+    passages = [p.strip()[:2000] for p in body.passages if p.strip()][:8]
+    if not query:
+        raise HTTPException(status_code=400, detail="Nhập câu truy vấn")
+    try:
+        spec = get_spec(body.model_spec_id)
+    except UnknownEmbeddingModel as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    out = EmbeddingTestOut(success=False, model=spec.model_id, expected_dimension=spec.dimension)
+    start = time.perf_counter()
+    try:
+        registry = ProviderRegistry(db)
+        if not (await registry._load_embedding_config(spec_id=spec.id)).api_key:
+            out.error = "Chưa có API key cho model này."
+            return out
+        q_provider = await registry.get_embedding(task="search_query", spec_id=spec.id)
+        q_vec = await q_provider.embed(query)
+        p_vecs: list[list[float]] = []
+        if passages:
+            d_provider = await registry.get_embedding(task="document", spec_id=spec.id)
+            p_vecs = await d_provider.embed_batch(passages)
+    except Exception as e:
+        out.error = str(e)
+        out.latency_ms = int((time.perf_counter() - start) * 1000)
+        return out
+
+    out.success = True
+    out.latency_ms = int((time.perf_counter() - start) * 1000)
+    out.dimension = len(q_vec)
+    out.preview = [round(x, 5) for x in q_vec[:8]]
+    out.similarities = [round(_cosine(q_vec, v), 4) for v in p_vecs]
+    return out

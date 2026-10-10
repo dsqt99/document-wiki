@@ -411,6 +411,7 @@ export function ProviderModelPicker<S extends PickerSpec>({
             <CustomModelForm
               kind={kind}
               provider={tab}
+              existingModelIds={tabSpecs.map((s) => s.model_id)}
               onCancel={() => setAdding(false)}
               onSaved={async (id) => {
                 setAdding(false);

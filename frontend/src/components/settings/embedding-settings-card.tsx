@@ -1,10 +1,31 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { ActivateBar, canActivate } from "./model-catalog-card";
 import { ActiveModelChip, ProviderModelPicker } from "./provider-model-picker";
+import { Stat } from "./test-lab";
+
+type EmbeddingTestResp = {
+  success: boolean;
+  model: string;
+  dimension: number;
+  expected_dimension: number;
+  latency_ms: number;
+  similarities: number[];
+  preview: number[];
+  error: string | null;
+};
+
+const SAMPLE_QUERY = "Thủ tục đăng ký thường trú cần giấy tờ gì?";
+const SAMPLE_PASSAGES = [
+  "Hồ sơ đăng ký thường trú gồm tờ khai thay đổi thông tin cư trú và giấy tờ chứng minh chỗ ở hợp pháp.",
+  "Người điều khiển xe mô tô không đội mũ bảo hiểm bị phạt tiền từ 400.000 đến 600.000 đồng.",
+  "Công dân có quyền tự do cư trú theo quy định của Luật Cư trú.",
+].join("\n");
 
 type EmbeddingSpec = {
   id: string;
@@ -52,6 +73,13 @@ export function EmbeddingSettingsCard() {
   const [error, setError] = useState("");
   const [backfilling, setBackfilling] = useState(false);
   const [backfillQueued, setBackfillQueued] = useState(false);
+  // Ping + test lab results are tied to the spec they were run against.
+  const [pinging, setPinging] = useState(false);
+  const [ping, setPing] = useState<(EmbeddingTestResp & { id: string }) | null>(null);
+  const [query, setQuery] = useState(SAMPLE_QUERY);
+  const [passages, setPassages] = useState(SAMPLE_PASSAGES);
+  const [testing, setTesting] = useState(false);
+  const [test, setTest] = useState<(EmbeddingTestResp & { id: string; passages: string[] }) | null>(null);
 
   useEffect(() => {
     void refresh();
@@ -89,6 +117,50 @@ export function EmbeddingSettingsCard() {
   const job = status?.current_job ?? null;
   const jobBusy = !!job && (job.status === "pending" || job.status === "running");
   const willSwitch = !!selectedSpec && selectedSpec.id !== catalog?.active_spec_id;
+
+  const conn = ping && ping.id === selected ? ping : null;
+  const lab = test && test.id === selected ? test : null;
+
+  async function runTest(specId: string, q: string, ps: string[]) {
+    try {
+      return await api<EmbeddingTestResp>("/api/settings/embeddings/test", {
+        method: "POST",
+        body: { model_spec_id: specId, query: q, passages: ps },
+      });
+    } catch (e) {
+      return {
+        success: false,
+        model: specId,
+        dimension: 0,
+        expected_dimension: 0,
+        latency_ms: 0,
+        similarities: [],
+        preview: [],
+        error: e instanceof Error ? e.message : "Request failed",
+      } satisfies EmbeddingTestResp;
+    }
+  }
+
+  async function handlePing() {
+    if (!selected) return;
+    setPinging(true);
+    const res = await runTest(selected, "ping", []);
+    setPing({ ...res, id: selected });
+    setPinging(false);
+  }
+
+  async function handleRunTest() {
+    if (!selected) return;
+    const ps = passages
+      .split("\n")
+      .map((p) => p.trim())
+      .filter(Boolean)
+      .slice(0, 8);
+    setTesting(true);
+    const res = await runTest(selected, query.trim(), ps);
+    setTest({ ...res, id: selected, passages: ps });
+    setTesting(false);
+  }
 
   async function handleSwitch() {
     if (!selectedSpec) return;
@@ -224,6 +296,40 @@ export function EmbeddingSettingsCard() {
         onActivate={handleSwitch}
         actionText="Chuyển & embed lại"
       >
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handlePing}
+          disabled={pinging || !selectedSpec}
+          className="h-9 gap-1 text-xs"
+          title="Embed thử 1 câu ngắn bằng model đang chọn"
+        >
+          <span className={`material-symbols-outlined text-sm ${pinging ? "animate-spin" : ""}`}>
+            {pinging ? "progress_activity" : "network_ping"}
+          </span>
+          Ping
+        </Button>
+        {conn && (
+          <span
+            className={`flex items-center gap-1 text-xs ${
+              conn.success && conn.dimension === conn.expected_dimension
+                ? "text-emerald-600 dark:text-emerald-400"
+                : "text-destructive"
+            }`}
+          >
+            <span className="material-symbols-outlined text-sm">
+              {conn.success && conn.dimension === conn.expected_dimension ? "check_circle" : "error"}
+            </span>
+            <span className="max-w-[320px] truncate" title={conn.error ?? undefined}>
+              {!conn.success
+                ? conn.error
+                : conn.dimension === conn.expected_dimension
+                  ? `OK · ${conn.dimension} chiều`
+                  : `Trả về ${conn.dimension} chiều, cấu hình ${conn.expected_dimension}`}
+            </span>
+            {conn.latency_ms > 0 && <span className="font-mono">· {conn.latency_ms} ms</span>}
+          </span>
+        )}
         <button
           disabled={backfilling || jobBusy}
           onClick={handleBackfill}
@@ -243,6 +349,104 @@ export function EmbeddingSettingsCard() {
           </p>
         )}
       </ActivateBar>
+
+      {/* Test lab */}
+      <div className="rounded-xl border border-border/70 bg-muted/10 p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            <span className="material-symbols-outlined text-sm text-primary">science</span>
+            Thử embedding
+          </span>
+          {selectedSpec && (
+            <span className="truncate text-[11px] text-muted-foreground">
+              Model thử: <span className="font-medium text-foreground">{selectedSpec.label}</span>
+            </span>
+          )}
+        </div>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+          <div className="flex flex-col gap-2 lg:col-span-5">
+            <label className="text-[11px] font-medium text-muted-foreground">Câu hỏi</label>
+            <Input value={query} onChange={(e) => setQuery(e.target.value)} className="bg-background text-xs" />
+            <label className="text-[11px] font-medium text-muted-foreground">
+              Đoạn văn so sánh (mỗi dòng 1 đoạn, tối đa 8)
+            </label>
+            <textarea
+              value={passages}
+              onChange={(e) => setPassages(e.target.value)}
+              rows={6}
+              className="rounded-md border border-input bg-background p-2 text-xs leading-relaxed focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+            <Button
+              size="sm"
+              onClick={handleRunTest}
+              disabled={testing || !selectedSpec || !query.trim()}
+              className="h-9 w-full gap-2 text-xs font-medium"
+            >
+              <span className={`material-symbols-outlined text-sm ${testing ? "animate-spin" : ""}`}>
+                {testing ? "progress_activity" : "compare_arrows"}
+              </span>
+              {testing ? "Đang embed..." : "Chạy so khớp"}
+            </Button>
+          </div>
+
+          <div className="flex min-h-[220px] flex-col rounded-lg border border-border bg-background lg:col-span-7">
+            {!lab ? (
+              <div className="flex flex-1 flex-col items-center justify-center gap-1 p-6 text-center text-xs text-muted-foreground">
+                <span className="material-symbols-outlined text-2xl opacity-50">scatter_plot</span>
+                Chạy thử để xem độ tương đồng cosine giữa câu hỏi và từng đoạn.
+              </div>
+            ) : !lab.success ? (
+              <div className="m-3 rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-destructive dark:border-red-800 dark:bg-red-950/30">
+                {lab.error || "Embedding thất bại"}
+              </div>
+            ) : (
+              <>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-border px-3 py-2 text-[11px] text-muted-foreground">
+                  <Stat icon="data_array">
+                    <span className={lab.dimension === lab.expected_dimension ? "" : "text-destructive"}>
+                      {lab.dimension} chiều
+                      {lab.dimension !== lab.expected_dimension && ` (cấu hình ${lab.expected_dimension})`}
+                    </span>
+                  </Stat>
+                  <Stat icon="timer">{lab.latency_ms} ms</Stat>
+                  <Stat icon="memory">
+                    <span className="font-mono">{lab.model}</span>
+                  </Stat>
+                </div>
+                <div className="flex flex-1 flex-col gap-2 p-3">
+                  {lab.passages.length === 0 && (
+                    <p className="text-xs text-muted-foreground">Không có đoạn văn để so sánh.</p>
+                  )}
+                  {lab.passages
+                    .map((p, i) => ({ p, s: lab.similarities[i] ?? 0, i }))
+                    .sort((a, b) => b.s - a.s)
+                    .map(({ p, s, i }, rank) => (
+                      <div key={i} className="flex flex-col gap-1">
+                        <div className="flex items-start justify-between gap-3 text-xs">
+                          <span className={`line-clamp-2 ${rank === 0 ? "font-medium text-foreground" : "text-muted-foreground"}`}>
+                            {p}
+                          </span>
+                          <span className="shrink-0 font-mono tabular-nums">{s.toFixed(4)}</span>
+                        </div>
+                        <div className="h-1.5 overflow-hidden rounded bg-muted">
+                          <div
+                            className={`h-full ${rank === 0 ? "bg-primary" : "bg-primary/40"}`}
+                            style={{ width: `${Math.max(0, Math.min(1, s)) * 100}%` }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                </div>
+                {lab.preview.length > 0 && (
+                  <div className="truncate border-t border-border px-3 py-2 font-mono text-[10px] text-muted-foreground">
+                    [{lab.preview.map((v) => v.toFixed(4)).join(", ")}, …]
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
