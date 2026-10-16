@@ -1,0 +1,85 @@
+"""OCR + LLM mode: the Vision model proofreads the OCR draft."""
+
+import pytest
+
+from app.services.ocr_service import refine_ocr_with_llm
+
+DRAFT = "Điều 1. Pham vi điều chinh\nNghi đinh này quy đinh về cư trú."
+
+
+class FakeVision:
+    def __init__(self, answer=None, error=None):
+        self.answer = answer
+        self.error = error
+        self.prompt = None
+
+    async def analyze_image(self, image_data, mime_type="image/jpeg", prompt=None):
+        self.prompt = prompt
+        if self.error:
+            raise self.error
+        return self.answer
+
+
+@pytest.mark.asyncio
+async def test_refine_returns_corrected_text_and_sends_draft():
+    fixed = "Điều 1. Phạm vi điều chỉnh\nNghị định này quy định về cư trú."
+    vision = FakeVision("```markdown\n" + fixed + "\n```")
+    assert await refine_ocr_with_llm(vision, b"img", "image/jpeg", DRAFT) == fixed
+    assert DRAFT in vision.prompt
+
+
+@pytest.mark.asyncio
+async def test_refine_keeps_draft_on_truncated_or_failed_answer():
+    assert await refine_ocr_with_llm(FakeVision("Điều 1."), b"img", "image/jpeg", DRAFT) is None
+    assert await refine_ocr_with_llm(FakeVision(error=RuntimeError("429")), b"img", "image/jpeg", DRAFT) is None
+    assert await refine_ocr_with_llm(None, b"img", "image/jpeg", DRAFT) is None
+    assert await refine_ocr_with_llm(FakeVision("x"), b"img", "image/jpeg", "  ") is None
+
+
+@pytest.mark.asyncio
+async def test_refine_extracts_markdown_with_conversational_preamble():
+    fixed = "Điều 1. Phạm vi điều chỉnh\nNghị định này quy định về cư trú."
+    answer = f"Dưới đây là văn bản sau khi hiệu đính:\n```markdown\n{fixed}\n```\nHy vọng bản hiệu đính giúp ích cho bạn."
+    vision = FakeVision(answer)
+    assert await refine_ocr_with_llm(vision, b"img", "image/jpeg", DRAFT) == fixed
+
+
+class FakeVisionWithMaxTokens:
+    def __init__(self, answer):
+        self.answer = answer
+        self.max_tokens = None
+
+    async def analyze_image(self, image_data, mime_type="image/jpeg", prompt=None, max_tokens=None):
+        self.max_tokens = max_tokens
+        return self.answer
+
+
+@pytest.mark.asyncio
+async def test_refine_passes_max_tokens():
+    fixed = "Điều 1. Phạm vi điều chỉnh\nNghị định này quy định về cư trú."
+    vision = FakeVisionWithMaxTokens(fixed)
+    res = await refine_ocr_with_llm(vision, b"img", "image/jpeg", DRAFT, max_tokens=2048)
+    assert res == fixed
+    assert vision.max_tokens == 2048
+
+
+@pytest.mark.asyncio
+async def test_refine_rejects_text_not_in_draft():
+    # The model "continues" the law from memory: much longer than the page.
+    invented = DRAFT.replace("Pham", "Phạm") + "\n" + "Điều 2. Đối tượng áp dụng\nNghị định này áp dụng với cơ quan, tổ chức, cá nhân.\n" * 6
+    assert await refine_ocr_with_llm(FakeVision(invented), b"img", "image/jpeg", DRAFT) is None
+
+
+@pytest.mark.asyncio
+async def test_refine_rejects_rewritten_page():
+    rewritten = "Chương này nói về phạm vi áp dụng của văn bản liên quan đến việc đăng ký nơi ở."
+    assert await refine_ocr_with_llm(FakeVision(rewritten), b"img", "image/jpeg", DRAFT) is None
+
+
+def test_refine_drift_ignores_diacritic_fixes():
+    from app.services.ocr_service import refine_drift
+
+    draft = "Nghi đinh nay quy đinh ve cu tru va quan ly cu tru tren lanh tho Viet Nam"
+    fixed = "Nghị định này quy định về cư trú và quản lý cư trú trên lãnh thổ Việt Nam"
+    assert refine_drift(draft, fixed) is None
+    assert refine_drift(draft, fixed + " va nhiem vu cua cong an xa") is None

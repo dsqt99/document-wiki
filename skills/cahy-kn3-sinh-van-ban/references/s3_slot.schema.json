@@ -1,0 +1,224 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:cahy:luoc_do:s3_slot:1.0.0",
+  "title": "Skill 3 – Khối [SLOT] đầu vào",
+  "description": "Đối tượng JSON trong khối [SLOT] của tin nhắn user (mục 6.3.2); họ tên người ký không phải trường slot (R6.7).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "loai_van_ban",
+    "co_quan_chu_quan",
+    "co_quan_ban_hanh",
+    "so_ky_hieu",
+    "dia_danh_ngay",
+    "trich_yeu",
+    "noi_dung_chinh",
+    "noi_nhan",
+    "chuc_vu_ky"
+  ],
+  "properties": {
+    "loai_van_ban": {
+      "enum": [
+        "Cong_van",
+        "Ke_hoach",
+        "Bao_cao",
+        "Thong_bao",
+        "Giay_moi",
+        "To_trinh",
+        "Quyet_dinh",
+        "Bien_ban",
+        "Bieu_mau_BCA"
+      ]
+    },
+    "co_quan_chu_quan": {
+      "type": "string",
+      "minLength": 1
+    },
+    "co_quan_ban_hanh": {
+      "type": "string",
+      "minLength": 1
+    },
+    "so_ky_hieu": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    },
+    "dia_danh_ngay": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    },
+    "trich_yeu": {
+      "type": "string",
+      "minLength": 1
+    },
+    "do_khan": {
+      "enum": [
+        "Khẩn",
+        "Thượng khẩn",
+        "Hỏa tốc",
+        null
+      ]
+    },
+    "kinh_gui": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "can_cu": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "noi_dung_chinh": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "noi_nhan": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "chuc_vu_ky": {
+      "type": "string",
+      "minLength": 1
+    },
+    "thanh_phan": {
+      "$ref": "#/$defs/thanh_phan"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "loai_van_ban": {
+            "enum": [
+              "Cong_van",
+              "To_trinh"
+            ]
+          }
+        },
+        "required": [
+          "loai_van_ban"
+        ]
+      },
+      "then": {
+        "required": [
+          "kinh_gui"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "loai_van_ban": {
+            "enum": [
+              "Bien_ban",
+              "Giay_moi"
+            ]
+          }
+        },
+        "required": [
+          "loai_van_ban"
+        ]
+      },
+      "then": {
+        "required": [
+          "thanh_phan"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "loai_van_ban": {
+            "enum": [
+              "Cong_van"
+            ]
+          }
+        },
+        "required": [
+          "loai_van_ban"
+        ]
+      },
+      "then": {
+        "properties": {
+          "trich_yeu": {
+            "pattern": "^V/v "
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "thanh_phan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "thoi_gian",
+        "dia_diem",
+        "chu_tri",
+        "thu_ky",
+        "tham_du"
+      ],
+      "properties": {
+        "thoi_gian": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "dia_diem": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "chu_tri": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "thu_ky": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "tham_du": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:cahy:luoc_do:s1_trich_xuat_so_lieu:1.0.0",
+  "title": "Skill 1 – Trích xuất số liệu",
+  "description": "Nội dung assistant của bản ghi Skill 1 task_type trich_xuat_so_lieu (mục 4.4.3); danh mục 11 lĩnh vực (4.3.1), 11 mã chỉ tiêu (4.3.2).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "ky",
+    "so_lieu"
+  ],
+  "properties": {
+    "ky": {
+      "type": "string",
+      "pattern": "^\\d{4}(-\\d{2}-\\d{2}|-\\d{2}|-W\\d{2}|-Q[1-4]|-H[12]|-9T)?$"
+    },
+    "so_lieu": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "don_vi_bao_cao",
+          "linh_vuc",
+          "chi_tieu",
+          "chi_tiet",
+          "gia_tri",
+          "don_vi_tinh",
+          "ghi_chu"
+        ],
+        "properties": {
+          "don_vi_bao_cao": {
+            "type": "string",
+            "minLength": 1
+          },
+          "linh_vuc": {
+            "enum": [
+              "AN_CHINH_TRI",
+              "TOI_PHAM_HINH_SU",
+              "TOI_PHAM_KINH_TE",
+              "TOI_PHAM_MA_TUY",
+              "TOI_PHAM_CONG_NGHE_CAO",
+              "TOI_PHAM_MOI_TRUONG",
+              "TTATGT",
+              "PCCC_CNCH",
+              "QUAN_LY_HANH_CHINH",
+              "KHIEU_NAI_TO_CAO",
+              "XAY_DUNG_LUC_LUONG"
+            ]
+          },
+          "chi_tieu": {
+            "enum": [
+              "SO_VU",
+              "SO_VU_LAM_RO",
+              "SO_DOI_TUONG",
+              "SO_NGUOI_CHET",
+              "SO_NGUOI_BI_THUONG",
+              "THIET_HAI_TAI_SAN",
+              "SO_TRUONG_HOP_VI_PHAM",
+              "SO_TIEN_PHAT",
+              "GIA_TRI_THU_HOI",
+              "SO_DON",
+              "TANG_VAT"
+            ]
+          },
+          "chi_tiet": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "gia_tri": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "don_vi_tinh": {
+            "type": "string",
+            "minLength": 1
+          },
+          "ghi_chu": {
+            "enum": [
+              "ước tính",
+              "đang xác minh",
+              null
+            ]
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,71 @@
+{
+  "ghi_chu": "Danh mục minh họa; PV01 xác nhận theo cơ cấu tổ chức hiện hành trước khi gán nhãn (TN-08, Phụ lục H).",
+  "don_vi": [
+    {
+      "ten": "Phòng Tham mưu",
+      "ma": "PV01",
+      "nhom": "phong",
+      "minh_hoa": false
+    },
+    {
+      "ten": "Phòng Cảnh sát hình sự",
+      "ma": null,
+      "nhom": "phong",
+      "minh_hoa": true
+    },
+    {
+      "ten": "Phòng Cảnh sát kinh tế",
+      "ma": null,
+      "nhom": "phong",
+      "minh_hoa": true
+    },
+    {
+      "ten": "Phòng Cảnh sát điều tra tội phạm về ma túy",
+      "ma": null,
+      "nhom": "phong",
+      "minh_hoa": true
+    },
+    {
+      "ten": "Phòng An ninh mạng và phòng, chống tội phạm sử dụng công nghệ cao",
+      "ma": null,
+      "nhom": "phong",
+      "minh_hoa": true
+    },
+    {
+      "ten": "Phòng Cảnh sát môi trường",
+      "ma": null,
+      "nhom": "phong",
+      "minh_hoa": true
+    },
+    {
+      "ten": "Phòng Cảnh sát giao thông",
+      "ma": null,
+      "nhom": "phong",
+      "minh_hoa": true
+    },
+    {
+      "ten": "Phòng Cảnh sát phòng cháy, chữa cháy và cứu nạn, cứu hộ",
+      "ma": null,
+      "nhom": "phong",
+      "minh_hoa": true
+    },
+    {
+      "ten": "Phòng Cảnh sát quản lý hành chính về trật tự xã hội",
+      "ma": null,
+      "nhom": "phong",
+      "minh_hoa": true
+    },
+    {
+      "ten": "Phòng Tổ chức cán bộ",
+      "ma": null,
+      "nhom": "phong",
+      "minh_hoa": true
+    },
+    {
+      "ten": "Công an các xã, phường",
+      "ma": null,
+      "nhom": "khoi",
+      "minh_hoa": true
+    }
+  ]
+}

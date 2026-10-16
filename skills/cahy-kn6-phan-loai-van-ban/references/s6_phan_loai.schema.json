@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:cahy:luoc_do:s6_phan_loai:1.0.0",
+  "title": "Skill 6 – Phân loại và đề xuất xử lý văn bản đến",
+  "description": "Nội dung assistant của Skill 6 (mục 7.3.4): 06 trường; 13 loại văn bản, 12 nhãn lĩnh vực, 04 mức độ khẩn.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "loai_van_ban",
+    "linh_vuc",
+    "do_khan",
+    "don_vi_chu_tri",
+    "don_vi_phoi_hop",
+    "ly_do"
+  ],
+  "properties": {
+    "loai_van_ban": {
+      "enum": [
+        "Công văn",
+        "Công điện",
+        "Chỉ thị",
+        "Nghị quyết",
+        "Quyết định",
+        "Kế hoạch",
+        "Thông báo",
+        "Báo cáo",
+        "Giấy mời",
+        "Tờ trình",
+        "Biên bản",
+        "Hướng dẫn",
+        "Khác"
+      ]
+    },
+    "linh_vuc": {
+      "enum": [
+        "AN_CHINH_TRI",
+        "TOI_PHAM_HINH_SU",
+        "TOI_PHAM_KINH_TE",
+        "TOI_PHAM_MA_TUY",
+        "TOI_PHAM_CONG_NGHE_CAO",
+        "TOI_PHAM_MOI_TRUONG",
+        "TTATGT",
+        "PCCC_CNCH",
+        "QUAN_LY_HANH_CHINH",
+        "KHIEU_NAI_TO_CAO",
+        "XAY_DUNG_LUC_LUONG",
+        "KHAC"
+      ]
+    },
+    "do_khan": {
+      "enum": [
+        "THUONG",
+        "KHAN",
+        "THUONG_KHAN",
+        "HOA_TOC"
+      ]
+    },
+    "don_vi_chu_tri": {
+      "type": "string",
+      "minLength": 1
+    },
+    "don_vi_phoi_hop": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "minItems": 1,
+      "maxItems": 3,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "ly_do": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

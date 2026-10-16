@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:cahy:luoc_do:s5_trich_xuat:1.0.0",
+  "title": "Skill 5 – Trích xuất thông tin văn bản",
+  "description": "Nội dung assistant của Skill 5 (mục 7.2.4): đủ 08 trường theo thứ tự; giá trị thiếu ghi null, không ghi danh sách rỗng.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "so_ky_hieu",
+    "ngay_ban_hanh",
+    "co_quan_ban_hanh",
+    "loai_van_ban",
+    "trich_yeu",
+    "don_vi_duoc_giao",
+    "thoi_han",
+    "nhiem_vu"
+  ],
+  "properties": {
+    "so_ky_hieu": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    },
+    "ngay_ban_hanh": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "co_quan_ban_hanh": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    },
+    "loai_van_ban": {
+      "enum": [
+        "Công văn",
+        "Công điện",
+        "Chỉ thị",
+        "Nghị quyết",
+        "Quyết định",
+        "Kế hoạch",
+        "Thông báo",
+        "Báo cáo",
+        "Giấy mời",
+        "Tờ trình",
+        "Biên bản",
+        "Hướng dẫn",
+        "Khác"
+      ]
+    },
+    "trich_yeu": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    },
+    "don_vi_duoc_giao": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "thoi_han": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "noi_dung",
+          "han",
+          "han_goc",
+          "don_vi"
+        ],
+        "properties": {
+          "noi_dung": {
+            "type": "string",
+            "minLength": 1
+          },
+          "han": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "han_goc": {
+            "type": "string",
+            "minLength": 1
+          },
+          "don_vi": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "nhiem_vu": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "don_vi",
+          "noi_dung"
+        ],
+        "properties": {
+          "don_vi": {
+            "type": "string",
+            "minLength": 1
+          },
+          "noi_dung": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}

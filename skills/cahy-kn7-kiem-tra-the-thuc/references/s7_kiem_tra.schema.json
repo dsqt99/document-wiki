@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:cahy:luoc_do:s7_kiem_tra:1.0.0",
+  "title": "Skill 7 – Kiểm tra thể thức văn bản",
+  "description": "Nội dung assistant của Skill 7 (mục 7.4.4, 7.4.5). Mã lỗi khai báo kiểu chuỗi; danh mục 16 mã và giới hạn 05 lỗi do quy tắc S7_MA_LOI, S7_SO_LOI_TOI_DA kiểm tra (Phụ lục A, A.7).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "hop_le",
+    "so_loi",
+    "loi"
+  ],
+  "properties": {
+    "hop_le": {
+      "type": "boolean"
+    },
+    "so_loi": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "loi": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "ma_loi",
+          "vi_tri",
+          "trich_doan",
+          "mo_ta",
+          "de_xuat_sua",
+          "can_cu"
+        ],
+        "properties": {
+          "ma_loi": {
+            "type": "string",
+            "pattern": "^[A-Z_]+$"
+          },
+          "vi_tri": {
+            "enum": [
+              "quoc_hieu_tieu_ngu",
+              "ten_co_quan",
+              "so_ky_hieu",
+              "dia_danh_ngay_thang",
+              "ten_loai_trich_yeu",
+              "do_khan_do_mat",
+              "kinh_gui",
+              "can_cu",
+              "noi_dung",
+              "noi_nhan",
+              "chuc_vu_nguoi_ky"
+            ]
+          },
+          "trich_doan": {
+            "type": "string",
+            "minLength": 1
+          },
+          "mo_ta": {
+            "type": "string",
+            "minLength": 1
+          },
+          "de_xuat_sua": {
+            "type": "string",
+            "minLength": 1
+          },
+          "can_cu": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}

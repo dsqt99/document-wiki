@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:cahy:luoc_do:kho_van_ban:1.0.0",
+  "title": "Kho văn bản quy phạm pháp luật, biểu mẫu (Skill 4)",
+  "description": "Mỗi dòng JSONL của kho là 01 văn bản đã xác minh hiệu lực, chia thành các đoạn trích dẫn được (mục 7.1.1).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "ma_van_ban",
+    "so_ky_hieu",
+    "ten_van_ban",
+    "loai_van_ban",
+    "co_quan_ban_hanh",
+    "ngay_ban_hanh",
+    "ngay_hieu_luc",
+    "tinh_trang",
+    "van_ban_thay_the",
+    "linh_vuc",
+    "nguon",
+    "ngay_xac_minh",
+    "nguoi_xac_minh",
+    "doan"
+  ],
+  "properties": {
+    "ma_van_ban": {
+      "type": "string",
+      "pattern": "^KHO-\\d{6}$"
+    },
+    "so_ky_hieu": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ten_van_ban": {
+      "type": "string",
+      "minLength": 1
+    },
+    "loai_van_ban": {
+      "enum": [
+        "Nghị quyết",
+        "Chỉ thị",
+        "Kế hoạch",
+        "Công văn",
+        "Thông báo",
+        "Báo cáo",
+        "Quyết định",
+        "Nghị định",
+        "Thông tư",
+        "Luật",
+        "Biên bản hội nghị",
+        "Quy chế",
+        "Hướng dẫn",
+        "Biểu mẫu"
+      ]
+    },
+    "co_quan_ban_hanh": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ngay_ban_hanh": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "ngay_hieu_luc": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "tinh_trang": {
+      "enum": [
+        "con_hieu_luc",
+        "het_hieu_luc",
+        "het_hieu_luc_mot_phan"
+      ]
+    },
+    "van_ban_thay_the": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    },
+    "linh_vuc": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "nguon": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ngay_xac_minh": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "nguoi_xac_minh": {
+      "type": "string",
+      "pattern": "^KD-\\d{2}$"
+    },
+    "doan": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "vi_tri",
+          "noi_dung",
+          "hieu_luc"
+        ],
+        "properties": {
+          "vi_tri": {
+            "type": "string",
+            "minLength": 1
+          },
+          "noi_dung": {
+            "type": "string",
+            "minLength": 1
+          },
+          "hieu_luc": {
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,247 @@
+import React from "react";
+import { WikiPageDetail, WikiPageSummary } from "@/types/wiki";
+
+export type WikiSourceItem = {
+  id: string;
+  title: string;
+  file_name?: string;
+  status: string;
+  source_type?: string;
+};
+
+interface WikiStoreState {
+  // UI State
+  categoryFilter: "all" | "articles" | "overview";
+  groupByDocument: boolean;
+  expandedDocuments: Set<string>;
+  expandedScopes: Set<string>;
+  search: string;
+  /** Reading-page tree: restrict to one source document ("" = all) */
+  docFilter: string;
+  /** Reading-page tree: collapsed section keys */
+  collapsedSections: Set<string>;
+  sidebarScrollTop: number;
+  // Reading layout: collapsed page tree / right info panel (kept across pages)
+  treeCollapsed: boolean;
+  infoCollapsed: boolean;
+
+  // Data Cache
+  pagesCache: Map<string, WikiPageSummary[]>;
+  sourcesCache: WikiSourceItem[] | null;
+  pageDetailCache: Map<string, WikiPageDetail>;
+  sourceDataCache: Map<string, Record<string, unknown>>;
+}
+
+// In-memory persistent state across client-side navigations and component remounts
+export const wikiStore: WikiStoreState = {
+  categoryFilter: "all",
+  groupByDocument: true,
+  expandedDocuments: new Set<string>(),
+  expandedScopes: new Set<string>(["global"]),
+  search: "",
+  docFilter: "",
+  collapsedSections: new Set<string>(),
+  sidebarScrollTop: 0,
+  treeCollapsed: false,
+  infoCollapsed: false,
+
+  pagesCache: new Map(),
+  sourcesCache: null,
+  pageDetailCache: new Map(),
+  sourceDataCache: new Map(),
+};
+
+// Listeners for UI state changes
+type Listener = () => void;
+const listeners = new Set<Listener>();
+
+export function subscribeWikiStore(listener: Listener): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+export function notifyWikiStore() {
+  for (const l of listeners) {
+    try {
+      l();
+    } catch (e) {
+      console.error(e);
+    }
+  }
+}
+
+/** Hook for components to subscribe and update wikiStore state */
+export function useWikiStore() {
+  const [, forceUpdate] = React.useReducer((x) => x + 1, 0);
+
+  React.useEffect(() => {
+    return subscribeWikiStore(() => {
+      forceUpdate();
+    });
+  }, []);
+
+  const setCategoryFilter = React.useCallback((cat: "all" | "articles" | "overview") => {
+    wikiStore.categoryFilter = cat;
+    notifyWikiStore();
+  }, []);
+
+  const setGroupByDocument = React.useCallback((val: boolean | ((prev: boolean) => boolean)) => {
+    const next = typeof val === "function" ? val(wikiStore.groupByDocument) : val;
+    wikiStore.groupByDocument = next;
+    notifyWikiStore();
+  }, []);
+
+  const setSearch = React.useCallback((val: string) => {
+    wikiStore.search = val;
+    notifyWikiStore();
+  }, []);
+
+  const setExpandedDocuments = React.useCallback((val: Set<string> | ((prev: Set<string>) => Set<string>)) => {
+    const next = typeof val === "function" ? val(wikiStore.expandedDocuments) : val;
+    wikiStore.expandedDocuments = new Set(next);
+    notifyWikiStore();
+  }, []);
+
+  const setExpandedScopes = React.useCallback((val: Set<string> | ((prev: Set<string>) => Set<string>)) => {
+    const next = typeof val === "function" ? val(wikiStore.expandedScopes) : val;
+    wikiStore.expandedScopes = new Set(next);
+    notifyWikiStore();
+  }, []);
+
+  const setTreeCollapsed = React.useCallback((val: boolean) => {
+    wikiStore.treeCollapsed = val;
+    notifyWikiStore();
+  }, []);
+
+  const setInfoCollapsed = React.useCallback((val: boolean) => {
+    wikiStore.infoCollapsed = val;
+    notifyWikiStore();
+  }, []);
+
+  const setDocFilter = React.useCallback((val: string) => {
+    wikiStore.docFilter = val;
+    notifyWikiStore();
+  }, []);
+
+  const toggleSection = React.useCallback((key: string) => {
+    const next = new Set(wikiStore.collapsedSections);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    wikiStore.collapsedSections = next;
+    notifyWikiStore();
+  }, []);
+
+  const resetFilters = React.useCallback(() => {
+    wikiStore.categoryFilter = "all";
+    wikiStore.search = "";
+    wikiStore.docFilter = "";
+    notifyWikiStore();
+  }, []);
+
+  return {
+    categoryFilter: wikiStore.categoryFilter,
+    groupByDocument: wikiStore.groupByDocument,
+    search: wikiStore.search,
+    expandedDocuments: wikiStore.expandedDocuments,
+    expandedScopes: wikiStore.expandedScopes,
+    sidebarScrollTop: wikiStore.sidebarScrollTop,
+    treeCollapsed: wikiStore.treeCollapsed,
+    infoCollapsed: wikiStore.infoCollapsed,
+    docFilter: wikiStore.docFilter,
+    collapsedSections: wikiStore.collapsedSections,
+    setDocFilter,
+    toggleSection,
+    setCategoryFilter,
+    setGroupByDocument,
+    setSearch,
+    setExpandedDocuments,
+    setExpandedScopes,
+    setTreeCollapsed,
+    setInfoCollapsed,
+    resetFilters,
+  };
+}
+
+/** Human-readable source title: strips file extensions and underscores from raw file names. */
+export function displaySourceTitle(s: { title?: string; file_name?: string }): string {
+  const raw = (s.title || s.file_name || "").trim();
+  if (!raw) return "Chưa đặt tên";
+  return raw
+    .replace(/\.(pdf|docx?|xlsx?|csv|txt|md|pptx?)$/i, "")
+    .replace(/_+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Maps a page to its corresponding source document (if any) */
+export function getDocForPage(p: WikiPageSummary, sources: WikiSourceItem[]): WikiSourceItem | null {
+  if (!sources || sources.length === 0) return null;
+  // 1. Check explicit source_ids
+  if (p.source_ids && p.source_ids.length > 0) {
+    for (const sid of p.source_ids) {
+      const src = sources.find((s) => s.id === sid);
+      if (src) return src;
+    }
+  }
+  // 2. Check title suffix: " - [Doc Title]"
+  for (const src of sources) {
+    const srcTitle = src.title || src.file_name;
+    if (srcTitle && p.title.endsWith(` - ${srcTitle}`)) {
+      return src;
+    }
+    if (srcTitle && (p.title === srcTitle || p.slug === src.id)) {
+      return src;
+    }
+  }
+  return null;
+}
+
+// Helper methods for pages cache
+export function getCachedPages(url: string): WikiPageSummary[] | null {
+  return wikiStore.pagesCache.get(url) || null;
+}
+
+export function setCachedPages(url: string, pages: WikiPageSummary[]) {
+  wikiStore.pagesCache.set(url, pages);
+}
+
+export function removeCachedPage(slug: string) {
+  for (const [url, list] of wikiStore.pagesCache.entries()) {
+    wikiStore.pagesCache.set(
+      url,
+      list.filter((p) => p.slug !== slug)
+    );
+  }
+  wikiStore.pageDetailCache.delete(slug);
+}
+
+// Helper methods for sources cache
+export function getCachedSources(): WikiSourceItem[] | null {
+  return wikiStore.sourcesCache;
+}
+
+export function setCachedSources(sources: WikiSourceItem[]) {
+  wikiStore.sourcesCache = sources;
+}
+
+// Helper methods for page detail cache
+export function getCachedPageDetail(key: string): WikiPageDetail | null {
+  return wikiStore.pageDetailCache.get(key) || null;
+}
+
+export function setCachedPageDetail(key: string, page: WikiPageDetail) {
+  wikiStore.pageDetailCache.set(key, page);
+}
+
+// Helper methods for source detail cache
+export function getCachedSourceData(id: string): Record<string, unknown> | null {
+  return wikiStore.sourceDataCache.get(id) || null;
+}
+
+export function setCachedSourceData(id: string, data: Record<string, unknown>) {
+  wikiStore.sourceDataCache.set(id, data);
+}
+
+

@@ -1,0 +1,40 @@
+[project]
+name = "cahy-kho-tri-thuc"
+version = "0.1.0"
+description = "CAHY Kho tri thuc - nhanh c2 (clean-room)"
+license = "Apache-2.0"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi",
+    "sqlalchemy[asyncio]",
+    "asyncpg",
+    "alembic",
+    "pydantic",
+    "pydantic-settings",
+    "httpx",
+    "loguru",
+    "pyjwt",
+    "openai",
+    "fastmcp",
+    "langfuse",
+    "pymilvus",
+    "pymupdf",
+    "pymupdf4llm",
+    "python-docx",
+    "mammoth",
+    "openpyxl",
+    "xlrd",
+    "python-pptx",
+    "markitdown",
+    "pandas",
+    "duckdb",
+    "pillow",
+    "pyvi",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-asyncio", "ruff"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
