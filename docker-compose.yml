@@ -1,7 +1,8 @@
 name: document-wiki-c2
 
 x-backend: &backend
-  image: ${BACKEND_IMAGE:-wiki-c2-backend:latest}
+  # Thẻ ảnh ghim theo phiên bản (không dùng thẻ trôi nổi); đổi BACKEND_IMAGE trong .env khi dựng bản mới
+  image: ${BACKEND_IMAGE:-wiki-c2-backend:0.1.0}
   env_file: ${APP_ENV_FILE:-.env}
   restart: always
   depends_on:
@@ -38,7 +39,10 @@ services:
       retries: 10
 
   redis:
-    image: redis:7-alpine
+    # Redis 7.2 là dòng cuối còn giấy phép BSD-3 (7.4+ chuyển sang RSALv2/SSPL). Hệ thống đang chạy redis:7 (7.4)
+    # phải xoá volume redis_data trước khi đổi (7.2 không đọc được tệp RDB của 7.4; volume chỉ chứa hàng đợi tạm).
+    # Thay thế tương đương: valkey/valkey:8-alpine (BSD-3).
+    image: redis:7.2-alpine
     container_name: wiki_c2_redis
     restart: always
     command: ["redis-server", "--save", "60", "1", "--requirepass", "${REDIS_PASSWORD:-arkon_secret}"]
@@ -51,7 +55,9 @@ services:
       retries: 10
 
   minio:
-    image: minio/minio:latest
+    # MinIO (AGPL-3.0, dịch vụ độc lập, không sửa mã) ghim theo bản phát hành. Kho Docker Hub minio/minio
+    # không còn công khai: ảnh lấy từ gói cài ngoại tuyến / registry nội bộ.
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     container_name: wiki_c2_minio
     restart: always
     command: ["server", "/data", "--console-address", ":9001"]
@@ -110,7 +116,8 @@ services:
       start_period: 90s
 
   milvus_ui:
-    image: zilliz/attu:latest
+    # Attu dòng v2.4 tương thích Milvus v2.4.15 (dòng v3 nhắm Milvus mới hơn)
+    image: zilliz/attu:v2.4.12
     container_name: wiki_c2_milvus_ui
     restart: always
     environment:
@@ -180,7 +187,8 @@ services:
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5155}
         INTERNAL_API_URL: ${INTERNAL_API_URL:-http://api:5055}
-    image: ${FRONTEND_IMAGE:-wiki-c2-frontend:latest}
+    # Thẻ ảnh ghim theo phiên bản (không dùng thẻ trôi nổi); đổi FRONTEND_IMAGE trong .env khi dựng bản mới
+    image: ${FRONTEND_IMAGE:-wiki-c2-frontend:0.1.0}
     container_name: wiki_c2_frontend
     restart: always
     ports:

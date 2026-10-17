@@ -42,6 +42,31 @@ logger = logging.getLogger(__name__)
 
 VERSION = "0.1.0"
 _DEFAULT_SECRET_KEY = "change-me-to-a-random-secret-string"
+_DEFAULT_MCP_TOKEN_PEPPER = "change-me-to-a-random-pepper"
+
+
+def _check_secrets_or_fail() -> None:
+    """Từ chối khởi động khi SECRET_KEY hoặc MCP_TOKEN_PEPPER còn trống / giá trị mẫu; APP_ENV=dev chỉ cảnh báo."""
+    problems = []
+    for name, value, default in (
+        ("SECRET_KEY", settings.secret_key, _DEFAULT_SECRET_KEY),
+        ("MCP_TOKEN_PEPPER", settings.mcp_token_pepper, _DEFAULT_MCP_TOKEN_PEPPER),
+    ):
+        current = (value or "").strip()
+        if not current or current == default or current.startswith("change-me"):
+            problems.append(name)
+    if not problems:
+        return
+    msg = (
+        "Chưa đặt khoá bí mật: " + ", ".join(problems)
+        + '. Sinh giá trị ngẫu nhiên (python -c "import secrets; print(secrets.token_urlsafe(32))") '
+        "và đặt trong .env; chỉ APP_ENV=dev mới được bỏ qua."
+    )
+    if (settings.app_env or "").strip().lower() == "dev":
+        logger.warning(msg + " (APP_ENV=dev: chỉ cảnh báo)")
+        return
+    logger.error(msg)
+    raise RuntimeError(msg)
 _UPLOAD_PATH = "/api/sources/upload"
 
 mcp_server = create_mcp_server()
@@ -119,14 +144,14 @@ async def _ensure_bucket() -> None:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    # Kiểm tra khoá bí mật trước mọi bước khác: lỗi ở đây làm uvicorn dừng ngay, không bị _step nuốt.
+    _check_secrets_or_fail()
     async with mcp_http_app.lifespan(_app):
         await _step("ensure_bucket", _ensure_bucket)
         await _step("seed_default_admin", seed_default_admin)
         await _step("seed_knowledge_types", _seed_knowledge_types)
         await _step("seed_skills", _seed_skills)
         await _step("role_permissions_override", _load_role_overrides)
-        if settings.secret_key == _DEFAULT_SECRET_KEY:
-            logger.warning("SECRET_KEY is still the default value; set a random secret in production")
         try:
             yield
         finally:

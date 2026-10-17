@@ -10,8 +10,6 @@ import re
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-_CLOUD_LANGFUSE = "https://cloud.langfuse.com"
-
 
 def _split_csv(raw: str | None) -> set[str]:
     return {part.strip() for part in (raw or "").split(",") if part.strip()}
@@ -26,7 +24,11 @@ class Settings(BaseSettings):
     )
 
     # Core
+    # "prod" (mặc định): app/main.py từ chối khởi động khi SECRET_KEY / MCP_TOKEN_PEPPER còn trống hoặc giá trị
+    # mẫu "change-me". "dev": chỉ cảnh báo (máy phát triển, kiểm thử).
+    app_env: str = "prod"
     database_url: str = "postgresql+asyncpg://arkon:arkon_secret@localhost:5432/arkon"
+    # Giá trị mẫu để kiểm thử; sản xuất bắt buộc đặt qua .env (xem chốt chặn trong app/main.py).
     secret_key: str = "change-me-to-a-random-secret-string"
     default_admin_email: str = "admin@arkon.local"
     default_admin_password: str = ""
@@ -90,9 +92,12 @@ class Settings(BaseSettings):
     # Langfuse
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
-    langfuse_host: str = _CLOUD_LANGFUSE
+    # Không có mặc định đám mây: để trống = không gửi trace đi đâu. Hệ thống air-gap đặt Langfuse tự host
+    # qua LANGFUSE_HOST (vd http://langfuse-web:3000).
+    langfuse_host: str = ""
     langfuse_base_url: str = ""
-    langfuse_enabled: bool = True
+    # Mặc định tắt; chỉ bật khi đã có Langfuse nội bộ và cặp khoá.
+    langfuse_enabled: bool = False
 
     # Milvus
     milvus_host: str = "milvus"
@@ -140,7 +145,7 @@ class Settings(BaseSettings):
 
     @property
     def effective_langfuse_host(self) -> str:
-        return (self.langfuse_base_url or "").strip() or (self.langfuse_host or "").strip() or _CLOUD_LANGFUSE
+        return (self.langfuse_base_url or "").strip() or (self.langfuse_host or "").strip()
 
     @property
     def sso_admin_role_set(self) -> set[str]:

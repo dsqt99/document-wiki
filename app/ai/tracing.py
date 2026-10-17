@@ -31,9 +31,10 @@ def get_langfuse() -> Optional[Any]:
         _langfuse_initialized = True
         pk = settings.langfuse_public_key or ""
         sk = settings.langfuse_secret_key or ""
-        host = settings.effective_langfuse_host or "https://cloud.langfuse.com"
+        host = settings.effective_langfuse_host
 
-        if pk and sk:
+        # Không có địa chỉ Langfuse (nội bộ) thì không khởi tạo client; không bao giờ rơi về cloud.langfuse.com.
+        if pk and sk and host:
             try:
                 from langfuse import Langfuse
 
