@@ -112,3 +112,22 @@ Còn lệch nhỏ:
   - Backend: không đổi mã, `pytest` vẫn 355 passed.
   - API: vẫn khớp 44/44.
   - Đo trùng khối mã với bản tham chiếu: vẫn 0/328 file vượt ngưỡng 10%.
+
+## 6. Thử luồng nạp tài liệu (17/10)
+
+- **c2:** upload `02. Văn bản hợp nhất số 90 Luật XLVPHC.pdf`, gắn 4 phòng ban. Kết quả `ready 100%`, đi qua đủ các bước:
+  1. bóc tách nội dung (126.579 token, giống bản gốc);
+  2. dựng mục lục;
+  3. tách theo từng Điều (800 Điều/Khoản/Điểm, 148 trang mỗi bộ);
+  4. trích metadata;
+  5. tạo 94 chunk embedding;
+  6. tạo embedding và tóm tắt cho mọi trang.
+- **Bản gốc (black-box):** upload `04. Nghị định 311.2026.NĐ.CP…docx`, gắn 2 phòng ban PV01 và PA08. Mỗi phòng ban có một bộ trang riêng: 10 trang, cùng `_index` và `_log`. **Hành vi này giống c2**: c2 cũng biên dịch một bộ trang cho mỗi phòng ban được gắn. Vì vậy tìm kiếm có thể trả cùng một Điều nhiều lần, mỗi lần thuộc một phòng ban. Đây là hành vi của sản phẩm, không phải lệch.
+- **Dọn dữ liệu test trên bản gốc:** xoá nguồn qua `DELETE /api/sources/{id}`. Lệnh này dọn trang, Điều/Khoản, embedding và object MinIO. Riêng 4 trang `_index`/`_log` mới tạo cho PV01/PA08 vẫn còn, nên đã xoá tay. Sau khi dọn, số dòng mọi bảng trở về như trước, chỉ còn các dòng `audit_log` và `mcp_query_log` ghi lại thao tác test.
+- **Dọn dữ liệu test trên c2:** xoá nguồn qua `DELETE /api/sources/{id}` thì xoá được nguồn, 447 trang trùng, Điều/Khoản, embedding và object MinIO. Một số thay đổi do lần test vẫn còn nên đã sửa tay:
+  - 149 trang PC08 đã có từ trước bị biên dịch lại khi nạp nguồn test. Các trang này giữ nội dung mới, có thêm một revision và tiêu đề bị đổi chữ hoa/thường. Đã trả về revision trước và lấy lại tiêu đề từ bản gốc.
+  - 6 trang `_index`/`_log` mới tạo cho PV01/PA08/PC06: đã xoá.
+  - `_index`/`_log` của PC08 và trang `_index` global bị cập nhật: đã chép lại từ bản gốc.
+
+  Sau khi dọn, 216 trang của c2 khớp từng trang với bản gốc (md5 nội dung, tiêu đề và version), và API khớp lại 44/44.
+- **Ghi chú:** xoá nguồn trên c2 chưa trả các trang dùng chung về trạng thái trước khi nạp: không hoàn tác lần biên dịch lại và không xoá `_index`/`_log` của scope mới. Bản gốc cũng để lại `_index`/`_log`, nên đây không phải lệch so với bản gốc.
