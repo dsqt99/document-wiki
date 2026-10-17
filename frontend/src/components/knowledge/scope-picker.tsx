@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
 export type ScopeMode = "global" | "department" | "personal";
@@ -13,6 +14,8 @@ type ScopePickerProps = {
   onSelectedChange: (ids: string[]) => void;
   disabled?: boolean;
   allowPersonal?: boolean;
+  /** "segmented" (default) shows all options inline; "select" is a compact dropdown. */
+  variant?: "segmented" | "select";
 };
 
 const OPTIONS: { value: ScopeMode; icon: string; label: string; hint: string }[] = [
@@ -21,7 +24,18 @@ const OPTIONS: { value: ScopeMode; icon: string; label: string; hint: string }[]
   { value: "global", icon: "public", label: "Toàn hệ thống", hint: "Mọi cán bộ đều xem được" },
 ];
 
-/** Visibility picker: segmented radio group plus a filterable department checklist. */
+function OptionLabel({ icon, label }: { icon: string; label: string }) {
+  return (
+    <span className="flex min-w-0 items-center gap-2">
+      <span className="material-symbols-outlined shrink-0 text-muted-foreground" style={{ fontSize: 16 }}>
+        {icon}
+      </span>
+      <span className="truncate">{label}</span>
+    </span>
+  );
+}
+
+/** Visibility picker: segmented radio group or dropdown, plus a filterable department checklist. */
 export function ScopePicker({
   mode,
   onModeChange,
@@ -30,6 +44,7 @@ export function ScopePicker({
   onSelectedChange,
   disabled,
   allowPersonal = false,
+  variant = "segmented",
 }: ScopePickerProps) {
   const [filter, setFilter] = useState("");
   const options = OPTIONS.filter((o) => allowPersonal || o.value !== "personal");
@@ -51,33 +66,48 @@ export function ScopePicker({
 
   return (
     <div className="flex flex-col gap-2">
-      <div role="radiogroup" className="flex gap-1 rounded-lg bg-muted p-1">
-        {options.map((o) => {
-          const active = o.value === mode;
-          return (
-            <button
-              key={o.value}
-              type="button"
-              role="radio"
-              aria-checked={active}
-              title={o.hint}
-              disabled={disabled}
-              onClick={() => pick(o.value)}
-              className={cn(
-                "flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
-                active
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
-                {o.icon}
-              </span>
-              {o.label}
-            </button>
-          );
-        })}
-      </div>
+      {variant === "select" ? (
+        <Select value={mode} onValueChange={(v) => v && pick(v as ScopeMode)} disabled={disabled}>
+          <SelectTrigger className="h-9 w-full text-sm">
+            <SelectValue>{() => current && <OptionLabel icon={current.icon} label={current.label} />}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {options.map((o) => (
+              <SelectItem key={o.value} value={o.value}>
+                <OptionLabel icon={o.icon} label={o.label} />
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      ) : (
+        <div role="radiogroup" className="flex gap-1 rounded-lg bg-muted p-1">
+          {options.map((o) => {
+            const active = o.value === mode;
+            return (
+              <button
+                key={o.value}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                title={o.hint}
+                disabled={disabled}
+                onClick={() => pick(o.value)}
+                className={cn(
+                  "flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                  active
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
+                  {o.icon}
+                </span>
+                {o.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
       {current && <p className="text-[11px] text-muted-foreground">{current.hint}</p>}
 
       {mode === "department" && (

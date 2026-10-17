@@ -3,6 +3,7 @@
 import { useRef, useState, type DragEvent, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { apiUpload } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -141,47 +142,42 @@ function ProcessingModePicker({
   personal: boolean;
   disabled?: boolean;
 }) {
-  if (personal) {
-    return (
-      <p className="flex items-start gap-2 rounded-lg bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
-        <Icon name="info" size={16} className="shrink-0" />
-        Tài liệu cá nhân chỉ được lưu để tra cứu, không tạo trang Wiki. Chọn phạm vi Theo phòng ban hoặc Toàn hệ thống
-        để chọn cơ chế xử lý.
-      </p>
-    );
-  }
+  const options = modeOptions(legal);
+  const current = personal
+    ? { icon: "manage_search", title: "Chỉ lưu để tra cứu" }
+    : options.find((o) => o.value === value) ?? options[0];
+  const hint = personal
+    ? "Tài liệu cá nhân chỉ được lưu để tra cứu, không tạo trang Wiki. Chọn phạm vi Theo phòng ban hoặc Toàn hệ thống để chọn cơ chế khác."
+    : options.find((o) => o.value === value)?.desc;
   return (
-    <div role="radiogroup" className="grid gap-2 sm:grid-cols-2">
-      {modeOptions(legal).map((opt) => {
-        const active = value === opt.value;
-        return (
-          <button
-            key={opt.value}
-            type="button"
-            role="radio"
-            aria-checked={active}
-            disabled={disabled}
-            onClick={() => onChange(opt.value)}
-            className={cn(
-              "flex items-start gap-2.5 rounded-lg border px-3 py-2.5 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60",
-              active ? "border-primary bg-primary/5" : "hover:border-primary/40"
+    <div className="flex flex-col gap-2">
+      <Select
+        value={personal ? "verbatim" : value}
+        onValueChange={(v) => v && onChange(v as ProcessingMode)}
+        disabled={disabled || personal}
+      >
+        <SelectTrigger className="h-9 w-full text-sm">
+          <SelectValue>
+            {() => (
+              <span className="flex min-w-0 items-center gap-2">
+                <Icon name={current.icon} className="shrink-0 text-muted-foreground" />
+                <span className="truncate">{current.title}</span>
+              </span>
             )}
-          >
-            <span
-              className={cn(
-                "flex size-7 shrink-0 items-center justify-center rounded-md",
-                active ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
-              )}
-            >
-              <Icon name={opt.icon} size={16} />
-            </span>
-            <span className="min-w-0">
-              <span className="block text-xs font-medium">{opt.title}</span>
-              <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">{opt.desc}</span>
-            </span>
-          </button>
-        );
-      })}
+          </SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((opt) => (
+            <SelectItem key={opt.value} value={opt.value}>
+              <span className="flex items-center gap-2">
+                <Icon name={opt.icon} className="text-muted-foreground" />
+                {opt.title}
+              </span>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {hint && <p className="text-[11px] text-muted-foreground">{hint}</p>}
     </div>
   );
 }
@@ -440,7 +436,7 @@ function UploadBody({
           )}
         </StepSection>
 
-        <StepSection n={2} title="Phân loại & phạm vi">
+        <StepSection n={2} title="Phân loại, phạm vi & xử lý">
           <div className="grid gap-x-4 gap-y-3 sm:grid-cols-[7.5rem_1fr] sm:items-start">
             <span className="pt-2 text-xs text-muted-foreground">Danh mục</span>
             <KnowledgeTypeSelect types={types} value={typeId} onChange={setTypeId} disabled={uploading} />
@@ -453,18 +449,17 @@ function UploadBody({
               onSelectedChange={setDeptIds}
               disabled={uploading}
               allowPersonal
+              variant="select"
+            />
+            <span className="pt-2 text-xs text-muted-foreground">Cơ chế xử lý</span>
+            <ProcessingModePicker
+              value={effectiveMode}
+              onChange={setProcMode}
+              legal={legal}
+              personal={mode === "personal"}
+              disabled={uploading}
             />
           </div>
-        </StepSection>
-
-        <StepSection n={3} title="Cơ chế xử lý">
-          <ProcessingModePicker
-            value={effectiveMode}
-            onChange={setProcMode}
-            legal={legal}
-            personal={mode === "personal"}
-            disabled={uploading}
-          />
         </StepSection>
 
         {error && (
