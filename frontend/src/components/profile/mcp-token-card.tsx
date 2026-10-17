@@ -74,8 +74,8 @@ export function McpTokenCard() {
   };
 
   const revokeButton = (
-    <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={revoke} disabled={busy}>
-      <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
+    <Button variant="ghost" size="sm" className="gap-1 px-3 text-destructive hover:text-destructive" onClick={revoke} disabled={busy}>
+      <span className="material-symbols-outlined" style={{ fontSize: 24 }}>
         vpn_key_off
       </span>
       {t("profile.revokeToken", "Thu hồi mã")}
@@ -102,7 +102,7 @@ export function McpTokenCard() {
             </pre>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" size="sm" onClick={copy}>
-                <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
+                <span className="material-symbols-outlined" style={{ fontSize: 24 }}>
                   {copied ? "check" : "content_copy"}
                 </span>
                 {copied ? t("dash.copied", "Đã sao chép!") : t("profile.copyToken", "Sao chép mã")}
@@ -119,8 +119,8 @@ export function McpTokenCard() {
               <span>{t("profile.mcpTokenActive")}</span>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" onClick={generate} disabled={busy}>
-                <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
+              <Button variant="outline" size="sm" className="gap-1 px-3" onClick={generate} disabled={busy}>
+                <span className="material-symbols-outlined" style={{ fontSize: 24 }}>
                   refresh
                 </span>
                 {busy ? t("common.loading", "Đang tải...") : t("profile.regenerateToken", "Tạo lại mã")}

@@ -11,6 +11,7 @@ import {
   ExportCsvButton,
   KpiCard,
   StatsSkeleton,
+  formatAsOf,
   formatDuration,
   formatNumber,
   listOf,
@@ -109,7 +110,7 @@ export function OverviewTab({ data }: { data: StatsOverview | null }) {
         </div>
       </div>
 
-      <p className="text-xs text-muted-foreground">As of {data.as_of}</p>
+      <p className="text-xs text-muted-foreground">As of {formatAsOf(data.as_of)}</p>
     </div>
   );
 }
@@ -170,7 +171,7 @@ export function ContributionTab({ data, range }: { data: StatsSection | null; ra
 
   const bySource = listOf(data, "draft.created.by_source").map((row) => {
     const dims = (row.dimensions ?? {}) as Record<string, unknown>;
-    return { name: (dims.source as string) || "—", count: row.count };
+    return { name: (dims.source as string) || (row.source as string) || "—", count: row.count };
   });
 
   return (

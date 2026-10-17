@@ -175,3 +175,8 @@
 .mdEditor th {
   background: var(--muted);
 }
+/* Detail view: larger page title with roomier line height. */
+.mdDetail h1 {
+  font-size: 32px;
+  line-height: 1.5;
+}

@@ -49,6 +49,11 @@ OVERVIEW_KPIS = (
     "mcp.active_users", "mcp.weekly_active_users", "mcp.queries.total", "mcp.queries.zero_result",
     "audit.denied",
 )
+# Metrics kept in ``series`` (and CSV export) but not summarised in latest/latest_lists.
+SERIES_ONLY: dict[str, frozenset[str]] = {
+    "content": frozenset({"wiki.pages.by_type"}),
+    "contribution": frozenset({"draft.time_to_review_avg_seconds", "draft.created.by_source"}),
+}
 # Breakdown metrics stored as one row per dimension value.
 DIMENSION_COUNT_KEY = "count"
 
@@ -125,11 +130,14 @@ async def _section(db, section: str, from_date: date, to_date: date) -> SectionR
             "date": _day(r), "value": r.value_numeric, "dimensions": r.dimensions, "items": _items(r),
         })
         by_metric.setdefault(r.metric_key, []).append(r)
+    hidden = SERIES_ONLY.get(section, frozenset())
     for m in scalars:
+        if m in hidden:
+            continue
         mrows = [r for r in by_metric.get(m, []) if not r.dimensions]
         if mrows:
             latest[m] = float(mrows[-1].value_numeric or 0)
-    latest_lists = {m: _latest_list(by_metric.get(m, [])) for m in lists}
+    latest_lists = {m: _latest_list(by_metric.get(m, [])) for m in lists if m not in hidden}
     return SectionResponse(from_date=from_date, to_date=to_date, series=series, latest=latest,
                            latest_lists=latest_lists)
 
@@ -157,7 +165,7 @@ async def overview(db: AsyncSession = Depends(get_db), user=require_permission("
     for r in rows:  # ordered by date: later rows overwrite
         if not r.dimensions:
             newest[r.metric_key] = r
-    kpis: dict[str, float] = {}
+    kpis: dict[str, Optional[float]] = {"draft.time_to_review_avg_seconds": None}
     for k in OVERVIEW_KPIS:
         if k in newest and newest[k].value_numeric is not None:
             kpis[k] = float(newest[k].value_numeric)
@@ -178,9 +186,8 @@ async def overview(db: AsyncSession = Depends(get_db), user=require_permission("
         items = _items(row) if row is not None else None
         return items[0] if items else None
 
-    as_of = max((r.date for r in rows), default=None)
     return {
-        "as_of": as_of.isoformat() if as_of else None,
+        "as_of": today.isoformat(),
         "kpis": kpis,
         "top_gap_topic": _first("mcp.gaps.zero_result"),
         "top_contributor": _first("draft.top_contributors"),

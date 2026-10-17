@@ -3,6 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { LegalDocDetail } from "@/types/legal-doc";
 import { api } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { fileKindOf, splitLegalTitle } from "./law-utils";
 
@@ -101,7 +102,7 @@ export function LawSourceTab({ doc }: { doc: LegalDocDetail }) {
 
   const downloadButton = (variant: "default" | "outline") =>
     downloadUrl ? (
-      <Button variant={variant} className={hoverPop} onClick={() => openInNewTab(downloadUrl)}>
+      <Button variant={variant} className={cn(hoverPop, "gap-2 text-xs")} onClick={() => openInNewTab(downloadUrl)}>
         <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
           cloud_download
         </span>
@@ -189,7 +190,7 @@ export function LawSourceTab({ doc }: { doc: LegalDocDetail }) {
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {previewUrl && (
-            <Button variant="outline" className={hoverPop} onClick={() => openInNewTab(previewUrl)}>
+            <Button variant="outline" className={cn(hoverPop, "gap-2 text-xs")} onClick={() => openInNewTab(previewUrl)}>
               <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
                 open_in_new
               </span>

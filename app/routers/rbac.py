@@ -84,6 +84,7 @@ async def list_departments(
     query = select(Department, func.coalesce(counts.c.n, 0)).outerjoin(counts, counts.c.department_id == Department.id)
     if not include_inactive:
         query = query.where(Department.is_active.is_(True))
+    query = query.order_by(Department.created_at.asc(), Department.id.asc())
     rows = (await db.execute(query)).all()
     return [_department_out(dept, n) for dept, n in rows]
 

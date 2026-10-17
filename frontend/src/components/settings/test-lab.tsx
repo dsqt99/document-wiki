@@ -84,7 +84,7 @@ export function TestFileDropzone({
       onDragLeave={() => setDragging(false)}
       onDrop={handleDrop}
       className={cn(
-        "group relative cursor-pointer rounded-xl border-2 border-dashed p-4 outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/50",
+        "group relative cursor-pointer rounded-xl border-2 border-dashed p-3 outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/50",
         dragging
           ? "border-primary bg-primary/5"
           : file
@@ -150,12 +150,14 @@ export function TestFileDropzone({
           </Button>
         </div>
       ) : (
-        <div className="flex flex-col items-center gap-2 py-4 text-center">
-          <div className="flex size-11 items-center justify-center rounded-full bg-primary/10 text-primary transition-transform group-hover:scale-110">
+        <div className="flex items-center gap-3 text-left">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary transition-transform group-hover:scale-110">
             <span className="material-symbols-outlined text-[22px]">upload_file</span>
           </div>
-          <p className="text-xs font-semibold text-foreground">Kéo thả file hoặc bấm để chọn</p>
-          <p className="text-[11px] text-muted-foreground">{hint}</p>
+          <div className="min-w-0">
+            <p className="text-xs font-semibold text-foreground">Kéo thả file hoặc bấm để chọn</p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">{hint}</p>
+          </div>
         </div>
       )}
     </div>

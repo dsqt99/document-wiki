@@ -12,7 +12,7 @@ import { McpTokenCard } from "@/components/profile/mcp-token-card";
 
 const capitalize = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
-const CARD = "rounded-xl border bg-card p-6 shadow-lift";
+const CARD = "rounded-xl border bg-card p-6 [box-shadow:0_1px_3px_0_rgba(15,23,42,0.06),0_1px_2px_-1px_rgba(15,23,42,0.06)]";
 
 function ChangePasswordCard() {
   const [current, setCurrent] = useState("");
@@ -97,12 +97,12 @@ export default function ProfilePage() {
 
   return (
     <>
-      <PageHeader
+      <PageHeader actionClassName="sm:mb-0.5"
         title="Profile"
         description="Manage your account settings."
         action={
           <Button variant="destructive" onClick={() => logout()}>
-            <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
+            <span className="material-symbols-outlined" style={{ fontSize: 24, width: 28 }}>
               logout
             </span>
             Logout
@@ -122,13 +122,13 @@ export default function ProfilePage() {
               <p className="truncate text-sm text-muted-foreground">{user.email}</p>
             </div>
           </div>
-          <div className="mt-5 grid grid-cols-2 gap-4 border-t pt-4">
+          <div className="mt-3.5 grid grid-cols-2 gap-4 border-t pt-3">
             <div>
-              <p className="mb-1 text-xs text-muted-foreground">Role</p>
-              <Badge variant="outline">{capitalize(user.role)}</Badge>
+              <p className="text-xs text-muted-foreground">Role</p>
+              <Badge variant="outline" className="capitalize">{capitalize(user.role)}</Badge>
             </div>
             <div>
-              <p className="mb-1 text-xs text-muted-foreground">{departments.length > 1 ? "Departments" : "Department"}</p>
+              <p className="text-xs text-muted-foreground">{departments.length > 1 ? "Departments" : "Department"}</p>
               <p className="text-sm font-medium">{departments.length ? departments.join(", ") : "—"}</p>
             </div>
           </div>

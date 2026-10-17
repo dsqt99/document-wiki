@@ -36,8 +36,8 @@ export default function DepartmentsPage() {
   }, []);
 
   return (
-    <div className="flex flex-col gap-6">
-      <PageHeader
+    <div className="flex flex-col gap-8">
+      <PageHeader actionClassName="sm:mb-0.5"
         title="Departments"
         description="Organize employees into departments and manage knowledge access."
         action={
@@ -47,7 +47,7 @@ export default function DepartmentsPage() {
               setDialogOpen(true);
             }}
           >
-            <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
+            <span className="material-symbols-outlined" style={{ fontSize: 24, width: 28 }}>
               add
             </span>
             Add Department

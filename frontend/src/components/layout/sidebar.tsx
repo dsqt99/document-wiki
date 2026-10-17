@@ -145,8 +145,8 @@ export function Sidebar() {
       )}
     >
       {/* Brand / user block */}
-      <div className="border-b border-sidebar-border px-2.5 py-2.5">
-        {collapsed ? (
+      {collapsed ? (
+        <div className="mt-2 border-b border-sidebar-border px-2.5 pt-1.5 pb-2.5">
           <div className="flex flex-col items-center gap-1.5">
             <UserMenu triggerClassName="rounded-lg p-1 outline-none hover:bg-sidebar-accent">
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -163,7 +163,7 @@ export function Sidebar() {
                   />
                 }
               >
-                <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
+                <span className="material-symbols-outlined" style={{ fontSize: 20 }}>
                   left_panel_open
                 </span>
               </TooltipTrigger>
@@ -171,42 +171,42 @@ export function Sidebar() {
             </Tooltip>
             <NotificationBell className="scale-90" />
           </div>
-        ) : (
-          <div className="flex items-center gap-1">
-            <UserMenu triggerClassName="flex min-w-0 flex-1 items-center gap-2 rounded-lg p-1 text-left outline-none hover:bg-sidebar-accent">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/logo.png" alt="Document Wiki" className="size-[26px] shrink-0 rounded-md" />
-              <span className="min-w-0">
-                <span className="block truncate text-sm font-bold text-foreground">Document Wiki</span>
-                <span className="block truncate text-[11px] text-muted-foreground">
-                  {user.name} · {user.role}
-                </span>
+        </div>
+      ) : (
+        <div className="mt-2 flex items-center gap-1 border-b border-sidebar-border px-2.5 pt-1.5 pb-2.5">
+          <UserMenu triggerClassName="flex h-[42px] min-w-0 flex-1 items-center gap-2.5 rounded-[10px] pl-2 text-left outline-none hover:bg-sidebar-accent">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo.png" alt="Document Wiki" className="size-[26px] shrink-0 rounded-md" />
+            <span className="min-w-0">
+              <span className="block text-sm font-bold whitespace-nowrap text-foreground">Document Wiki</span>
+              <span className="block truncate text-[11px] text-muted-foreground">
+                {user.name} · {user.role}
               </span>
-            </UserMenu>
-            <NotificationBell />
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <button
-                    type="button"
-                    aria-label={t("sidebar.collapse")}
-                    onClick={toggle}
-                    className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
-                  />
-                }
-              >
-                <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
-                  left_panel_close
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">{t("sidebar.collapse")}</TooltipContent>
-            </Tooltip>
-          </div>
-        )}
-      </div>
+            </span>
+          </UserMenu>
+          <NotificationBell className="mr-0.5" />
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  aria-label={t("sidebar.collapse")}
+                  onClick={toggle}
+                  className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
+                />
+              }
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: 20 }}>
+                left_panel_close
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">{t("sidebar.collapse")}</TooltipContent>
+          </Tooltip>
+        </div>
+      )}
 
       {/* Navigation */}
-      <nav className="scrollbar-hover flex-1 overflow-y-auto px-2.5 py-3">
+      <nav className="scrollbar-hover flex-1 overflow-y-auto px-2 pt-2 pb-3">
         <div className={cn("flex flex-col", collapsed ? "items-center gap-2" : "gap-4")}>
           {groups.map((group, gi) => (
             <div key={group.labelKey ?? `g${gi}`} className={cn("flex flex-col", collapsed ? "items-center gap-1" : "gap-0.5")}>
@@ -214,7 +214,7 @@ export function Sidebar() {
                 (collapsed ? (
                   <div className="my-1 h-px w-6 bg-sidebar-border" />
                 ) : (
-                  <p className="px-2 pb-1 text-[10px] font-bold tracking-wider text-muted-foreground/70 uppercase">
+                  <p className="px-2.5 py-1 text-[10px] font-bold tracking-wider text-slate-400/90 uppercase">
                     {t(group.labelKey)}
                   </p>
                 ))}
@@ -254,7 +254,8 @@ export function Sidebar() {
                     key={item.href}
                     href={item.href}
                     className={cn(
-                      "ml-1 flex h-[30px] items-center gap-2.5 rounded-md px-2 text-[13px] font-medium transition-colors",
+                      "flex h-9 items-center gap-2.5 rounded-[10px] px-2.5 py-1.5 text-[13px] font-medium transition-colors",
+                      group.labelKey && "ml-2",
                       active
                         ? "bg-primary/10 font-semibold text-primary shadow-xs"
                         : "text-slate-600 hover:bg-sidebar-accent hover:text-foreground dark:text-slate-400",
@@ -262,7 +263,7 @@ export function Sidebar() {
                   >
                     <span
                       className={cn("material-symbols-outlined", active && "filled")}
-                      style={{ fontSize: 19, fontVariationSettings: `"FILL" ${active ? 1 : 0}, "wght" 300` }}
+                      style={{ fontSize: 24, fontVariationSettings: `"FILL" ${active ? 1 : 0}, "wght" 300` }}
                     >
                       {item.icon}
                     </span>

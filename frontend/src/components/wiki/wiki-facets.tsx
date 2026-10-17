@@ -58,9 +58,9 @@ export function FacetGroup({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 py-1 text-left"
+        className="flex w-full items-center gap-2 py-2.5 text-left text-sm leading-5 font-semibold"
       >
-        <span className="text-xs font-semibold">{title}</span>
+        <span>{title}</span>
         {selectedCount > 0 && (
           <span className="rounded-full bg-primary/10 px-1.5 text-[10px] leading-4 font-semibold text-primary">
             {selectedCount}
@@ -95,7 +95,7 @@ export function FacetGroup({
                 <label
                   key={opt.value}
                   title={opt.label}
-                  className="flex cursor-pointer items-center gap-2 rounded-md px-1 py-1 text-xs hover:bg-muted"
+                  className="flex cursor-pointer items-center gap-2 rounded-md px-1 py-[5px] text-[13px] hover:bg-muted"
                 >
                   <input
                     type="checkbox"

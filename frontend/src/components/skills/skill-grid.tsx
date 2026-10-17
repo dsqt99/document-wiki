@@ -149,7 +149,7 @@ export function SkillGrid({ skills, ...actions }: { skills: Skill[] } & SkillCar
                     Hệ thống
                   </Chip>
                 )}
-                <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px]">v{s.current_version}</span>
+                <span className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-[10px] leading-[15px]">v{s.current_version}</span>
                 {st && (
                   <span className={cn("inline-flex items-center gap-1 rounded-md px-1.5 py-0.5", st.cls)}>
                     {st.spin && (

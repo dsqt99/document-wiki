@@ -44,7 +44,7 @@ function ExplorerRows({
               <button
                 type="button"
                 onClick={() => onToggle(node.path)}
-                className="flex w-full items-center gap-1 rounded-md py-1.5 pr-2 text-left text-[13px] text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                className="flex h-9 w-full items-center gap-1.5 rounded-md py-1.5 pr-2 text-left text-[13px] text-muted-foreground hover:bg-muted/60 hover:text-foreground"
                 style={{ paddingLeft: 8 + depth * 16 }}
               >
                 <span
@@ -80,14 +80,14 @@ function ExplorerRows({
             type="button"
             onClick={() => onSelect(node.path)}
             className={cn(
-              "relative flex w-full items-center gap-1.5 rounded-md py-1.5 pr-2 text-left text-[13px]",
+              "relative flex h-9 w-full items-center gap-1.5 rounded-md py-1.5 pr-2 text-left text-[13px]",
               active
                 ? "bg-primary/10 font-semibold text-primary before:absolute before:top-1 before:bottom-1 before:left-0 before:w-0.5 before:rounded-full before:bg-primary"
                 : "text-foreground/80 hover:bg-muted/60",
             )}
             style={{ paddingLeft: 32 + depth * 16 }}
           >
-            <span className="material-symbols-outlined" style={{ fontSize: 16 }}>{icon}</span>
+            <span className="material-symbols-outlined" style={{ fontSize: 20 }}>{icon}</span>
             <span className="truncate">{node.name}</span>
           </button>
         );
@@ -201,7 +201,7 @@ export function SkillFileExplorer({ skillId, version }: { skillId: string; versi
     );
   } else if (md && current && !current.failed) {
     body = (
-      <div className="px-10 py-10 lg:px-16">
+      <div className="px-10 pt-[88px] pb-10 lg:px-16">
         <div className="mx-auto max-w-4xl">
           <SkillMarkdown content={shownText ?? ""} variant="detail" />
         </div>
@@ -265,9 +265,9 @@ export function SkillFileExplorer({ skillId, version }: { skillId: string; versi
                   <button
                     type="button"
                     onClick={() => void copy()}
-                    className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-bold tracking-wider uppercase hover:bg-muted"
+                    className="inline-flex h-8 items-center gap-2 rounded-md border bg-muted/40 px-3 text-[11px] font-bold tracking-[0.1em] uppercase hover:bg-muted"
                   >
-                    <span className="material-symbols-outlined" style={{ fontSize: 14 }}>content_copy</span>
+                    <span className="material-symbols-outlined" style={{ fontSize: 16 }}>content_copy</span>
                     Copy
                   </button>
                 )}

@@ -28,9 +28,9 @@ function BackLink() {
   return (
     <Link
       href="/skills"
-      className="inline-flex w-fit items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-primary"
+      className="inline-flex h-6 w-fit items-center text-sm text-muted-foreground transition-colors hover:text-primary"
     >
-      <span className="material-symbols-outlined" style={{ fontSize: 16 }}>arrow_back</span>
+      <span className="material-symbols-outlined" style={{ fontSize: 20, width: 24 }}>arrow_back</span>
       Back to Skills
     </Link>
   );
@@ -184,7 +184,7 @@ export default function SkillDetailPage() {
   };
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-8">
       <BackLink />
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-4">
@@ -239,12 +239,12 @@ export default function SkillDetailPage() {
             )}
           </div>
 
-          <div className="flex flex-col gap-8 rounded-2xl border bg-card p-8">
-            <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-8 rounded-xl border bg-card p-8">
+            <div className="flex flex-col gap-4">
               <h3 className={sectionTitle}>Status</h3>
               <span
                 className={cn(
-                  "w-fit rounded-full px-3 py-1 text-[11px] font-bold tracking-wider uppercase",
+                  "inline-flex h-5 w-fit items-center gap-1 rounded-full px-3 text-xs font-bold tracking-[0.1em] uppercase",
                   skill.status === "active" ? TONE.green : "bg-yellow-500/10 text-yellow-700 dark:text-yellow-300",
                 )}
               >
@@ -252,7 +252,7 @@ export default function SkillDetailPage() {
               </span>
             </div>
 
-            <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-4">
               <div className="flex items-center justify-between gap-2">
                 <h3 className={sectionTitle}>Version History</h3>
                 {previewingOld && (
@@ -265,18 +265,15 @@ export default function SkillDetailPage() {
                 value={viewVersion != null ? String(viewVersion) : null}
                 onValueChange={(v) => v != null && setViewVersion(Number(v))}
               >
-                <SelectTrigger className="h-10! w-full">
+                <SelectTrigger className="h-8! w-full">
                   <SelectValue placeholder="Select version">
-                    {(v: string | null) =>
-                      v ? `Version ${v}${Number(v) === skill.current_version ? " (Latest)" : ""}` : "Select version"
-                    }
+                    {(v: string | null) => v ?? "Select version"}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent className="max-h-60">
                   {versions.map((v) => (
                     <SelectItem key={v.version_number} value={String(v.version_number)}>
-                      Version {v.version_number}
-                      {v.version_number === skill.current_version ? " (Latest)" : ""}
+                      {v.version_number}
                     </SelectItem>
                   ))}
                 </SelectContent>

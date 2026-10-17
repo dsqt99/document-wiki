@@ -95,8 +95,7 @@ async def list_legal_docs(
         select(KnowledgeType).order_by(KnowledgeType.sort_order, KnowledgeType.name)
     )).scalars().all()
     knowledge_types = [
-        {"id": str(k.id), "slug": k.slug, "name": k.name, "color": k.color, "description": k.description,
-         "sort_order": k.sort_order}
+        {"id": str(k.id), "slug": k.slug, "name": k.name, "color": k.color}
         for k in kts
     ]
     try:

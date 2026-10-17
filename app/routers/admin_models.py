@@ -69,6 +69,7 @@ class VisionSpecOut(BaseModel):
     api_key_config_key: str
     custom: bool = False
     base_url: Optional[str] = None
+    protocol: Optional[str] = None
     group: str = "custom"
 
 
@@ -255,6 +256,7 @@ async def get_vision_catalog(
                 api_key_config_key=cm.api_key_config_key("vision", m.id),
                 custom=True,
                 base_url=m.base_url,
+                protocol=getattr(m, "protocol", None),
                 group=m.provider or "custom",
             )
         )

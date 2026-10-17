@@ -501,7 +501,7 @@ export function WikiGraph({ nodes, edges, centerSlug, mini = false, height, onNo
                   type="button"
                   onClick={() => setEdgeFilter(f.key)}
                   className={cn(
-                    "rounded-md px-2 py-1 font-medium transition-colors",
+                    "rounded-[10px] px-2 py-0.5 text-[10px] leading-[15px] font-medium transition-colors",
                     edgeFilter === f.key ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted",
                   )}
                 >
@@ -521,7 +521,7 @@ export function WikiGraph({ nodes, edges, centerSlug, mini = false, height, onNo
                   type="button"
                   onClick={() => setColorMode(key)}
                   className={cn(
-                    "rounded-md px-2 py-1 font-medium transition-colors",
+                    "rounded-[10px] px-2 py-0.5 text-[10px] leading-[15px] font-medium transition-colors",
                     colorMode === key ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted",
                   )}
                 >
@@ -532,7 +532,7 @@ export function WikiGraph({ nodes, edges, centerSlug, mini = false, height, onNo
           </div>
 
           {/* bottom-left legend */}
-          <div className="absolute bottom-3 left-3 z-10 max-h-[50vh] w-[240px] max-w-[240px] overflow-y-auto rounded-lg border bg-background/90 p-3 text-xs shadow-sm">
+          <div className="absolute bottom-3 left-3 z-10 max-h-[50vh] w-[168px] max-w-[168px] overflow-y-auto rounded-xl border bg-background/90 px-3 py-2.5 text-xs shadow-sm">
             {colorMode === "status" ? (
               <LegendSection title="Maturity Lifecycle">
                 {(["evergreen", "mature", "developing", "seed"] as const).map((s) => (
@@ -550,6 +550,7 @@ export function WikiGraph({ nodes, edges, centerSlug, mini = false, height, onNo
                   {(["global", "department", "project"] as const).map((lv) => (
                     <LegendRow
                       key={lv}
+                      dot={SCOPE_LEVEL_COLORS[lv]}
                       swatch={
                         <span
                           className="material-symbols-outlined"
@@ -563,7 +564,7 @@ export function WikiGraph({ nodes, edges, centerSlug, mini = false, height, onNo
                     />
                   ))}
                 </LegendSection>
-                <LegendSection title="Scope">
+                <LegendSection title="Scope" count={scopeList.length}>
                   {scopeList.length > 8 && (
                     <div className="relative mb-1.5">
                       <input
@@ -622,7 +623,7 @@ export function WikiGraph({ nodes, edges, centerSlug, mini = false, height, onNo
           </div>
 
           {/* bottom-right zoom */}
-          <div className="absolute right-3 bottom-3 z-10 flex flex-col overflow-hidden rounded-lg border bg-background/90 shadow-sm">
+          <div className="absolute right-3 bottom-3 z-10 flex flex-col gap-1 overflow-hidden rounded-xl border bg-background/90 p-1 shadow-sm">
             <ZoomButton icon="add" label="Zoom In" onClick={() => zoomBy(1.2)} />
             <ZoomButton icon="remove" label="Zoom Out" onClick={() => zoomBy(1 / 1.2)} />
             <ZoomButton icon="fit_screen" label="Fit View" onClick={() => graphRef.current?.zoomToFit(400, 60)} />
@@ -633,18 +634,42 @@ export function WikiGraph({ nodes, edges, centerSlug, mini = false, height, onNo
   );
 }
 
-function LegendSection({ title, children, last }: { title: string; children: React.ReactNode; last?: boolean }) {
+function LegendSection({
+  title,
+  children,
+  last,
+  count,
+}: {
+  title: string;
+  children: React.ReactNode;
+  last?: boolean;
+  count?: number;
+}) {
   return (
     <div className={cn(!last && "mb-3")}>
-      <div className="mb-1.5 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">{title}</div>
+      <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px] font-semibold text-muted-foreground">
+        <span>{title}</span>
+        {count !== undefined && <span className="font-normal tabular-nums">{count}</span>}
+      </div>
       <div className="space-y-1">{children}</div>
     </div>
   );
 }
 
-function LegendRow({ swatch, label, count }: { swatch: React.ReactNode; label: string; count?: number }) {
+function LegendRow({
+  swatch,
+  label,
+  count,
+  dot,
+}: {
+  swatch: React.ReactNode;
+  label: string;
+  count?: number;
+  dot?: string;
+}) {
   return (
     <div className="flex items-center gap-2">
+      {dot && <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ backgroundColor: dot }} />}
       <span className="flex w-4 shrink-0 items-center justify-center">{swatch}</span>
       <span className="min-w-0 flex-1 truncate text-foreground">{label}</span>
       {count !== undefined && <span className="tabular-nums text-muted-foreground">{count}</span>}
@@ -661,7 +686,7 @@ function ZoomButton({ icon, label, onClick }: { icon: string; label: string; onC
             type="button"
             aria-label={label}
             onClick={onClick}
-            className="flex size-8 items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="flex size-[30px] items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
           />
         }
       >

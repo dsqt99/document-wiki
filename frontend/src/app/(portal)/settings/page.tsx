@@ -97,13 +97,13 @@ function SettingsContent() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-8">
       <PageHeader title="Cài đặt" description="Nhà cung cấp AI cho embedding, LLM, xử lý ảnh và phân quyền theo vai trò." />
 
       {/* Keyed on the query value so a changed ?tab= re-initialises the tab state. */}
       <Tabs key={initialTab} defaultValue={initialTab} className="flex flex-col gap-6">
         {!embedded && (
-          <TabsList variant="line">
+          <TabsList variant="line" className="h-8">
             <TabsTrigger value="config">
               <span className="material-symbols-outlined text-[18px]">tune</span>
               Cấu hình

@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
@@ -19,7 +18,6 @@ type AuditLogResponse = {
 };
 
 export default function AuditPage() {
-  const { t } = useI18n();
   const [logs, setLogs] = useState<AuditLogEntry[]>([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -55,18 +53,15 @@ export default function AuditPage() {
 
   return (
     <>
-      <PageHeader
-        title={t("audit.title", "Audit Log")}
-        description={t(
-          "audit.description",
-          "Review access control decisions and policy evaluations across the system.",
-        )}
+      <PageHeader actionClassName="sm:mb-0.5"
+        title="Audit Log"
+        description="Review access control decisions and policy evaluations across the system."
         action={
           <Button variant="outline" onClick={() => void load(1)} disabled={loading}>
-            <span className={cn("material-symbols-outlined", loading && "animate-spin")} style={{ fontSize: 16 }}>
+            <span className={cn("material-symbols-outlined", loading && "animate-spin")} style={{ fontSize: 24, width: 30 }}>
               refresh
             </span>
-            {t("stats.refresh", "Refresh")}
+            Refresh
           </Button>
         }
       />

@@ -470,11 +470,16 @@ async def get_wiki_index(
 @router.get("/wiki/my-scopes", response_model=list[WikiScope])
 async def get_my_scopes(db: AsyncSession = Depends(get_db), user: Employee = Depends(get_current_user)):
     scopes = [WikiScope(scope_type="global", scope_id=None, name="Global")]
-    ids = _dept_ids(user)
-    if ids:
-        rows = (await db.execute(
-            select(Department.id, Department.name).where(Department.id.in_(ids)).order_by(Department.name)
-        )).all()
+    query = select(Department.id, Department.name).order_by(Department.name)
+    rows = []
+    if _is_admin(user):
+        # System admins can browse every department scope, not only their own.
+        rows = (await db.execute(query)).all()
+    else:
+        ids = _dept_ids(user)
+        if ids:
+            rows = (await db.execute(query.where(Department.id.in_(ids)))).all()
+    if rows:
         scopes.extend(WikiScope(scope_type="department", scope_id=str(i), name=n) for i, n in rows)
     return scopes
 

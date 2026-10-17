@@ -58,8 +58,8 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
   return (
     <div className="flex h-screen overflow-hidden bg-background">
       <Sidebar />
-      <main className="min-w-0 flex-1 overflow-y-auto">
-        <div className="flex w-full flex-col gap-8 px-6 pt-4 pb-6 md:px-8 md:pb-8 lg:px-10 lg:pb-10">{children}</div>
+      <main className="min-w-0 flex-1 overflow-hidden">
+        <div className="flex h-full w-full flex-col gap-8 overflow-y-auto *:shrink-0 px-6 pt-4 pb-6 md:px-8 md:pb-8 lg:px-10 lg:pb-10">{children}</div>
       </main>
     </div>
   );

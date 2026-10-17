@@ -10,7 +10,7 @@ import type { LinePoint } from "./charts";
 /* ------------------------------------------------------------------ */
 
 export type StatsOverview = {
-  as_of: string;
+  as_of: string | null;
   kpis: Record<string, number | null>;
   top_gap_topic: { normalized?: string; count?: number; samples?: string[] } | null;
   top_contributor: { name?: string; count?: number; author_id?: string } | null;
@@ -70,7 +70,32 @@ export function seriesOf(section: StatsSection | null, key: string): LinePoint[]
 
 export function listOf(section: StatsSection | null, key: string): Record<string, unknown>[] {
   const raw = section?.latest_lists?.[key];
-  return Array.isArray(raw) ? raw : [];
+  if (Array.isArray(raw)) return raw;
+  return latestFromSeries(section, key);
+}
+
+/** Breakdown of the newest day rebuilt from a series (used when latest_lists omits the key). */
+function latestFromSeries(section: StatsSection | null, key: string): Record<string, unknown>[] {
+  const points = section?.series?.[key];
+  if (!Array.isArray(points) || points.length === 0) return [];
+  const newest = points.reduce((max, p) => (p.date > max ? p.date : max), points[0].date);
+  const day = points.filter((p) => p.date === newest);
+  for (const p of day) {
+    if (Array.isArray(p.items)) return p.items as Record<string, unknown>[];
+  }
+  return day
+    .filter((p) => p.dimensions && Object.keys(p.dimensions).length > 0)
+    .map((p) => ({ ...p.dimensions, dimensions: p.dimensions, count: p.value ?? 0 }))
+    .sort((a, b) => Number(b.count) - Number(a.count));
+}
+
+/** "As of" label: the calendar date only, whether the API sends a date or a datetime. */
+export function formatAsOf(value: string | null | undefined): string {
+  if (!value) return "—";
+  const m = /^(\d{4}-\d{2}-\d{2})/.exec(value);
+  if (m) return m[1];
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? value : d.toISOString().slice(0, 10);
 }
 
 /* ------------------------------------------------------------------ */
@@ -81,7 +106,7 @@ export type KpiTone = "default" | "warn" | "good";
 
 const TONE_CLASS: Record<KpiTone, string> = {
   default: "border-border bg-card",
-  warn: "border-amber-300/60 bg-amber-50 dark:border-amber-500/30 dark:bg-amber-500/10",
+  warn: "border-amber-300/60 bg-amber-50/40 dark:border-amber-500/30 dark:bg-amber-500/10",
   good: "border-emerald-300/60 bg-emerald-50 dark:border-emerald-500/30 dark:bg-emerald-500/10",
 };
 
@@ -101,7 +126,7 @@ export function KpiCard({
   return (
     <div className={cn("rounded-xl border p-3", TONE_CLASS[tone])}>
       <div className="flex items-center gap-1.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-        <span className="material-symbols-outlined" style={{ fontSize: 14 }}>
+        <span className="material-symbols-outlined" style={{ fontSize: 24 }}>
           {icon}
         </span>
         <span className="truncate">{label}</span>

@@ -38,19 +38,19 @@ function LinkSection({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-1 py-1 text-left text-xs font-medium text-muted-foreground hover:text-foreground"
+        className="flex w-full items-center gap-2 py-1 text-left text-[11px] font-medium tracking-wide text-muted-foreground uppercase hover:text-foreground"
       >
+        <span>{label}</span>
+        <span className="tabular-nums">{slugs.length}</span>
         <span
-          className={cn("material-symbols-outlined transition-transform", open && "rotate-90")}
+          className={cn("material-symbols-outlined ml-auto transition-transform", !open && "rotate-180")}
           style={{ fontSize: 16 }}
         >
-          chevron_right
+          expand_less
         </span>
-        <span className="flex-1">{label}</span>
-        <span className="tabular-nums">{slugs.length}</span>
       </button>
       {open && (
-        <ul className="mt-0.5 space-y-0.5 pl-5">
+        <ul className="mt-1 space-y-0.5 pl-1">
           {slugs.map((s) => {
             const href = `/wiki/${encodeSlugPath(s)}${linkSuffix}`;
             return (
@@ -63,7 +63,7 @@ function LinkSection({
                     e.preventDefault();
                     onSelectPage(s);
                   }}
-                  className="block truncate rounded px-1.5 py-1 text-sm hover:bg-muted hover:text-primary"
+                  className="line-clamp-2 rounded px-1.5 py-1 text-[13px] leading-[18px] text-foreground/80 hover:bg-muted hover:text-primary"
                 >
                   {titleOf(s)}
                 </Link>

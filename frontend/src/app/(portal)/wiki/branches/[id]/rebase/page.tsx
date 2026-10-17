@@ -135,35 +135,36 @@ export default function BranchRebasePage() {
   const errorMsg = error && selected && error.id === selected.id ? error.msg : null;
 
   return (
-    <div className="flex flex-col gap-5">
-      <header className="flex flex-wrap items-start gap-4">
-        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+    <div className="flex min-h-full grow flex-col overflow-hidden rounded-xl bg-card">
+      <header className="flex flex-wrap items-center gap-4 border-b px-6 pt-4 pb-4">
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
           <Link
             href={REVIEW_HREF}
-            className="inline-flex w-fit items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+            className="inline-flex w-fit items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
           >
-            <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
+            <span className="material-symbols-outlined" style={{ fontSize: 20 }}>
               arrow_back
             </span>
             Quay lại danh sách nháp
           </Link>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700 dark:bg-rose-500/15 dark:text-rose-300">
+          <h1 className="flex flex-wrap items-center gap-2 text-base leading-6 font-medium">
+            <span className="rounded-sm bg-rose-100 px-1.5 py-0.5 text-[10px] leading-[15px] font-medium text-rose-700 uppercase dark:bg-rose-500/15 dark:text-rose-300">
               Giải quyết xung đột
             </span>
-            <h1 className="text-xl font-semibold">{branch.name}</h1>
-          </div>
-          <span className="font-mono text-xs text-muted-foreground">ID Nhánh: {branch.id}</span>
+            {branch.name}
+          </h1>
+          <p className="font-mono text-[11px] text-muted-foreground">ID Nhánh: {branch.id}</p>
         </div>
         {allResolved && (
           <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
-              <span className="material-symbols-outlined" style={{ fontSize: 15 }}>
+            <span className="inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-300">
+              <span className="material-symbols-outlined" style={{ fontSize: 22 }}>
                 check_circle
               </span>
               Đã xử lý hết xung đột!
             </span>
             <Button
+              size="sm"
               nativeButton={false}
               render={<Link href={`/wiki/review?mine=true&draft=${encodeURIComponent(branch.id)}`} />}
             >
@@ -173,12 +174,12 @@ export default function BranchRebasePage() {
         )}
       </header>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
-        <aside className="rounded-xl border p-2">
-          <div className="px-2 py-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)]">
+        <aside className="flex min-h-0 flex-col border-r">
+          <div className="border-b px-3 py-3 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
             Danh sách tập tin
           </div>
-          <ul className="flex flex-col gap-0.5">
+          <ul className="flex flex-col gap-0.5 overflow-y-auto p-2">
             {drafts.map((d) => (
               <li key={d.id}>
                 <button
@@ -207,9 +208,9 @@ export default function BranchRebasePage() {
           </ul>
         </aside>
 
-        <section className="min-w-0 rounded-xl border p-4">
+        <section className="min-w-0 p-4">
           {!selected ? (
-            <p className="py-12 text-center text-sm text-muted-foreground">Vui lòng chọn tập tin để xử lý.</p>
+            <p className="flex h-full items-center justify-center text-sm text-muted-foreground italic">Vui lòng chọn tập tin để xử lý.</p>
           ) : (
             <div className="flex flex-col gap-4">
               <div className="flex flex-wrap items-center gap-2">

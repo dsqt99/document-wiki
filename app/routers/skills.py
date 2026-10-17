@@ -344,7 +344,7 @@ async def list_skills(
     scope_id: Optional[uuid.UUID] = None,
     ids: Optional[list[uuid.UUID]] = Query(None),
     cursor: Optional[str] = None,
-    limit: int = Query(20, ge=1, le=200),
+    limit: int = Query(20, ge=1, le=5000),
     db: AsyncSession = Depends(get_db),
     user=Depends(get_current_user),
 ):

@@ -453,7 +453,7 @@ export function WikiPageView({ slug, scopeType, scopeId, scopeSuffix, navigate, 
       />
 
       <div className="min-w-0 flex-1 overflow-y-auto">
-        <div className={cn("mx-auto w-full px-6 py-6 md:px-8", sourceMode ? "max-w-[72rem]" : "max-w-[54rem]")}>
+        <div className={cn("mx-auto w-full px-6 py-6 md:px-10", sourceMode ? "max-w-[72rem]" : "max-w-[54rem]")}>
           {loading ? (
             <PageSkeleton />
           ) : notFound || !page ? (
@@ -505,8 +505,8 @@ export function WikiPageView({ slug, scopeType, scopeId, scopeSuffix, navigate, 
 
               {/* badges */}
               <div className="flex flex-wrap items-center gap-2">
-                <WikiTypeBadge type={page.page_type} />
-                {!sourceMode && <ScopeBadge scopeType={page.scope_type} scopeId={page.scope_id} />}
+                <WikiTypeBadge type={page.page_type} className="text-xs" />
+                {!sourceMode && <ScopeBadge scopeType={page.scope_type} scopeId={page.scope_id} className="px-2.5" />}
                 {!NO_STATUS_TYPES.has(page.page_type) &&
                   (canEdit ? (
                     <DropdownMenu>
@@ -520,9 +520,6 @@ export function WikiPageView({ slug, scopeType, scopeId, scopeSuffix, navigate, 
                         }
                       >
                         <WikiStatusBadge status={page.status} />
-                        <span className="material-symbols-outlined text-muted-foreground" style={{ fontSize: 16 }}>
-                          expand_more
-                        </span>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent className="w-auto min-w-40">
                         {STATUS_CHOICES.map((s) => (
@@ -544,10 +541,10 @@ export function WikiPageView({ slug, scopeType, scopeId, scopeSuffix, navigate, 
 
               {/* title */}
               <div className="flex items-start gap-3">
-                <h1 className="min-w-0 flex-1 text-3xl font-bold tracking-tight">{page.title}</h1>
+                <h1 className="min-w-0 flex-1 text-3xl leading-tight font-normal">{page.title}</h1>
                 {!editing && !sourceMode && (canEdit || canPropose) && (
-                  <Button variant="outline" size="sm" className="mt-1.5" onClick={() => setEditState({ key: cacheKey, kind: "page" })}>
-                    <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
+                  <Button variant="outline" size="sm" className="mt-1.5 px-3" onClick={() => setEditState({ key: cacheKey, kind: "page" })}>
+                    <span className="material-symbols-outlined" style={{ fontSize: 20 }}>
                       edit
                     </span>
                     {canEdit ? "Chỉnh sửa" : "Đề xuất sửa"}
@@ -556,7 +553,7 @@ export function WikiPageView({ slug, scopeType, scopeId, scopeSuffix, navigate, 
               </div>
 
               {page.updated_at && (
-                <p className="-mt-2 text-xs text-muted-foreground">Cập nhật lúc {formatUpdated(page.updated_at)}</p>
+                <p className="text-xs text-muted-foreground">Cập nhật lúc {formatUpdated(page.updated_at)}</p>
               )}
 
               {/* citation links */}
@@ -567,7 +564,7 @@ export function WikiPageView({ slug, scopeType, scopeId, scopeSuffix, navigate, 
                       key={r.id}
                       type="button"
                       onClick={() => navigate(`source/${r.id}`)}
-                      className="inline-flex max-w-full items-center gap-1 text-primary hover:underline"
+                      className="inline-flex max-w-full items-center gap-1.5 text-foreground/80 hover:text-primary hover:underline"
                     >
                       <span className="material-symbols-outlined" style={{ fontSize: 15 }}>
                         description
@@ -590,7 +587,7 @@ export function WikiPageView({ slug, scopeType, scopeId, scopeSuffix, navigate, 
               {page.knowledge_type_slugs?.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
                   {page.knowledge_type_slugs.map((k) => (
-                    <span key={k} className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+                    <span key={k} className="rounded-lg bg-muted px-2 py-0.5 text-[11px] leading-[16.5px] text-muted-foreground">
                       {k}
                     </span>
                   ))}
@@ -598,7 +595,7 @@ export function WikiPageView({ slug, scopeType, scopeId, scopeSuffix, navigate, 
               )}
 
               {page.summary?.trim() && (
-                <div className="rounded-lg border bg-muted/40 px-4 py-3">
+                <div className="rounded-xl border bg-muted/40 p-4">
                   <div className="mb-1 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">Tóm tắt</div>
                   <p className="text-sm leading-relaxed">{page.summary}</p>
                 </div>

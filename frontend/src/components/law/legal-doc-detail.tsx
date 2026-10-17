@@ -98,22 +98,22 @@ export function LegalDocDetailView() {
 
   const meta = doc.meta ?? {};
   const validity = VALIDITY_INFO[validityOf(doc)];
-  const pill = "inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5";
+  const pill = "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5";
 
   return (
     <div className="flex flex-col gap-5">
       <BackLink />
 
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-2.5">
         <LegalDocTitle title={doc.title} />
         <div className="flex flex-wrap items-center gap-2 text-xs">
           {meta.doc_type && (
             <span className={cn(pill, "border-primary/30 bg-primary/10 font-semibold text-primary")}>{meta.doc_type}</span>
           )}
-          <span className={cn(pill, validity.badge)}>{validity.label}</span>
-          {meta.doc_number && <span className={cn(pill, "bg-muted/50")}>{meta.doc_number}</span>}
+          <span className={cn(pill, "font-semibold", validity.badge)}>{validity.label}</span>
+          {meta.doc_number && <span className={cn(pill, "bg-muted/50 font-medium")}>{meta.doc_number}</span>}
           {doc.knowledge_type && (
-            <span className={pill}>
+            <span className={cn(pill, "font-medium")}>
               <span className="size-2 rounded-full" style={{ backgroundColor: doc.knowledge_type.color }} />
               {doc.knowledge_type.name}
             </span>
@@ -144,7 +144,7 @@ export function LegalDocDetailView() {
             aria-selected={tab === t.id}
             onClick={() => selectTab(t.id)}
             className={cn(
-              "-mb-px flex shrink-0 items-center gap-1.5 border-b-2 px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors",
+              "-mb-px flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors",
               tab === t.id
                 ? "border-primary text-primary"
                 : "border-transparent text-muted-foreground hover:text-foreground",

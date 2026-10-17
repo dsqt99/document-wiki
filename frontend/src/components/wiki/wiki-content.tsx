@@ -123,7 +123,7 @@ function TableOfContents({ items }: { items: TocItem[] }) {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 px-4 py-2.5 text-left font-medium"
+        className="flex w-full items-center gap-2 px-4 pt-3 pb-2 text-left text-xs font-semibold tracking-wide text-muted-foreground uppercase"
       >
         <span className="material-symbols-outlined text-muted-foreground" style={{ fontSize: 18 }}>
           toc
@@ -134,7 +134,7 @@ function TableOfContents({ items }: { items: TocItem[] }) {
         </span>
       </button>
       {open && (
-        <ul className="space-y-0.5 border-t px-4 py-2">
+        <ul className="space-y-0.5 px-4 pb-3">
           {items.map((it, i) => (
             <li key={`${it.id}-${i}`} style={{ paddingLeft: (it.level - 2) * 16 }}>
               <button

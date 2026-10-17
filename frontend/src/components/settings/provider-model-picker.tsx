@@ -319,7 +319,7 @@ export function ProviderModelPicker<S extends PickerSpec>({
             aria-selected={on}
             onClick={() => switchTab(g)}
             className={cn(
-              "relative flex min-w-0 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium transition-colors",
+              "relative flex min-w-0 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-colors",
               on ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
             )}
           >

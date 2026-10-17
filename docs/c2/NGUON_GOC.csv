@@ -52,6 +52,7 @@ docs/assets/document-wiki-brandkit.png,document-wiki (working tree),f2b73f3,C_tu
 docs/assets/document-wiki-ui.png,document-wiki (working tree),f2b73f3,C_tu_viet,0.00,,ccd85cd3ef3cd4d0
 docs/assets/how-document-wiki-works.png,document-wiki (working tree),f2b73f3,C_tu_viet,0.00,,43647ca343309334
 docs/assets/logo.png,document-wiki (working tree),f2b73f3,C_tu_viet,0.00,,750ef5117686a236
+frontend/public/logo.png,tai san thuong hieu rieng cua chu san pham (cung tep voi docs/assets/logo.png),,C_tu_viet,0.00,,750ef5117686a236
 frontend/src/app/(portal)/wiki/law/page.tsx,document-wiki (working tree),f2b73f3,C_tu_viet,0.08,,171ec683f83ef787
 frontend/src/app/logout/sso/page.tsx,document-wiki (working tree),f2b73f3,C_tu_viet,0.00,,2a0eeb48e80fe970
 frontend/src/components/settings/custom-model-form.tsx,document-wiki (working tree),f2b73f3,C_tu_viet,0.10,,559bcb8a15c477ae

@@ -85,7 +85,7 @@ type Props = {
 type RetryBranch = "chunk" | "wiki" | "all" | null;
 
 const FILTER_CONTROL =
-  "h-8 rounded-md border border-border bg-background text-xs outline-none focus:ring-2 focus:ring-primary/30";
+  "h-8 rounded-[10px] border border-border bg-background text-xs outline-none focus:ring-2 focus:ring-primary/30";
 
 function parseSort(sort: string): { field: string; dir: "asc" | "desc" } {
   const idx = sort.lastIndexOf("_");
@@ -304,7 +304,7 @@ export function KnowledgeTable({
       <button
         type="button"
         onClick={() => toggleSort(f)}
-        className={cn("inline-flex items-center gap-1 uppercase hover:text-foreground", active && "text-foreground")}
+        className={cn("inline-flex items-center gap-0.5 uppercase hover:text-foreground", active && "text-foreground")}
       >
         {label}
         <Icon
@@ -319,8 +319,9 @@ export function KnowledgeTable({
   const from = total > 0 ? (query.page - 1) * query.pageSize + 1 : 0;
   const to = Math.min(query.page * query.pageSize, total);
 
-  const th = "px-3 py-2 text-left align-middle text-[10.5px] font-semibold tracking-wider text-muted-foreground uppercase";
-  const td = "px-3 py-2.5 align-middle";
+  const th = "px-2 py-1.5 text-left align-middle text-[10.5px] font-semibold tracking-[0.05em] text-muted-foreground uppercase";
+  const td = "px-2 py-2.5 align-middle";
+  const thPlain = "align-middle text-xs font-medium text-foreground";
 
   return (
     <div className="flex flex-col gap-3">
@@ -474,11 +475,11 @@ export function KnowledgeTable({
             <table className="w-full border-collapse text-xs">
               <thead>
                 <tr className="h-10 border-b bg-muted/30">
-                  <th className={cn(th, "w-9 pr-0")}>
+                  <th className={cn(thPlain, "w-[25px] py-0 pl-3")}>
                     <input
                       type="checkbox"
                       aria-label="Chọn tất cả"
-                      className="size-3.5 cursor-pointer accent-primary"
+                      className="size-[13px] cursor-pointer accent-primary"
                       checked={allSelected}
                       ref={(el) => {
                         if (el) el.indeterminate = someSelected;
@@ -486,7 +487,7 @@ export function KnowledgeTable({
                       onChange={(e) => toggleAll(e.target.checked)}
                     />
                   </th>
-                  <th className={cn(th, "min-w-[240px]")}>{sortHeader("Tài liệu", "title")}</th>
+                  <th className={cn(th, "w-[300px] min-w-[300px]")}>{sortHeader("Tài liệu", "title")}</th>
                   <th className={th}>Kiểu tri thức</th>
                   <th className={th}>Phạm vi hiển thị</th>
                   <th className={th}>Phòng ban phụ trách</th>
@@ -497,7 +498,7 @@ export function KnowledgeTable({
                   <th className={th}>{sortHeader("Ngày ban hành", "issued")}</th>
                   <th className={th}>{sortHeader("Hiệu lực", "effective")}</th>
                   <th className={th}>{sortHeader("Ngày tạo", "created")}</th>
-                  <th className={cn(th, "w-10")} />
+                  <th className={cn(thPlain, "w-11 px-2")} />
                 </tr>
               </thead>
               <tbody>
@@ -525,16 +526,16 @@ export function KnowledgeTable({
                           isOpen ? "bg-accent/40" : isSel ? "bg-primary/5" : "hover:bg-secondary/30"
                         )}
                       >
-                        <td className={cn(td, "w-9 pr-0")}>
+                        <td className={cn(td, "w-[25px] pr-0 pl-3")}>
                           <input
                             type="checkbox"
                             aria-label={`Chọn ${s.title}`}
-                            className="size-3.5 cursor-pointer accent-primary"
+                            className="size-[13px] cursor-pointer accent-primary"
                             checked={isSel}
                             onChange={(e) => toggleRow(s.id, e.target.checked)}
                           />
                         </td>
-                        <td className={cn(td, "max-w-[300px] min-w-[240px]")}>
+                        <td className={cn(td, "max-w-[300px] min-w-[300px]")}>
                           <div className="flex min-w-0 items-center gap-2.5">
                             <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
                               <Icon name={sourceIcon(s)} size={16} />
@@ -543,12 +544,12 @@ export function KnowledgeTable({
                               <Link
                                 href={`/wiki/source/${s.id}`}
                                 title={s.title}
-                                className="block truncate text-[13px] font-medium hover:text-primary"
+                                className="block truncate text-[13px] leading-4 font-medium hover:text-primary"
                               >
                                 {s.title}
                               </Link>
                               {subParts.length > 0 && (
-                                <p className="truncate text-[11px] text-muted-foreground">{subParts.join(" · ")}</p>
+                                <p className="truncate text-[11px] leading-3 text-muted-foreground">{subParts.join(" · ")}</p>
                               )}
                             </div>
                           </div>
@@ -571,7 +572,7 @@ export function KnowledgeTable({
                           </div>
                         </td>
                         <td className={td}>
-                          <ScopeBadge scopeType={s.scope_type ?? undefined} scopeId={s.scope_id} />
+                          <ScopeBadge scopeType={s.scope_type ?? undefined} scopeId={s.scope_id} className="px-2.5 py-0.5 text-[11px]" />
                         </td>
                         <td className={cn(td, "max-w-[140px]")}>
                           {deptNames.length > 0 ? (
@@ -604,7 +605,7 @@ export function KnowledgeTable({
                                   title="Xem nhanh các Điều"
                                   onClick={() => setExpanded(isOpen ? null : s.id)}
                                   className={cn(
-                                    "inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] tabular-nums",
+                                    "inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums",
                                     isOpen ? "bg-primary text-primary-foreground" : "bg-primary/10 text-primary"
                                   )}
                                 >
@@ -642,7 +643,7 @@ export function KnowledgeTable({
                             <span
                               title={meta?.effective_date ? `Hiệu lực từ ${formatViDate(meta.effective_date)}` : undefined}
                               className={cn(
-                                "inline-flex rounded-full border px-1.5 py-0.5 text-[10px] font-semibold",
+                                "inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold",
                                 validity.badge
                               )}
                             >
@@ -655,7 +656,7 @@ export function KnowledgeTable({
                         <td className={cn(td, "whitespace-nowrap text-muted-foreground tabular-nums")}>
                           {formatCreatedDate(s.created_at)}
                         </td>
-                        <td className={cn(td, "w-10 text-right")}>
+                        <td className={cn(td, "w-11 text-right")}>
                           <DropdownMenu>
                             <DropdownMenuTrigger
                               aria-label="Thao tác"

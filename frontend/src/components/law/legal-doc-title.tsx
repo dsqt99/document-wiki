@@ -11,7 +11,7 @@ export function LegalDocTitle({ title }: { title: string }) {
 
   return (
     <div className="flex flex-col gap-1.5">
-      <h1 className="text-2xl font-bold break-words" title={title}>
+      <h1 className="text-xl leading-[1.375] font-bold tracking-[-0.025em] break-words" title={title}>
         <FormattedInlineText text={main} />
       </h1>
       {tail && (

@@ -181,19 +181,19 @@ export default function KnowledgePage() {
   ];
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-6">
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Kho tri thức</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Kho tri thức</h1>
           <p className="text-sm text-muted-foreground">Quản lý và tổ chức tài liệu và kiểu tri thức của tổ chức bạn.</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" className="h-9" onClick={refreshAll} disabled={refreshing}>
+          <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={refreshAll} disabled={refreshing}>
             <Icon name={refreshing ? "progress_activity" : "sync"} className={cn(refreshing && "animate-spin")} />
             Làm mới
           </Button>
-          <Button size="sm" className="h-9" onClick={() => setUploadOpen(true)}>
+          <Button size="sm" className="h-9 gap-1.5" onClick={() => setUploadOpen(true)}>
             <Icon name="upload" />
             Tải lên
           </Button>
@@ -202,7 +202,7 @@ export default function KnowledgePage() {
 
       {/* Tabs + contextual action */}
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div role="tablist" className="inline-flex gap-1 rounded-lg bg-muted p-1">
+        <div role="tablist" className="inline-flex rounded-lg bg-muted p-1">
           {tabs.map((tb) => {
             const active = tab === tb.id;
             return (
@@ -234,7 +234,7 @@ export default function KnowledgePage() {
 
         {tab === "documents" && canManage && (
           <DropdownMenu>
-            <DropdownMenuTrigger className="inline-flex h-8 items-center gap-1.5 rounded-md border bg-background px-2.5 text-xs font-medium hover:bg-secondary">
+            <DropdownMenuTrigger className="inline-flex h-8 items-center gap-1.5 rounded-[10px] border bg-background px-3 text-xs font-medium hover:bg-secondary">
               <Icon name="auto_fix_high" />
               Xử lý nội dung
               <Icon name="expand_more" />

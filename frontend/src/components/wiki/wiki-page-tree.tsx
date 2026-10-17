@@ -59,6 +59,9 @@ const byTitle = (a: WikiPageSummary, b: WikiPageSummary) =>
   (a.title || a.slug).localeCompare(b.title || b.slug, "vi", { numeric: true });
 
 const isArticle = (p: WikiPageSummary) => (p.title ?? "").startsWith("Điều ");
+/** A document's overview page: an overview-typed page, or a non-article page titled "Tổng quan …". */
+const isOverview = (p: WikiPageSummary) =>
+  OVERVIEW_TYPES.has(p.page_type) || (!isArticle(p) && /tổng quan/i.test(p.title ?? ""));
 
 type DocOption = { id: string; title: string; count: number };
 
@@ -191,9 +194,13 @@ export function WikiPageTree({
     return () => document.removeEventListener("mousedown", onDown);
   }, [armed]);
 
-  // Keep the active row visible.
+  // Keep the active row visible when the selection changes after the first
+  // render; the initial load keeps the list at its top (or restored) position.
+  const initialSlug = useRef(activeSlug);
   useEffect(() => {
     if (!activeSlug || !listRef.current) return;
+    if (activeSlug === initialSlug.current) return;
+    initialSlug.current = undefined;
     const el = listRef.current.querySelector<HTMLElement>(`[data-tree-row="${CSS.escape(activeSlug)}"]`);
     el?.scrollIntoView({ block: "nearest" });
   }, [activeSlug, pages]);
@@ -256,7 +263,7 @@ export function WikiPageTree({
       const articles: WikiPageSummary[] = [];
       const rest = new Map<string, WikiPageSummary[]>();
       for (const p of visible) {
-        if (OVERVIEW_TYPES.has(p.page_type)) overview.push(p);
+        if (isOverview(p)) overview.push(p);
         else if (isArticle(p)) articles.push(p);
         else {
           const label = wikiTypeGroupLabel(p.page_type);
@@ -281,7 +288,7 @@ export function WikiPageTree({
       list.push(p);
       byDoc.set(id, list);
     }
-    const rankOf = (p: WikiPageSummary) => (OVERVIEW_TYPES.has(p.page_type) ? 0 : isArticle(p) ? 1 : 2);
+    const rankOf = (p: WikiPageSummary) => (isOverview(p) ? 0 : isArticle(p) ? 1 : 2);
     return docOptions
       .filter((o) => byDoc.has(o.id))
       .map((o) => {
@@ -389,7 +396,7 @@ export function WikiPageTree({
             render={
               <Link
                 href="/wiki/law"
-                className="flex items-center gap-1 rounded-md px-1.5 py-1 text-sm font-semibold hover:bg-muted"
+                className="flex items-center gap-1 rounded-md px-1 py-0.5 text-sm font-semibold hover:bg-muted"
               />
             }
           >
@@ -408,11 +415,11 @@ export function WikiPageTree({
                 <Link
                   href="/wiki/graph"
                   aria-label="Xem sơ đồ"
-                  className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                  className="flex h-8 w-[25px] items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
                 />
               }
             >
-              <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
+              <span className="material-symbols-outlined" style={{ fontSize: 17 }}>
                 hub
               </span>
             </TooltipTrigger>
@@ -428,7 +435,7 @@ export function WikiPageTree({
           <Tooltip>
             <TooltipTrigger
               render={
-                <span className="cursor-default rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground tabular-nums" />
+                <span className="cursor-default rounded-lg bg-muted px-1.5 py-px text-[11px] font-medium text-muted-foreground tabular-nums" />
               }
             >
               {isFiltering ? `${shown}/${total}` : total}
@@ -440,7 +447,7 @@ export function WikiPageTree({
       </div>
 
       {/* filter */}
-      <div className="px-3 pb-2">
+      <div className="border-b px-3 pb-2.5">
         <div className="relative">
           <span
             className="material-symbols-outlined pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-muted-foreground"
@@ -459,7 +466,7 @@ export function WikiPageTree({
               }
             }}
             placeholder="Lọc trang..."
-            className="h-8 w-full rounded-md border bg-background pr-7 pl-7 text-sm outline-none focus:border-primary"
+            className="h-8 w-full rounded-[10px] border bg-background pr-7 pl-[29px] text-xs outline-none focus:border-primary"
           />
           {search && (
             <Tooltip>
@@ -485,7 +492,7 @@ export function WikiPageTree({
         {docOptions.length > 1 && (
           <div className="mt-2 flex items-center gap-1">
             <Select value={activeDoc || "__all__"} onValueChange={(v) => setDocFilter(!v || v === "__all__" ? "" : String(v))}>
-              <SelectTrigger size="sm" className="h-8 min-w-0 flex-1 text-xs">
+              <SelectTrigger size="sm" className="h-8! min-w-0 flex-1 text-[13px]">
                 <SelectValue>
                   {() => {
                     const o = docOptions.find((x) => x.id === activeDoc);
@@ -530,7 +537,7 @@ export function WikiPageTree({
         onScroll={(e) => {
           wikiStore.sidebarScrollTop = e.currentTarget.scrollTop;
         }}
-        className="min-h-0 flex-1 overflow-y-auto px-2 pb-4"
+        className="min-h-0 flex-1 overflow-y-auto px-2 pt-2 pb-4"
       >
         {pages === null ? (
           <div className="space-y-2 px-1 pt-1">
@@ -559,12 +566,12 @@ export function WikiPageTree({
             const hasActive = !!activeSlug && sec.pages.some((p) => p.slug === activeSlug);
             const open = !!query || hasActive || !collapsedSections.has(sec.key);
             return (
-              <div key={sec.key} className="mb-1">
-                <div className="group flex items-center gap-1 rounded-md px-1 py-1 hover:bg-muted/60">
+              <div key={sec.key} className="mb-1.5">
+                <div className="group flex items-center gap-1 px-1 py-1.5 hover:bg-muted/60">
                   <button
                     type="button"
                     onClick={() => toggleSection(sec.key)}
-                    className="flex min-w-0 flex-1 items-center gap-1 text-left text-[11px] font-semibold tracking-wider text-muted-foreground uppercase"
+                    className="flex min-w-0 flex-1 items-center gap-1 text-left text-[11px] font-semibold tracking-wide text-muted-foreground uppercase"
                   >
                     <span
                       className={cn("material-symbols-outlined shrink-0 transition-transform", open && "rotate-90")}
@@ -600,12 +607,12 @@ export function WikiPageTree({
                   <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">{sec.pages.length}</span>
                 </div>
                 {open && (
-                  <ul className="mt-0.5 space-y-px">
+                  <ul className="space-y-px">
                     {sec.pages.map((p) => {
                       const isActive = p.slug === activeSlug;
                       const isArmed = armed === p.slug;
-                      const label =
-                        sec.overviewLabel && OVERVIEW_TYPES.has(p.page_type) ? OVERVIEW_LABEL : p.title || p.slug;
+                      const asOverview = !!sec.overviewLabel && isOverview(p);
+                      const label = asOverview ? OVERVIEW_LABEL : p.title || p.slug;
                       return (
                         <li
                           key={`${p.slug}:${p.scope_type ?? ""}:${p.scope_id ?? ""}`}
@@ -620,12 +627,22 @@ export function WikiPageTree({
                             href={pageHref(p.slug)}
                             title={p.summary || p.title}
                             onClick={(e) => onRowClick(e, p.slug)}
-                            className="flex min-w-0 flex-1 items-center gap-2 py-1.5 pr-1 pl-3 text-sm"
+                            className="flex min-w-0 flex-1 items-center gap-2 py-1.5 pr-1 pl-2.5 text-xs leading-4 text-foreground/75"
                           >
-                            <span
-                              className="size-1.5 shrink-0 rounded-full"
-                              style={{ backgroundColor: WIKI_STATUS_COLORS[normalizeWikiStatus(p.status)] }}
-                            />
+                            {asOverview ? (
+                              <span
+                                aria-hidden
+                                className="material-symbols-outlined w-3.5 shrink-0 text-blue-500"
+                                style={{ fontSize: 14 }}
+                              >
+                                chrome_reader_mode
+                              </span>
+                            ) : (
+                              <span
+                                className="size-1.5 shrink-0 rounded-full"
+                                style={{ backgroundColor: WIKI_STATUS_COLORS[normalizeWikiStatus(p.status)] }}
+                              />
+                            )}
                             <span className={cn("truncate", isActive && "font-medium")}>{label}</span>
                           </Link>
                           <div className="flex shrink-0 items-center pr-1">
@@ -694,11 +711,11 @@ function HeaderButton({ icon, tip, onClick }: { icon: string; tip: string; onCli
             type="button"
             aria-label={tip}
             onClick={onClick}
-            className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="flex h-8 w-[25px] items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
           />
         }
       >
-        <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
+        <span className="material-symbols-outlined" style={{ fontSize: 17 }}>
           {icon}
         </span>
       </TooltipTrigger>

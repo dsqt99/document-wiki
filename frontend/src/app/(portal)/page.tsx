@@ -124,20 +124,20 @@ function StatsDashboard() {
 
   return (
     <>
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-12">
         <PageHeader
           title={t("stats.title", "Thống kê & Chẩn đoán")}
           description={t("stats.description")}
           action={
             <>
               <Button variant="outline" onClick={() => void load(from, to)} disabled={loading}>
-                <span className={cn("material-symbols-outlined", loading && "animate-spin")} style={{ fontSize: 16 }}>
+                <span className={cn("material-symbols-outlined", loading && "animate-spin")} style={{ fontSize: 24, width: 32 }}>
                   refresh
                 </span>
                 {t("stats.refresh", "Làm mới")}
               </Button>
               <Button variant="outline" onClick={rollup} disabled={rolling}>
-                <span className={cn("material-symbols-outlined", rolling && "animate-spin")} style={{ fontSize: 16 }}>
+                <span className={cn("material-symbols-outlined", rolling && "animate-spin")} style={{ fontSize: 24, width: 32 }}>
                   calculate
                 </span>
                 {rolling ? t("stats.rolling", "Đang tính…") : `${t("stats.rollup", "Tổng hợp dữ liệu")} ${to}`}
@@ -147,28 +147,27 @@ function StatsDashboard() {
         />
 
         <div className="flex flex-wrap items-end gap-3 rounded-xl border bg-card p-3">
-          <label className="flex flex-col gap-1">
+          <label className="flex flex-col gap-1.5">
             <span className="text-[10px] font-medium tracking-wider text-muted-foreground uppercase">
               {t("stats.from", "Từ ngày")}
             </span>
-            <Input type="date" value={from} onChange={(e) => e.target.value && setFrom(e.target.value)} className="h-9" />
+            <Input type="date" value={from} onChange={(e) => e.target.value && setFrom(e.target.value)} className="h-9 w-[141px] rounded-md px-2 py-0" />
           </label>
-          <label className="flex flex-col gap-1">
+          <label className="flex flex-col gap-1.5">
             <span className="text-[10px] font-medium tracking-wider text-muted-foreground uppercase">
               {t("stats.to", "Đến ngày")}
             </span>
-            <Input type="date" value={to} onChange={(e) => e.target.value && setTo(e.target.value)} className="h-9" />
+            <Input type="date" value={to} onChange={(e) => e.target.value && setTo(e.target.value)} className="h-9 w-[141px] rounded-md px-2 py-0" />
           </label>
-          <div className="ml-auto flex flex-wrap gap-1" role="tablist">
+          <div className="ml-auto flex flex-wrap gap-1" role="group">
             {TABS.map((tb) => (
               <button
                 key={tb.key}
                 type="button"
-                role="tab"
-                aria-selected={tab === tb.key}
+                aria-pressed={tab === tb.key}
                 onClick={() => setTab(tb.key)}
                 className={cn(
-                  "h-9 rounded-lg border px-3 text-xs font-medium transition-colors",
+                  "h-9 rounded-md border px-3 text-sm font-normal transition-colors",
                   tab === tb.key
                     ? "border-foreground bg-foreground text-background"
                     : "bg-background hover:bg-muted",

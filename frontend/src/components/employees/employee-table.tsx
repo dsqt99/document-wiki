@@ -78,37 +78,31 @@ export function pageWindow(page: number, totalPages: number): number[] {
   return out;
 }
 
+/** Capitalise the first letter of every word ("Người xem" -> "Người Xem"). */
+function titleCase(label: string): string {
+  return label
+    .split(/(\s+)/)
+    .map((w) => (w.trim() ? w.charAt(0).toLocaleUpperCase("vi") + w.slice(1) : w))
+    .join("");
+}
+
+const ROLE_BADGES: Record<string, { key: string; variant?: "outline" | "secondary" }> = {
+  admin: { key: "emp.roleAdmin" },
+  knowledge_manager: { key: "emp.roleKM", variant: "outline" },
+  contributor: { key: "emp.roleContributor", variant: "secondary" },
+  viewer: { key: "emp.roleViewer", variant: "secondary" },
+};
+
 function RoleBadge({ role }: { role?: string | null }) {
   const { t } = useI18n();
-  const cls = "h-5 px-1.5 text-[10px]";
-  switch (role) {
-    case "admin":
-      return <Badge className={cls}>{t("emp.roleAdmin")}</Badge>;
-    case "knowledge_manager":
-      return (
-        <Badge variant="outline" className={cls}>
-          {t("emp.roleKM")}
-        </Badge>
-      );
-    case "contributor":
-      return (
-        <Badge variant="secondary" className={cls}>
-          {t("emp.roleContributor")}
-        </Badge>
-      );
-    case "viewer":
-      return (
-        <Badge variant="secondary" className={cls}>
-          {t("emp.roleViewer")}
-        </Badge>
-      );
-    default:
-      return (
-        <Badge variant="secondary" className={cls}>
-          {role ?? ""}
-        </Badge>
-      );
-  }
+  const cls = "h-5 px-2 text-[10px] capitalize";
+  const def = role ? ROLE_BADGES[role] : undefined;
+  const label = def ? t(def.key) : (role ?? "");
+  return (
+    <Badge variant={def ? def.variant : "secondary"} className={cls}>
+      {titleCase(label)}
+    </Badge>
+  );
 }
 
 export function EmployeeTable({
@@ -182,7 +176,7 @@ export function EmployeeTable({
   const searching = search.trim().length > 0;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-12">
       {actionError && (
         <div className="flex items-center gap-2 rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           <Icon name="error" size={18} />
@@ -202,7 +196,7 @@ export function EmployeeTable({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={t("common.search")}
-            className="h-9 w-full rounded-lg border bg-background pr-8 pl-9 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
+            className="h-9 w-full rounded-lg border bg-background pr-3 pl-9 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
           />
           {query && (
             <button
@@ -238,19 +232,19 @@ export function EmployeeTable({
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b text-left text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
-                  <th className="px-4 py-3">{t("emp.colEmp")}</th>
-                  <th className="px-4 py-3">{t("emp.colRole")}</th>
-                  <th className="px-4 py-3">{t("emp.colDept")}</th>
-                  <th className="px-4 py-3">{t("emp.colStatus")}</th>
-                  <th className="px-4 py-3">{t("emp.colToken")}</th>
-                  <th className="w-[60px] px-4 py-3 text-right" />
+                <tr className="border-b text-left text-[11px] tracking-[0.05em] text-muted-foreground uppercase *:h-10 *:font-semibold">
+                  <th className="px-2">{t("emp.colEmp")}</th>
+                  <th className="px-2">{t("emp.colRole")}</th>
+                  <th className="px-2">{t("emp.colDept")}</th>
+                  <th className="px-2">{t("emp.colStatus")}</th>
+                  <th className="px-2">{t("emp.colToken")}</th>
+                  <th className="w-[60px] px-2 text-right" />
                 </tr>
               </thead>
               <tbody>
                 {employees.map((emp) => (
                   <tr key={emp.id} className="group border-b last:border-b-0 hover:bg-secondary/30">
-                    <td className="px-4 py-3">
+                    <td className="px-2 py-2">
                       <div className="flex min-w-0 items-center gap-3">
                         <span
                           className={cn(
@@ -266,10 +260,10 @@ export function EmployeeTable({
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-2 py-2">
                       <RoleBadge role={emp.global_role} />
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-2 py-2">
                       {emp.department_names?.length ? (
                         <div className="flex flex-wrap gap-1">
                           {emp.department_names.map((d) => (
@@ -282,7 +276,7 @@ export function EmployeeTable({
                         <span className="text-muted-foreground">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-2 py-2">
                       <span className="inline-flex items-center gap-1.5 text-xs">
                         <span
                           className={cn("size-2 rounded-full", emp.is_active ? "bg-emerald-500" : "bg-muted-foreground/40")}
@@ -298,7 +292,7 @@ export function EmployeeTable({
                         </span>
                       </span>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-2 py-2">
                       {emp.has_token ? (
                         <span className="inline-flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
                           <Icon name="vpn_key" size={15} fill />
@@ -308,7 +302,7 @@ export function EmployeeTable({
                         <span className="text-muted-foreground">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-right">
+                    <td className="px-2 py-2 text-right">
                       <DropdownMenu>
                         <DropdownMenuTrigger
                           aria-label="Actions"

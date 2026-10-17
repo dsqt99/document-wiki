@@ -35,6 +35,9 @@ function actionClass(action: string): string {
   return "border-blue-500/40 bg-blue-500/10 text-blue-700 dark:text-blue-400";
 }
 
+/** Column share of the table width (time, principal, action, resource, decision). */
+const COL_WIDTHS = ["13.77%", "26.48%", "20.84%", "15.92%", "22.99%"];
+
 function shortId(id?: string): string {
   if (!id) return "";
   return id.length > 20 ? `${id.slice(0, 8)}...` : id;
@@ -58,12 +61,17 @@ export function AuditTable({ logs, loading }: { logs: AuditLogEntry[]; loading: 
           description={t("audit.noLogsDesc")}
         />
       ) : (
-        <Table>
+        <Table className="table-fixed">
+          <colgroup>
+            {COL_WIDTHS.map((w, i) => (
+              <col key={i} style={{ width: w }} />
+            ))}
+          </colgroup>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
               {(["audit.colTimestamp", "audit.colPrincipal", "audit.colAction", "audit.colResource", "audit.colDecision"] as const).map(
                 (key) => (
-                  <TableHead key={key} className="px-4 text-[11px] tracking-wider text-muted-foreground uppercase">
+                  <TableHead key={key} className="px-2 text-xs tracking-[0.05em] text-muted-foreground uppercase">
                     {t(key)}
                   </TableHead>
                 ),
@@ -75,21 +83,21 @@ export function AuditTable({ logs, loading }: { logs: AuditLogEntry[]; loading: 
               const allowed = (log.decision || "").toLowerCase() === "allow";
               return (
                 <TableRow key={log.id} className="hover:bg-muted/40">
-                  <TableCell className="px-4 text-xs whitespace-nowrap text-muted-foreground">
+                  <TableCell className="px-2 text-xs whitespace-nowrap text-muted-foreground">
                     {new Date(log.timestamp).toLocaleString()}
                   </TableCell>
-                  <TableCell className="px-4">
+                  <TableCell className="px-2">
                     <p className="text-sm font-medium">{log.principal_name || "System/Unknown"}</p>
                     <p className="text-xs text-muted-foreground">
                       {log.principal_email || `${(log.principal_id || "").slice(0, 8)}...`}
                     </p>
                   </TableCell>
-                  <TableCell className="px-4">
-                    <Badge variant="outline" className={cn("font-mono text-[11px] font-normal", actionClass(log.action))}>
+                  <TableCell className="px-2">
+                    <Badge variant="outline" className={cn("font-mono text-xs font-normal", actionClass(log.action))}>
                       {log.action}
                     </Badge>
                   </TableCell>
-                  <TableCell className="px-4">
+                  <TableCell className="px-2">
                     <p className="text-sm">{capitalize(log.resource_type)}</p>
                     {log.resource_id && (
                       <p className="font-mono text-xs text-muted-foreground" title={log.resource_id}>
@@ -97,12 +105,12 @@ export function AuditTable({ logs, loading }: { logs: AuditLogEntry[]; loading: 
                       </p>
                     )}
                   </TableCell>
-                  <TableCell className="px-4">
+                  <TableCell className="px-2">
                     <div className="flex flex-col items-start gap-1">
                       <Badge
                         variant="outline"
                         className={cn(
-                          "text-[11px]",
+                          "text-xs",
                           allowed
                             ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
                             : "border-red-500/40 bg-red-500/10 text-red-700 dark:text-red-400",

@@ -214,7 +214,7 @@ export default function PromptsPage() {
                   title={open ? "Thu gọn" : "Xem đầy đủ"}
                   onClick={() => setExpanded(open ? null : p.id)}
                   className={cn(
-                    "rounded-lg bg-muted/50 px-2.5 py-2 text-left text-xs whitespace-pre-wrap text-foreground/80 transition-colors hover:bg-muted",
+                    "rounded-lg bg-muted/50 px-3 py-2 text-left text-xs leading-[1.625] whitespace-pre-wrap text-foreground/80 transition-colors hover:bg-muted",
                     !open && "line-clamp-4",
                   )}
                 >

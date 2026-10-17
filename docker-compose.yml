@@ -1,6 +1,8 @@
+name: document-wiki-c2
+
 x-backend: &backend
-  image: wiki-backend:latest
-  env_file: .env.docker
+  image: ${BACKEND_IMAGE:-wiki-c2-backend:latest}
+  env_file: ${APP_ENV_FILE:-.env}
   restart: always
   depends_on:
     postgres:
@@ -17,6 +19,7 @@ x-backend: &backend
 services:
   postgres:
     image: pgvector/pgvector:pg16
+    container_name: wiki_c2_postgres
     restart: always
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-arkon}
@@ -27,7 +30,7 @@ services:
     networks:
       default:
         aliases:
-          - wiki_postgres
+          - ${POSTGRES_ALIAS:-wiki2_postgres}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-arkon} -d ${POSTGRES_DB:-arkon}"]
       interval: 5s
@@ -36,6 +39,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    container_name: wiki_c2_redis
     restart: always
     command: ["redis-server", "--save", "60", "1", "--requirepass", "${REDIS_PASSWORD:-arkon_secret}"]
     volumes:
@@ -47,15 +51,16 @@ services:
       retries: 10
 
   minio:
-    image: minio/minio
+    image: minio/minio:latest
+    container_name: wiki_c2_minio
     restart: always
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
       MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin123}
     ports:
-      - "9002:9000"
-      - "9003:9001"
+      - "${MINIO_API_PORT:-9102}:9000"
+      - "${MINIO_CONSOLE_PORT:-9103}:9001"
     volumes:
       - minio_data:/data
     healthcheck:
@@ -65,7 +70,8 @@ services:
       retries: 10
 
   etcd:
-    image: quay.io/coreos/etcd:v3.5.16
+    image: quay.io/coreos/etcd:v3.5.14
+    container_name: wiki_c2_etcd
     restart: always
     environment:
       ETCD_AUTO_COMPACTION_MODE: revision
@@ -80,6 +86,7 @@ services:
 
   milvus:
     image: milvusdb/milvus:v2.4.15
+    container_name: wiki_c2_milvus
     restart: always
     command: ["milvus", "run", "standalone"]
     environment:
@@ -88,8 +95,8 @@ services:
       MINIO_ACCESS_KEY_ID: ${MINIO_ACCESS_KEY:-minioadmin}
       MINIO_SECRET_ACCESS_KEY: ${MINIO_SECRET_KEY:-minioadmin123}
     ports:
-      - "19530:19530"
-      - "9091:9091"
+      - "${MILVUS_PORT_HOST:-19630}:19530"
+      - "${MILVUS_HEALTH_PORT:-9191}:9091"
     volumes:
       - milvus_data:/var/lib/milvus
     depends_on:
@@ -103,12 +110,13 @@ services:
       start_period: 90s
 
   milvus_ui:
-    image: zilliz/attu:v2.4
+    image: zilliz/attu:latest
+    container_name: wiki_c2_milvus_ui
     restart: always
     environment:
       MILVUS_URL: milvus:19530
     ports:
-      - "9004:3000"
+      - "${ATTU_PORT:-9104}:3000"
     depends_on:
       - milvus
 
@@ -117,12 +125,14 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    container_name: wiki_c2_migrator
     restart: "no"
     entrypoint: []
     command: ["alembic", "upgrade", "head"]
 
   api:
     <<: *backend
+    container_name: wiki_c2_api
     depends_on:
       postgres:
         condition: service_healthy
@@ -133,7 +143,7 @@ services:
       migrator:
         condition: service_completed_successfully
     ports:
-      - "5055:5055"
+      - "${API_PORT:-5155}:5055"
     command:
       ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "5055", "--proxy-headers", "--forwarded-allow-ips", "*"]
     healthcheck:
@@ -143,11 +153,14 @@ services:
       retries: 5
       start_period: 30s
     networks:
-      - default
-      - cahy-internal
+      default:
+      cahy-internal:
+        aliases:
+          - ${API_NETWORK_ALIAS:-wiki2_api}
 
   worker:
     <<: *backend
+    container_name: wiki_c2_worker
     depends_on:
       api:
         condition: service_healthy
@@ -155,6 +168,7 @@ services:
 
   worker_skills:
     <<: *backend
+    container_name: wiki_c2_worker_skills
     depends_on:
       api:
         condition: service_healthy
@@ -164,16 +178,22 @@ services:
     build:
       context: ./frontend
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5055}
-        INTERNAL_API_URL: http://api:5055
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5155}
+        INTERNAL_API_URL: ${INTERNAL_API_URL:-http://api:5055}
+    image: ${FRONTEND_IMAGE:-wiki-c2-frontend:latest}
+    container_name: wiki_c2_frontend
     restart: always
     ports:
-      - "3119:3000"
+      - "${FRONTEND_PORT:-3219}:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:5155}
+      - INTERNAL_API_URL=${INTERNAL_API_URL:-http://api:5055}
     depends_on:
       api:
         condition: service_healthy
 
 networks:
+  default:
   cahy-internal:
     external: true
     name: ${CAHY_NETWORK_NAME:-cahy-internal}

@@ -25,7 +25,7 @@ type ReviewQueueProps = {
 };
 
 const nativeSelect =
-  "h-8 w-full rounded-lg border border-input bg-background px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30";
+  "h-8 w-full rounded-md border border-input bg-background px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30";
 
 export function ReviewQueue({
   status,
@@ -53,7 +53,7 @@ export function ReviewQueue({
 
   return (
     <aside className="flex min-h-0 w-[320px] shrink-0 flex-col border-r bg-card/50">
-      <div className="flex flex-col gap-3 border-b p-3">
+      <div className="flex flex-col gap-2.5 border-b p-3">
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-sm font-semibold">{t("review.title", "Hàng đợi duyệt bản thảo")}</h2>
           <Tooltip>
@@ -62,10 +62,10 @@ export function ReviewQueue({
                 <button
                   type="button"
                   onClick={onToggleHelp}
-                  className="rounded-md px-1 py-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  className="rounded border bg-muted px-1.5 py-0.5 font-mono text-[11px] leading-[16.5px] text-muted-foreground hover:text-foreground"
                   aria-label="Keyboard shortcuts"
                 >
-                  <kbd className="rounded border bg-muted px-1.5 font-mono text-[11px]">?</kbd>
+                  ?
                 </button>
               }
             />
@@ -83,7 +83,7 @@ export function ReviewQueue({
               type="button"
               onClick={() => onMineChange(opt.value)}
               className={cn(
-                "flex items-center justify-center gap-1.5 px-2 py-1.5 transition-colors",
+                "flex items-center justify-center gap-1 rounded px-2 py-1 transition-colors",
                 mine === opt.value ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted",
               )}
             >
@@ -139,10 +139,10 @@ export function ReviewQueue({
                 <button
                   type="button"
                   onClick={onRefresh}
-                  className="flex size-6 items-center justify-center rounded-md hover:bg-muted hover:text-foreground"
+                  className="flex items-center gap-0.5 hover:text-foreground"
                   aria-label="Refresh"
                 >
-                  <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
+                  <span className="material-symbols-outlined" style={{ fontSize: 14 }}>
                     refresh
                   </span>
                 </button>

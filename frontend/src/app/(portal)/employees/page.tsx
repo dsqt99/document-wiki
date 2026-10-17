@@ -100,7 +100,7 @@ export default function EmployeesPage() {
                 setDialogOpen(true);
               }}
             >
-              <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
+              <span className="material-symbols-outlined" style={{ fontSize: 24, width: 30 }}>
                 person_add
               </span>
               Thêm nhân viên
@@ -115,7 +115,7 @@ export default function EmployeesPage() {
 
   const tabClass = (active: boolean) =>
     cn(
-      "-mb-px inline-flex items-center gap-2 border-b-2 px-1 pb-3 text-sm font-medium transition-colors",
+      "-mb-px inline-flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
       active
         ? "border-primary font-semibold text-primary"
         : "border-transparent text-muted-foreground hover:border-border hover:text-foreground",
@@ -123,11 +123,11 @@ export default function EmployeesPage() {
 
   return (
     <div className="flex flex-col">
-      <PageHeader title={header.title} description={header.description} action={header.action} />
+      <PageHeader actionClassName="sm:mb-0.5" title={header.title} description={header.description} action={header.action} />
 
-      <div className="mt-6 mb-6 flex gap-6 border-b">
+      <div className="mt-8 mb-14 flex gap-2 border-b">
         <button type="button" className={tabClass(tab === "employees")} onClick={() => setTab("employees")}>
-          <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
+          <span className="material-symbols-outlined" style={{ fontSize: 24 }}>
             group
           </span>
           Danh sách Nhân viên
@@ -138,7 +138,7 @@ export default function EmployeesPage() {
           )}
         </button>
         <button type="button" className={tabClass(tab === "rbac")} onClick={() => setTab("rbac")}>
-          <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
+          <span className="material-symbols-outlined" style={{ fontSize: 24 }}>
             admin_panel_settings
           </span>
           Ma trận Phân quyền (RBAC)

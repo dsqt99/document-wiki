@@ -170,8 +170,8 @@ function GraphScreen() {
           </span>
           <h1 className="text-base font-semibold">{heading}</h1>
         </div>
-        <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{visible.nodes.length} pages</span>
-        <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{visible.edges.length} links</span>
+        <span className="rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">{visible.nodes.length} pages</span>
+        <span className="rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">{visible.edges.length} links</span>
 
         <div className="relative w-56">
           <span
@@ -242,7 +242,7 @@ function GraphScreen() {
                 aria-pressed={on}
                 onClick={() => toggleType(t)}
                 className={cn(
-                  "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-opacity",
+                  "flex items-center gap-1.5 rounded-[10px] border px-2 py-1 text-xs transition-opacity",
                   !on && "opacity-45",
                 )}
                 style={on ? { borderColor: color, backgroundColor: `color-mix(in srgb, ${color} 10%, transparent)` } : undefined}

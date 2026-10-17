@@ -21,9 +21,9 @@ type Props = {
   onRefresh: () => void;
 };
 
-function Icon({ name, size = 15 }: { name: string; size?: number }) {
+function Icon({ name, size = 15, box }: { name: string; size?: number; box?: number }) {
   return (
-    <span className="material-symbols-outlined" style={{ fontSize: size }}>
+    <span className="material-symbols-outlined" style={{ fontSize: size, width: box }}>
       {name}
     </span>
   );
@@ -60,7 +60,7 @@ export function DepartmentCards({ departments, loading, onEdit, onRefresh }: Pro
         {departments.map((d) => (
           <div
             key={d.id}
-            className="flex flex-col rounded-xl border bg-card p-6 shadow-sm transition-colors hover:border-primary/30"
+            className="flex flex-col gap-4 rounded-xl border bg-card p-6 [box-shadow:0_1px_3px_0_rgba(15,23,42,0.06),0_1px_2px_-1px_rgba(15,23,42,0.06)] transition-colors hover:border-primary/30"
           >
             <div className="flex items-center gap-3">
               <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
@@ -73,24 +73,24 @@ export function DepartmentCards({ departments, loading, onEdit, onRefresh }: Pro
                 </p>
               </div>
             </div>
-            {d.description && <p className="mt-3 line-clamp-2 text-sm text-muted-foreground">{d.description}</p>}
-            <div className="mt-auto pt-4">
-              <div className="flex flex-wrap items-center gap-1 border-t pt-3">
-              <Button variant="ghost" size="sm" className="text-xs" onClick={() => setMembersOf(d)}>
-                <Icon name="group" />
+            {d.description && <p className="line-clamp-2 text-sm text-muted-foreground">{d.description}</p>}
+            <div className="mt-auto">
+              <div className="flex flex-wrap items-center gap-2 border-t pt-2">
+              <Button variant="ghost" size="sm" className="gap-1 text-xs" onClick={() => setMembersOf(d)}>
+                <Icon name="group" size={24} box={28} />
                 {t("dept.members")}
               </Button>
-              <Button variant="ghost" size="sm" className="text-xs" onClick={() => onEdit(d)}>
-                <Icon name="edit" />
+              <Button variant="ghost" size="sm" className="gap-1 text-xs" onClick={() => onEdit(d)}>
+                <Icon name="edit" size={24} box={28} />
                 {t("common.edit")}
               </Button>
               <Button
                 variant="ghost"
                 size="sm"
-                className="text-xs text-destructive hover:text-destructive"
+                className="gap-1 text-xs text-destructive hover:text-destructive"
                 onClick={() => void remove(d)}
               >
-                <Icon name="delete" />
+                <Icon name="delete" size={24} box={28} />
                 {t("common.delete")}
               </Button>
               </div>
