@@ -363,9 +363,10 @@ async def dispatch_dual_pipeline(session, source, tracker, token_count, n_images
 
     await w.commit_and_enqueue_chunk_branch(session, source, attempt)
 
-    from app.services import legal_service
+    from app.services import legal_service, processing_mode
 
-    is_legal = False if verbatim else await legal_service.is_legal_source(session, source)
+    plan = await processing_mode.plan_for(session, source)
+    is_legal = plan.articles
 
     if verbatim or not is_legal:
         try:
@@ -383,13 +384,23 @@ async def dispatch_dual_pipeline(session, source, tracker, token_count, n_images
     if verbatim:
         return {"status": source.status, "branch_a": "queued", "branch_b": "skipped"}
 
-    if is_legal:
+    if plan.verbatim_page or is_legal:
         try:
+            if plan.verbatim_page:
+                from app.services import verbatim_page_service
+
+                await w.set_branch_state(
+                    source.id, "wiki", status="processing", progress=50,
+                    message="Creating verbatim wiki page(s)...", session=session,
+                )
+                return await verbatim_page_service.finalize_verbatim_pages(session, source, tracker)
             await w.set_branch_state(
                 source.id, "wiki", status="processing", progress=50,
                 message="Parsing legal document articles...", session=session,
             )
-            return await legal_service.finalize_legal_source(session, source, tracker)
+            result = await legal_service.finalize_legal_source(session, source, tracker, final=not plan.llm)
+            if not plan.llm:
+                return result
         except BaseException as exc:
             try:
                 await asyncio.shield(w.mark_wiki_error(source.id, _error_text(exc)))

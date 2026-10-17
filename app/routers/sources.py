@@ -31,6 +31,7 @@ from app.database.models import (
     WikiPage,
 )
 from app.services import auth_service, security_label
+from app.services import processing_mode as _processing_mode
 from app.services.auth_service import get_current_user, require_permission
 from app.services.permission_engine import (
     _get_user_permissions,
@@ -161,6 +162,7 @@ class SourceResponse(BaseModel):
     scope_type: str = "global"
     scope_id: Optional[uuid.UUID] = None
     preserve_verbatim: bool = False
+    processing_mode: str = "auto"
     chunk_status: str = "pending"
     wiki_status: str = "pending"
     chunk_progress: int = 0
@@ -190,6 +192,20 @@ class SourceListResponse(BaseModel):
     total_pages: int
 
 
+def _checked_mode(value) -> Optional[str]:
+    try:
+        return _processing_mode.normalize(value)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+def _mode_metadata(mode: Optional[str], preserve: bool) -> Optional[dict]:
+    """Personal scope / preserve_verbatim win over the chosen mode (no wiki)."""
+    if preserve or mode in (None, "auto", "verbatim"):
+        return None
+    return {_processing_mode.KEY: mode}
+
+
 class UrlSourceCreate(BaseModel):
     url: str
     title: Optional[str] = None
@@ -197,6 +213,7 @@ class UrlSourceCreate(BaseModel):
     department_ids: list[uuid.UUID] = Field(default_factory=list)
     scope_type: Optional[str] = None
     preserve_verbatim: bool = False
+    processing_mode: Optional[str] = None
     security_label: Optional[str] = None
 
 
@@ -283,6 +300,7 @@ def _response_fields(source, wiki_page_count=0, image_count=0, lifecycle=None) -
         "scope_type": source.scope_type or "global",
         "scope_id": source.scope_id,
         "preserve_verbatim": bool(source.preserve_verbatim),
+        "processing_mode": _processing_mode.mode_of(source),
         "chunk_status": source.chunk_status or "pending",
         "wiki_status": source.wiki_status or "pending",
         "chunk_progress": source.chunk_progress or 0,
@@ -793,6 +811,7 @@ async def upload_source(
     scope_type: Optional[str] = Form(None),
     scope_id: Optional[str] = Form(None),
     preserve_verbatim: bool = Form(False),
+    processing_mode: Optional[str] = Form(None),
     security_label: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db),
     user: Employee = require_permission("doc:create"),
@@ -806,6 +825,7 @@ async def upload_source(
     department_ids = _form_value(department_ids)
     scope_type = _form_value(scope_type)
     preserve_verbatim = bool(_form_value(preserve_verbatim))
+    mode = _checked_mode(_form_value(processing_mode))
 
     label = _checked_label(user, _form_value(security_label))
 
@@ -890,7 +910,8 @@ async def upload_source(
         contributed_by_employee_id=user.id,
         scope_type=scope,
         scope_id=resolved_scope_id,
-        preserve_verbatim=preserve_verbatim,
+        preserve_verbatim=preserve_verbatim or mode == "verbatim",
+        metadata_=_mode_metadata(mode, preserve_verbatim),
         security_label=label,
     )
     source = await _self().Repository(db).create(source)
@@ -936,6 +957,7 @@ async def create_url_source(
         raise HTTPException(400, SCOPE_ERROR)
     dept_ids = list(body.department_ids or [])
     preserve = bool(body.preserve_verbatim)
+    mode = _checked_mode(body.processing_mode)
     scope_id = None
     if scope == "personal":
         dept_ids, scope_id, preserve = [], user.id, True
@@ -954,7 +976,8 @@ async def create_url_source(
         contributed_by_employee_id=user.id,
         scope_type=scope,
         scope_id=scope_id,
-        preserve_verbatim=preserve,
+        preserve_verbatim=preserve or mode == "verbatim",
+        metadata_=_mode_metadata(mode, preserve),
         security_label=label,
     )
     source = await _self().Repository(db).create(source)

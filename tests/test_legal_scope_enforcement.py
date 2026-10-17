@@ -28,7 +28,7 @@ async def test_legal_service_respects_department_scope():
          patch("app.services.wiki_service.upsert_page", new_callable=AsyncMock) as mock_upsert, \
          patch("app.services.wiki_service.regenerate_index", new_callable=AsyncMock) as mock_regen, \
          patch("app.services.wiki_service.append_log", new_callable=AsyncMock) as mock_log, \
-         patch("app.services.legal_service.ProviderRegistry") as mock_registry_cls:
+         patch("app.services.page_indexing.ProviderRegistry") as mock_registry_cls:
         
         mock_resolve.return_value = [("department", dept_id)]
         mock_registry_inst = MagicMock()
@@ -87,9 +87,9 @@ async def test_legal_finalize_stops_embedding_after_consecutive_failures():
          patch("app.services.wiki_service.append_log", new_callable=AsyncMock), \
          patch("app.services.legal_service.ingest_legal_graph", side_effect=_graph), \
          patch("app.services.legal_relation_extractor.relink_legal_relations", new_callable=AsyncMock), \
-         patch("app.services.legal_service.get_spec", return_value=MagicMock(id="spec")), \
-         patch("app.services.legal_service.index_wiki_page_chunks", side_effect=_chunks), \
-         patch("app.services.legal_service.ProviderRegistry") as mock_registry_cls, \
+         patch("app.services.page_indexing.get_spec", return_value=MagicMock(id="spec")), \
+         patch("app.services.page_indexing.index_wiki_page_chunks", side_effect=_chunks), \
+         patch("app.services.page_indexing.ProviderRegistry") as mock_registry_cls, \
          patch("app.services.source_status.update_source_dual_status", new_callable=AsyncMock):
         registry = MagicMock()
         registry.get_active_embedding_spec_id = AsyncMock(return_value="spec")

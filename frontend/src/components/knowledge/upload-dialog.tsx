@@ -80,6 +80,112 @@ function StepSection({ n, title, children }: { n: number; title: string; childre
   );
 }
 
+type ProcessingMode = "auto" | "articles" | "verbatim_page" | "verbatim";
+
+function isLegalType(type: KnowledgeType | undefined): boolean {
+  if (!type) return false;
+  const slug = (type.slug || "").toLowerCase();
+  const name = (type.name || "").toLowerCase();
+  return (
+    ["legal", "luat", "lut"].includes(slug) ||
+    ["luật", "luat", "legal", "pháp lý"].some((k) => name.includes(k))
+  );
+}
+
+function modeOptions(legal: boolean): { value: ProcessingMode; icon: string; title: string; desc: string }[] {
+  const options: { value: ProcessingMode; icon: string; title: string; desc: string }[] = [
+    {
+      value: "auto",
+      icon: "auto_awesome",
+      title: "Tự động (khuyến nghị)",
+      desc: legal
+        ? "Tách nguyên văn theo từng Điều, đồng thời LLM biên soạn trang tri thức"
+        : "LLM đọc tài liệu và biên soạn các trang tri thức",
+    },
+  ];
+  if (legal) {
+    options.push({
+      value: "articles",
+      icon: "format_list_numbered",
+      title: "Chỉ tách theo Điều",
+      desc: "Mỗi Điều thành một trang nguyên văn, không dùng LLM",
+    });
+  }
+  options.push(
+    {
+      value: "verbatim_page",
+      icon: "article",
+      title: "Nguyên văn thành trang",
+      desc: "Giữ nguyên văn bản và hình ảnh trong 1 trang; tự chia nhiều phần nếu quá dài",
+    },
+    {
+      value: "verbatim",
+      icon: "manage_search",
+      title: "Chỉ lưu để tra cứu",
+      desc: "Không tạo trang Wiki, chỉ đánh chỉ mục để tìm kiếm và hỏi đáp",
+    }
+  );
+  return options;
+}
+
+function ProcessingModePicker({
+  value,
+  onChange,
+  legal,
+  personal,
+  disabled,
+}: {
+  value: ProcessingMode;
+  onChange: (v: ProcessingMode) => void;
+  legal: boolean;
+  personal: boolean;
+  disabled?: boolean;
+}) {
+  if (personal) {
+    return (
+      <p className="flex items-start gap-2 rounded-lg bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+        <Icon name="info" size={16} className="shrink-0" />
+        Tài liệu cá nhân chỉ được lưu để tra cứu, không tạo trang Wiki. Chọn phạm vi Theo phòng ban hoặc Toàn hệ thống
+        để chọn cơ chế xử lý.
+      </p>
+    );
+  }
+  return (
+    <div role="radiogroup" className="grid gap-2 sm:grid-cols-2">
+      {modeOptions(legal).map((opt) => {
+        const active = value === opt.value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            disabled={disabled}
+            onClick={() => onChange(opt.value)}
+            className={cn(
+              "flex items-start gap-2.5 rounded-lg border px-3 py-2.5 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60",
+              active ? "border-primary bg-primary/5" : "hover:border-primary/40"
+            )}
+          >
+            <span
+              className={cn(
+                "flex size-7 shrink-0 items-center justify-center rounded-md",
+                active ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+              )}
+            >
+              <Icon name={opt.icon} size={16} />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-xs font-medium">{opt.title}</span>
+              <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">{opt.desc}</span>
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -137,6 +243,9 @@ function UploadBody({
   const [typeId, setTypeId] = useState(() => types.find((ty) => ty.slug === "general")?.id ?? "");
   const [mode, setMode] = useState<ScopeMode>("personal");
   const [deptIds, setDeptIds] = useState<string[]>([]);
+  const [procMode, setProcMode] = useState<ProcessingMode>("auto");
+  const legal = isLegalType(types.find((ty) => ty.id === typeId));
+  const effectiveMode: ProcessingMode = !legal && procMode === "articles" ? "auto" : procMode;
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
 
@@ -203,6 +312,7 @@ function UploadBody({
       if (typeId) form.append("knowledge_type_id", typeId);
       form.append("scope_type", mode);
       if (mode === "department") form.append("department_ids", deptIds.join(","));
+      if (mode !== "personal") form.append("processing_mode", effectiveMode);
       try {
         await apiUpload("/api/sources/upload", form);
         ok += 1;
@@ -345,6 +455,16 @@ function UploadBody({
               allowPersonal
             />
           </div>
+        </StepSection>
+
+        <StepSection n={3} title="Cơ chế xử lý">
+          <ProcessingModePicker
+            value={effectiveMode}
+            onChange={setProcMode}
+            legal={legal}
+            personal={mode === "personal"}
+            disabled={uploading}
+          />
         </StepSection>
 
         {error && (

@@ -18,15 +18,8 @@ from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.embedding_catalog import get_spec
-from app.ai.registry import ProviderRegistry
 from app.database.models import KnowledgeType, Source, WikiPage
 from app.services import wiki_service
-from app.services.embedding_storage import (
-    upsert_page_embedding,
-    wiki_chunk_content_hash,
-)
-from app.services.wiki_chunk_service import index_wiki_page_chunks
 from app.utils.text import slugify
 
 # Regex to detect Vietnamese legal articles ("Điều X...").
@@ -488,7 +481,9 @@ async def is_legal_source(session: AsyncSession, source: Source) -> bool:
     )
 
 
-async def finalize_legal_source(session: AsyncSession, source: Source, tracker: Any) -> dict:
+async def finalize_legal_source(
+    session: AsyncSession, source: Source, tracker: Any, final: bool = True
+) -> dict:
     """Legal path: parse document by articles into WikiPages and compute vector embeddings.
 
     - Extracts formal legal metadata (doc_number, authority, issued_date, official_title, canonical citation).
@@ -553,17 +548,6 @@ async def finalize_legal_source(session: AsyncSession, source: Source, tracker: 
         kt = await session.get(KnowledgeType, source.knowledge_type_id)
         if kt and kt.slug:
             kt_slug = kt.slug
-
-    # Setup embedding provider
-    registry = ProviderRegistry(session)
-    spec_id = await registry.get_active_embedding_spec_id()
-    embedding_spec = get_spec(spec_id) if spec_id else None
-    embedding_provider = None
-    if embedding_spec:
-        try:
-            embedding_provider = await registry.get_embedding(task="document", spec_id=embedding_spec.id)
-        except Exception as e:
-            logger.warning(f"Failed to get embedding provider for {embedding_spec.id}: {e}")
 
     pages_to_index: list[WikiPage] = []
     total_articles = len(articles)
@@ -693,66 +677,8 @@ async def finalize_legal_source(session: AsyncSession, source: Source, tracker: 
 
     # 3. Compute vector embeddings (Page-level and Chunk-level)
     total_pages = len(pages_to_index)
-    await tracker.update(70, f"Đang tạo vector embeddings cho {total_pages} trang Wiki...")
-
-    if embedding_provider and embedding_spec:
-        # Stop calling the embedding service after this many consecutive failures
-        # (outage): pages stay readable/keyword-searchable and can be re-embedded later.
-        max_consecutive_failures = 3
-        consecutive_failures = 0
-        # A. Page-level embedding in batches
-        batch_size = 16
-        for b_start in range(0, total_pages, batch_size):
-            if consecutive_failures >= max_consecutive_failures:
-                break
-            b_pages = pages_to_index[b_start : b_start + batch_size]
-            texts_to_embed = [
-                f"{p.title}\n\n{p.summary}\n\n{(p.content_md or '')[:4000]}"
-                for p in b_pages
-            ]
-            try:
-                vectors = await embedding_provider.embed_batch(texts_to_embed)
-                for p, vec in zip(b_pages, vectors):
-                    chash = wiki_chunk_content_hash("", p.content_md or "")
-                    await upsert_page_embedding(
-                        session,
-                        page_id=p.id,
-                        spec=embedding_spec,
-                        vector=list(vec),
-                        content_hash=chash,
-                        title=p.title,
-                        summary=p.summary,
-                        content_md=p.content_md,
-                    )
-                consecutive_failures = 0
-            except Exception as e:
-                consecutive_failures += 1
-                logger.warning(f"Batch page embedding failed for pages {b_start}-{b_start+len(b_pages)}: {e}")
-
-            # Update progress between 70% and 85%
-            pct = 70 + int((b_start + len(b_pages)) / total_pages * 15)
-            await tracker.update(pct, f"Đã tính embedding trang ({b_start + len(b_pages)}/{total_pages})...")
-
-        # B. Section-level chunk embeddings
-        for idx, p in enumerate(pages_to_index):
-            if consecutive_failures >= max_consecutive_failures:
-                logger.warning(
-                    f"Embedding service unavailable — skipped semantic indexing for "
-                    f"{total_pages - idx} page(s) of source {source.id}; re-embed them later."
-                )
-                break
-            try:
-                await index_wiki_page_chunks(session, p, spec_id=embedding_spec.id)
-                consecutive_failures = 0
-            except Exception as e:
-                consecutive_failures += 1
-                logger.warning(f"Chunk embedding failed for page '{p.slug}': {e}")
-
-            if idx % 10 == 0 or idx == total_pages - 1:
-                pct = 85 + int((idx + 1) / total_pages * 10)
-                await tracker.update(pct, f"Đã đánh chỉ mục chunk ({idx + 1}/{total_pages})...")
-    else:
-        logger.info("No active embedding model configured — skipping semantic vector index.")
+    from app.services.page_indexing import embed_and_index_pages
+    await embed_and_index_pages(session, pages_to_index, tracker, source_id=source.id)
 
     # 4. Regenerate wiki index and append log for each scope
     await tracker.update(96, "Đang cập nhật danh mục Wiki Index...")
@@ -766,6 +692,16 @@ async def finalize_legal_source(session: AsyncSession, source: Source, tracker: 
             await wiki_service.append_log(session, log_msg, scope_type=scope_type, scope_id=scope_id)
         except Exception as e:
             logger.warning(f"Failed to regenerate index or log for {scope_type}:{scope_id}: {e}")
+
+    from app.services.processing_mode import mark_articles_done
+    mark_articles_done(source)
+    if not final:
+        # The LLM leg of the same wiki attempt continues and marks the branch ready.
+        await tracker.update(
+            50, f"Đã bóc tách {total_articles} điều — đang biên soạn trang tri thức bằng LLM..."
+        )
+        await session.commit()
+        return {"status": "articles_ready", "total_pages": total_pages, "articles": total_articles}
 
     # 5. Mark wiki branch as ready and update dual status
     source.wiki_status = "ready"

@@ -119,10 +119,19 @@ async def ingest_map_reduce_task(ctx, source_id, attempt_id_str=None, **_ignored
                     raise ValueError(f"Source {sid} has no extracted text")
                 tracker = ProgressTracker(sid)
 
-                from app.services import legal_service
+                from app.services import legal_service, processing_mode
 
-                if await legal_service.is_legal_source(session, source):
-                    return await legal_service.finalize_legal_source(session, source, tracker)
+                plan = await processing_mode.plan_for(session, source)
+                if plan.verbatim_page:
+                    from app.services import verbatim_page_service
+
+                    return await verbatim_page_service.finalize_verbatim_pages(session, source, tracker)
+                if plan.articles and not (plan.llm and processing_mode.articles_done(source, attempt_id_str)):
+                    result = await legal_service.finalize_legal_source(
+                        session, source, tracker, final=not plan.llm
+                    )
+                    if not plan.llm:
+                        return result
 
                 if getattr(source, "preserve_verbatim", False):
                     try:

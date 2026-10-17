@@ -82,6 +82,8 @@ class Settings(BaseSettings):
     max_upload_size_bytes: int = 52428800
     allowed_upload_extensions: str = "pdf,docx,xlsx,pptx,txt,md,csv"
     auto_approve_extraction_threshold_tokens: int = 0
+    # processing_mode=verbatim_page: longer documents are split into several linked pages.
+    verbatim_page_max_chars: int = 40000
     extraction_approval_ttl_hours: int = 24
     max_auto_recover_attempts: int = 3
 
