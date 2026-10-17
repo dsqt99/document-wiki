@@ -162,3 +162,46 @@ Nghị định này có hiệu lực từ ngày ký.
     assert [a.number for a in arts] == ["1", "2"]
     assert "Điều 2. Giải thích từ ngữ" in arts[0].content
     assert arts[1].title == "Hiệu lực thi hành"
+
+
+def test_unclosed_quote_in_preamble_footnote_does_not_swallow_first_articles():
+    # Consolidated text: a preamble footnote quotes a title and loses its closing mark.
+    text = """
+NGHỊ ĐỊNH
+Quy định xử phạt vi phạm hành chính trong lĩnh vực giao thông đường thủy nội địa
+
+> 1 Nghị định số 80/2026/NĐ-CP sửa đổi, bổ sung “Nghị định quy định xử phạt vi phạm hành chính
+
+# **Chương I NHỮNG QUY ĐỊNH CHUNG**
+
+# **Điều 1. Phạm vi điều chỉnh**
+Nghị định này quy định về hành vi vi phạm hành chính.
+
+**Điều 2. Đối tượng áp dụng**
+Cá nhân, tổ chức có hành vi vi phạm.
+Ghi chú: hướng dẫn tại văn bản số 12” của Bộ.
+
+**Điều 3. Giải thích từ ngữ**
+Nội dung.
+"""
+    tree = LegalHierarchyParser().parse(text)
+    arts = tree.get_all_articles()
+    assert [a.number for a in arts] == ["1", "2", "3"]
+    assert tree.chapters[0].number == "I"
+    assert [a.number for a in tree.chapters[0].articles] == ["1", "2", "3"]
+
+
+def test_wrapped_reference_lists_are_not_article_headings():
+    text = """
+**Điều 42. Phân định thẩm quyền xử phạt**
+1. Công an có thẩm quyền xử phạt đối với hành vi quy định tại:
+<mark>Điều 5; Điều 6; khoản 1, khoản 2 Điều 7; Điều 8;</mark> Điều 9; Điều 10.
+<mark>i) Điều 33; Điều 34; Điều 40;</mark> Điều 41.
+9. Chi cục trưởng có thẩm quyền xử phạt.
+
+**Điều 43. Thẩm quyền lập biên bản**
+Nội dung.
+"""
+    arts = LegalHierarchyParser().parse(text).get_all_articles()
+    assert [a.number for a in arts] == ["42", "43"]
+    assert "Điều 41." in arts[0].content and "9. Chi cục trưởng" in arts[0].content

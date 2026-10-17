@@ -99,7 +99,7 @@ _MD_EMPH = re.compile(r"\*\*|__|(?<!\w)[*_]|[*_](?!\w)")
 #   "**Điều 39.**<sup>45</sup> **_(được bãi bỏ)_ Điều 40.**<sup>46</sup> ..."
 _GLUED_BOLD_ARTICLE = re.compile(
     r"(?:(?<=\S)[ \t]+(?=(?:\*\*|__?|<mark>)+Điều\s+\d+[a-z]?\.)"
-    r"|(?<=[*_>])[ \t]+(?=Điều\s+\d+[a-z]?\.))"
+    r"|(?<=[*_>])[ \t]+(?=Điều\s+\d+[a-z]?\.(?![ \t]*(?:\n|$))))"
 )
 _HTML_FOOTNOTE = re.compile(r"<sup>.*?</sup>", re.IGNORECASE)
 _HTML_TAG = re.compile(r"</?[a-zA-Z][^>]*>")
@@ -133,6 +133,9 @@ def _match_article(trimmed: str) -> Optional["re.Match[str]"]:
         return None
     after_num = trimmed[m.end(1):]
     title = m.group(2)
+    # A wrapped reference list: "Điều 5; Điều 6; khoản 1 Điều 7; ..."
+    if after_num.lstrip()[:1] in (";", ","):
+        return None
     if not after_num.lstrip().startswith(".") and title[:1].islower():
         return None
     return m
@@ -209,13 +212,18 @@ class LegalHierarchyParser:
             # A closing quote lost at a page break would swallow the rest of the document:
             # close it at the next sequential article heading, unless that number is
             # repeated later (then this one is a quoted article of an amended text).
-            seq = heading_seqs[idx]
+            # Before the first article (e.g. an unclosed quote in a preamble footnote of a
+            # consolidated text) the next expected heading is "Điều 1", or the chapter
+            # heading right before it.
+            seq, seq_at = heading_seqs[idx], idx
+            if in_quote and seq is None and last_article_seq is None and RE_CHAPTER.match(trimmed):
+                seq_at = next((j for j in range(idx + 1, len(lines)) if heading_seqs[j] is not None), idx)
+                seq = heading_seqs[seq_at]
             if (
                 in_quote
                 and seq is not None
-                and last_article_seq is not None
-                and seq == last_article_seq + 1
-                and seq not in heading_seqs[idx + 1:]
+                and seq == (last_article_seq or 0) + 1
+                and seq not in heading_seqs[seq_at + 1:]
             ):
                 in_quote = False
             if quote_marks % 2 != 0:
