@@ -83,7 +83,7 @@ async def _load_doc_processing_config() -> dict:
                 return await svc.get(key)
 
             return {
-                "pdf_engine": _as_str(await get("pdf_parser_engine"), "pymupdf4llm"),
+                "pdf_engine": _as_str(await get("pdf_parser_engine"), "pdfplumber"),
                 "excel_engine": _as_str(await get("excel_parser_engine"), "openpyxl"),
                 "ocr_mode": _as_str(await get("ocr_mode"), "auto"),
                 "ocr_fallback_vision": _as_bool(await get("ocr_fallback_vision"), True),

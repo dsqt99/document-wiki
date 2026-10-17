@@ -96,7 +96,7 @@ Khóa cấu hình quản trị trong bảng `app_config`, đọc qua `ConfigServ
 
 | Khóa | Mặc định |
 |---|---|
-| `pdf_parser_engine` | `pymupdf4llm` |
+| `pdf_parser_engine` | `pdfplumber` |
 | `excel_parser_engine` | `openpyxl` |
 | `ocr_mode` | `auto` |
 | `ocr_fallback_vision` | true |
@@ -823,7 +823,7 @@ Với doc, ppt, rtf, dùng `libreoffice_converter` tra qua module `app.services.
 Cả bốn hàm dùng chung bộ đếm `image_index` cho toàn tài liệu, bắt đầu từ 0. Bộ đếm chỉ tăng khi ảnh thực sự được giữ. Mỗi ảnh giữ lại được tải lên bằng `storage_service.upload_file(object_name=, data=, content_type=)`.
 
 - **`extract_images_from_pdf(file_data, source_id) -> list[ImageInfo]`**
-  - Mở bằng PyMuPDF và duyệt ảnh từng trang. Trang đánh số từ 1.
+  - Mở bằng pypdfium2 và duyệt các đối tượng ảnh của từng trang. Trang đánh số từ 1.
   - Bỏ ảnh nhỏ hơn MIN_IMAGE_BYTES.
   - Khóa `sources/{sid}/images/page{p}_{idx}.{ext}`, page_number = p.
   - Lỗi từng ảnh thì bỏ qua ảnh đó. Không mở được tệp thì trả `[]`.

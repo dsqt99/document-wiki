@@ -1,16 +1,15 @@
 import pytest
-import pymupdf as fitz
 from unittest.mock import AsyncMock, patch
+
+from pdf_fixtures import make_text_pdf
 from app.services.parsers.pdf_parser import PDFParser
 
+
 def _create_sample_pdf(num_pages: int = 3) -> bytes:
-    doc = fitz.open()
-    for i in range(num_pages):
-        page = doc.new_page()
-        page.insert_text((50, 50), f"Section {i+1}\nArticle 1. Sample content page {i+1}")
-    data = doc.tobytes()
-    doc.close()
-    return data
+    return make_text_pdf(
+        [[f"Section {i + 1}", f"Article 1. Sample content page {i + 1}"] for i in range(num_pages)]
+    )
+
 
 @pytest.mark.asyncio
 async def test_pdf_parser_max_pages_limit():
@@ -30,7 +29,7 @@ async def test_pdf_parser_engine_plain():
     pdf_bytes = _create_sample_pdf(num_pages=1)
     parser = PDFParser()
     
-    pages = await parser.parse(pdf_bytes, "test.pdf", engine="pymupdf_plain")
+    pages = await parser.parse(pdf_bytes, "test.pdf", engine="pdfium_plain")
     assert len(pages) == 1
     assert "Article 1" in pages[0]["content"]
 

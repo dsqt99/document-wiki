@@ -36,6 +36,7 @@ MIME_BY_EXT = {
     "gif": "image/gif",
     "bmp": "image/bmp",
     "tiff": "image/tiff",
+    "jp2": "image/jp2",
     "webp": "image/webp",
     "svg": "image/svg+xml",
 }
@@ -80,10 +81,10 @@ def _store(key: str, data: bytes, content_type: str) -> None:
 
 
 def extract_images_from_pdf(file_data: bytes, source_id: Any) -> list[ImageInfo]:
-    try:
-        import fitz
+    from app.services.parsers import pdf_backend
 
-        doc = fitz.open(stream=file_data, filetype="pdf")
+    try:
+        doc = pdf_backend.open_document(file_data)
     except Exception as e:  # noqa: BLE001
         logger.warning(f"extract_images_from_pdf: cannot open PDF for {source_id}: {e}")
         return []
@@ -93,24 +94,29 @@ def extract_images_from_pdf(file_data: bytes, source_id: Any) -> list[ImageInfo]
         for page_idx in range(len(doc)):
             page_no = page_idx + 1
             try:
-                refs = doc[page_idx].get_images(full=True)
+                page = doc[page_idx]
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"extract_images_from_pdf: page {page_no} listing failed: {e}")
                 continue
-            for ref in refs:
+            try:
+                for ext, data in pdf_backend.iter_page_images(page):
+                    try:
+                        if len(data) < MIN_IMAGE_BYTES:
+                            continue
+                        content_type = _mime_for(ext)
+                        key = f"sources/{source_id}/images/page{page_no}_{index}.{ext}"
+                        _store(key, data, content_type)
+                        images.append(ImageInfo(key, page_no, index, content_type, len(data)))
+                        index += 1
+                    except Exception as e:  # noqa: BLE001
+                        logger.warning(f"extract_images_from_pdf: skipping image on page {page_no}: {e}")
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"extract_images_from_pdf: page {page_no} listing failed: {e}")
+            finally:
                 try:
-                    info = doc.extract_image(ref[0])
-                    data = info.get("image") or b""
-                    if len(data) < MIN_IMAGE_BYTES:
-                        continue
-                    ext = (info.get("ext") or "png").lower()
-                    content_type = _mime_for(ext)
-                    key = f"sources/{source_id}/images/page{page_no}_{index}.{ext}"
-                    _store(key, data, content_type)
-                    images.append(ImageInfo(key, page_no, index, content_type, len(data)))
-                    index += 1
-                except Exception as e:  # noqa: BLE001
-                    logger.warning(f"extract_images_from_pdf: skipping image on page {page_no}: {e}")
+                    page.close()
+                except Exception:  # noqa: BLE001
+                    pass
     finally:
         try:
             doc.close()

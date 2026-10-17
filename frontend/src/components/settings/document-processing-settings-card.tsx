@@ -45,10 +45,23 @@ type Config = {
 type Option = { value: string; label: string; hint: string };
 
 const PDF_ENGINES: Option[] = [
-  { value: "pymupdf4llm", label: "PyMuPDF4LLM", hint: "Giữ bảng biểu, đề mục" },
-  { value: "pymupdf_plain", label: "PDF2text", hint: "Text thuần, nhanh nhất" },
+  { value: "pdfplumber", label: "pdfplumber", hint: "Giữ bảng biểu, đề mục" },
+  { value: "pdfium_plain", label: "PDF2text", hint: "Text thuần, nhanh nhất" },
   { value: "markitdown", label: "MarkItDown", hint: "Bộ chuyển Markdown của Microsoft" },
 ];
+
+// Tên engine của bản cài cũ còn lưu trong cấu hình được quy về engine hiện hành.
+const LEGACY_PDF_ENGINES: Record<string, string> = {
+  pymupdf4llm: "pdfplumber",
+  pymupdf: "pdfplumber",
+  pymupdf_plain: "pdfium_plain",
+  fitz: "pdfium_plain",
+};
+
+function normalizePdfEngine(value: string | null | undefined): string {
+  if (!value) return DEFAULT_PDF_ENGINE;
+  return LEGACY_PDF_ENGINES[value] ?? value;
+}
 
 const EXCEL_ENGINES: Option[] = [
   { value: "openpyxl", label: "OpenPyXL", hint: "Tách từng sheet & bảng" },
@@ -63,8 +76,10 @@ const OCR_MODES: Option[] = [
 
 const MAX_PAGES = [1, 3, 5, 10];
 
+const DEFAULT_PDF_ENGINE = "pdfplumber";
+
 const DEFAULT_CONFIG: Config = {
-  pdfEngine: "pymupdf4llm",
+  pdfEngine: DEFAULT_PDF_ENGINE,
   excelEngine: "openpyxl",
   ocrMode: "auto",
   strip: true,
@@ -166,7 +181,7 @@ export function DocumentProcessingSettingsCard() {
       try {
         const data = await api<SettingsMap>("/api/settings");
         const next: Config = {
-          pdfEngine: data.pdf_parser_engine || DEFAULT_CONFIG.pdfEngine,
+          pdfEngine: normalizePdfEngine(data.pdf_parser_engine),
           excelEngine: data.excel_parser_engine || DEFAULT_CONFIG.excelEngine,
           ocrMode: data.ocr_mode || DEFAULT_CONFIG.ocrMode,
           strip: data.pdf_strip_headers_footers !== "false",

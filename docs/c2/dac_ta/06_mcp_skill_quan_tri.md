@@ -1253,7 +1253,7 @@ Các endpoint test-* **không có** dependency xác thực; test c2 dựa vào �
 
 | Tham số | Mặc định |
 |---|---|
-| pdf engine | cấu hình `pdf_parser_engine`, hoặc "pymupdf4llm" |
+| pdf engine | cấu hình `pdf_parser_engine`, hoặc "pdfplumber" |
 | excel engine | `excel_parser_engine`, hoặc "openpyxl" |
 | ocr_mode | "auto" |
 | strip, enhance | bật, trừ khi cấu hình là "false" |

@@ -36,7 +36,7 @@ async def test_extract_pdf_uses_admin_doc_processing_config():
     from app.services import kb_service
 
     cfg = {
-        "pdf_engine": "pymupdf",
+        "pdf_engine": "pdfium_plain",
         "excel_engine": "openpyxl",
         "ocr_mode": "force",
         "ocr_fallback_vision": False,
@@ -47,7 +47,7 @@ async def test_extract_pdf_uses_admin_doc_processing_config():
          patch("app.services.parsers.pdf_parser.PDFParser.parse", AsyncMock(return_value=[])) as parse:
         await kb_service._extract_text_from_file(b"%PDF-1.4", "a.pdf")
     kw = parse.await_args.kwargs
-    assert kw["engine"] == "pymupdf"
+    assert kw["engine"] == "pdfium_plain"
     assert kw["ocr_mode"] == "force"
     assert kw["ocr_fallback_vision"] is False
     assert kw["strip_headers_footers"] is False

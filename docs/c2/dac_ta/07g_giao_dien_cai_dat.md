@@ -337,9 +337,9 @@ Thứ tự card trong tab `config`:
 Mô tả để đối chiếu hành vi và backend.
 
 - Đầu card: biểu tượng `document_scanner` (tông xanh dương), tiêu đề "Bóc tách tài liệu", mô tả "Engine chuyển PDF / Excel sang Markdown và cách xử lý trang scan khi upload."
-- Tải: `GET /api/settings`, đọc các khóa `pdf_parser_engine` (mặc định `pymupdf4llm`), `excel_parser_engine` (mặc định `openpyxl`), `ocr_mode` (mặc định `auto`), `pdf_strip_headers_footers` và `pdf_enhance_headings` (bật trừ khi giá trị là chuỗi "false"). Khi tải: spinner + "Đang tải thiết lập...".
+- Tải: `GET /api/settings`, đọc các khóa `pdf_parser_engine` (mặc định `pdfplumber`; giá trị cũ `pymupdf4llm`/`pymupdf` quy về `pdfplumber`, `pymupdf_plain` quy về `pdfium_plain`), `excel_parser_engine` (mặc định `openpyxl`), `ocr_mode` (mặc định `auto`), `pdf_strip_headers_footers` và `pdf_enhance_headings` (bật trừ khi giá trị là chuỗi "false"). Khi tải: spinner + "Đang tải thiết lập...".
 - Cấu hình (lưới 2 cột trên màn rộng), mỗi nhóm là các nút chọn một (nút chọn có viền primary và nền primary nhạt):
-  - "Engine PDF" (phạm vi ".pdf"): PyMuPDF4LLM (`pymupdf4llm`, "Giữ bảng biểu, đề mục"), PDF2text (`pymupdf_plain`, "Text thuần, nhanh nhất"), MarkItDown (`markitdown`, "Bộ chuyển Markdown của Microsoft").
+  - "Engine PDF" (phạm vi ".pdf"): pdfplumber (`pdfplumber`, "Giữ bảng biểu, đề mục"), PDF2text (`pdfium_plain`, "Text thuần, nhanh nhất"), MarkItDown (`markitdown`, "Bộ chuyển Markdown của Microsoft").
   - "Engine bảng tính" (".xlsx .xls .csv"): OpenPyXL (`openpyxl`), MarkItDown (`markitdown`).
   - "OCR trang scan" ("PDF"): Tự động (`auto`), Luôn OCR (`force_ocr`), Tắt (`disabled`).
   - "Hậu xử lý PDF": hai công tắc "Bỏ header / footer", "Nhận diện đề mục".

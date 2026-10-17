@@ -41,7 +41,7 @@ async def test_config_service_defaults_and_fallbacks():
     assert mode in ("auto", "force_ocr", "disabled")
 
     engine = await svc.get("pdf_parser_engine")
-    assert engine in ("pymupdf4llm", "pymupdf_plain")
+    assert engine in ("pdfplumber", "pdfium_plain")
 
     prompt = await svc.get("ocr_prompt")
     assert prompt is not None and len(prompt) > 20

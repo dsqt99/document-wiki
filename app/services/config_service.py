@@ -62,7 +62,7 @@ DEFAULT_CONFIG_VALUES: dict[str, str] = {
     "ocr_mode": "auto",
     "ocr_fallback_vision": "true",
     "ocr_llm_refine": "false",
-    "pdf_parser_engine": "pymupdf4llm",
+    "pdf_parser_engine": "pdfplumber",
     "excel_parser_engine": "openpyxl",
     "pdf_strip_headers_footers": "true",
     "pdf_enhance_headings": "true",

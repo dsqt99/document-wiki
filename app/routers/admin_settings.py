@@ -236,20 +236,23 @@ async def test_ocr_connection(body: Optional[OCRConnectionTest] = None, db: Asyn
 
 def _render_pdf_page(data: bytes, target_page: int):
     """(jpeg_bytes, page_number, total_pages, error)."""
-    import pymupdf as fitz
+    from app.services.parsers import pdf_backend
 
     try:
-        doc = fitz.open(stream=data, filetype="pdf")
+        doc = pdf_backend.open_document(data)
     except Exception as e:
         return None, 0, 0, f"Không thể render trang PDF: {e}"
     try:
-        total = doc.page_count
+        total = len(doc)
         if total == 0:
             return None, 0, 0, "File PDF không có trang nào"
         page_no = min(max(int(target_page or 1), 1), total)
         try:
-            pix = doc[page_no - 1].get_pixmap(matrix=fitz.Matrix(2, 2))
-            return pix.tobytes("jpeg", jpg_quality=85), page_no, total, None
+            page = doc[page_no - 1]
+            try:
+                return pdf_backend.render_page_jpeg(page), page_no, total, None
+            finally:
+                page.close()
         except Exception as e:
             return None, page_no, total, f"Không thể render trang PDF: {e}"
     finally:
@@ -415,7 +418,7 @@ async def test_extraction(
         if ext == "pdf":
             from app.services.parsers.pdf_parser import PDFParser
 
-            pdf_engine = engine or pdf_parser_engine or await cfg.get("pdf_parser_engine") or "pymupdf4llm"
+            pdf_engine = engine or pdf_parser_engine or await cfg.get("pdf_parser_engine") or "pdfplumber"
             if ocr_llm_refine is not None and str(ocr_llm_refine).strip() != "":
                 refine = str(ocr_llm_refine).strip().lower() in ("true", "1", "yes", "on")
             else:

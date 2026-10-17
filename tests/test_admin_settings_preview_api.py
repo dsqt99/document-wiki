@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from httpx import AsyncClient, ASGITransport
-import pymupdf as fitz
+from pdf_fixtures import make_text_pdf
 from app.main import app
 from app.database import get_db
 
@@ -19,12 +19,7 @@ def override_db():
     app.dependency_overrides.pop(get_db, None)
 
 def _make_pdf_bytes():
-    doc = fitz.open()
-    page = doc.new_page()
-    page.insert_text((50, 50), "Hello PDF Test Page")
-    b = doc.tobytes()
-    doc.close()
-    return b
+    return make_text_pdf([["Hello PDF Test Page"]])
 
 @pytest.mark.asyncio
 async def test_test_ocr_connection_endpoint():
