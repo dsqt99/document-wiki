@@ -24,6 +24,9 @@ export const dictionaries = {
     "nav.employees": "Nhân sự",
     "nav.system": "Hệ thống",
     "nav.audit": "Nhật ký kiểm toán",
+    "dept.selectAtLeastOne": "Vui lòng chọn ít nhất một phòng ban",
+    "stats.rolling": "Đang tính…",
+    "wiki.selectHint": "chọn",
     "nav.settings": "Cài đặt hệ thống",
     "nav.workspace": "Không gian làm việc",
 
@@ -483,6 +486,9 @@ export const dictionaries = {
     "nav.employees": "Employees",
     "nav.system": "System",
     "nav.audit": "Audit Log",
+    "dept.selectAtLeastOne": "Please select at least one department",
+    "stats.rolling": "Computing…",
+    "wiki.selectHint": "select",
     "nav.settings": "Settings",
     "nav.workspace": "Workspace",
 
@@ -761,13 +767,13 @@ export const dictionaries = {
     "dash.noRecentDocs": "No documents yet",
     "dash.uploadFirstDoc": "Upload your first document in the Knowledge Base",
     "dash.mcpConnection": "MCP Connection",
-    "dash.mcpDesc": "Connect Claude Desktop to Arkon with this config snippet.",
+    "dash.mcpDesc": "Connect Claude Desktop to Document Wiki with this config snippet.",
     "dash.copyConfig": "Copy Config",
     "dash.copied": "Copied!",
 
     // Profile & MCP Token
     "profile.mcpTokenTitle": "MCP Token",
-    "profile.mcpTokenDesc": "Connect your Claude Desktop to Arkon",
+    "profile.mcpTokenDesc": "Connect your Claude Desktop to Document Wiki",
     "profile.mcpTokenActive": "MCP Token is active. Your token was shown when generated — it cannot be retrieved again for security.",
     "profile.generateToken": "Generate MCP Token",
     "profile.regenerateToken": "Regenerate Token",

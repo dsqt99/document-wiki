@@ -1,5 +1,5 @@
 """
-Milvus Vector Database Integration for Arkon.
+Milvus Vector Database Integration for Document Wiki.
 
 Provides high-performance vector storage and similarity search for:
 1. Wiki page embeddings (arkon_wiki_pages_<dim>)

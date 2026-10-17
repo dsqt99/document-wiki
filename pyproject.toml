@@ -30,10 +30,29 @@ dependencies = [
     "duckdb",
     "pillow",
     "pyvi",
+    "uvicorn[standard]",
+    "python-multipart",
+    "pgvector",
+    "minio",
+    "arq",
+    "redis",
+    "bcrypt",
+    "cryptography",
+    "tiktoken",
+    "anthropic",
+    "google-genai",
+    "tabulate",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest", "pytest-asyncio", "ruff"]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

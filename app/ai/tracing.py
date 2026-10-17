@@ -1,5 +1,5 @@
 """
-Langfuse Tracing Integration for Arkon.
+Langfuse Tracing Integration for Document Wiki.
 
 Provides centralized observability for LLM calls, embeddings, agent runs,
 and background worker tasks (MRP pipeline, document ingestion, AI review).

@@ -215,6 +215,10 @@ export function removeCachedPage(slug: string) {
     );
   }
   wikiStore.pageDetailCache.delete(slug);
+  // Detail entries are also stored under "<slug>:<variant>" keys.
+  for (const key of [...wikiStore.pageDetailCache.keys()]) {
+    if (key.startsWith(`${slug}:`)) wikiStore.pageDetailCache.delete(key);
+  }
 }
 
 // Helper methods for sources cache

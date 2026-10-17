@@ -1,0 +1,186 @@
+x-backend: &backend
+  image: wiki-backend:latest
+  env_file: .env.docker
+  restart: always
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+    minio:
+      condition: service_healthy
+  volumes:
+    - ./temp_uploads:/app/temp_uploads
+    - ./app:/app/app
+    - ./alembic:/app/alembic
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-arkon}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-arkon_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-arkon}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      default:
+        aliases:
+          - wiki_postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-arkon} -d ${POSTGRES_DB:-arkon}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    command: ["redis-server", "--save", "60", "1", "--requirepass", "${REDIS_PASSWORD:-arkon_secret}"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-arkon_secret}", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio
+    restart: always
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin123}
+    ports:
+      - "9002:9000"
+      - "9003:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.16
+    restart: always
+    environment:
+      ETCD_AUTO_COMPACTION_MODE: revision
+      ETCD_AUTO_COMPACTION_RETENTION: "1000"
+      ETCD_QUOTA_BACKEND_BYTES: "4294967296"
+      ETCD_SNAPSHOT_COUNT: "50000"
+    command: >
+      etcd -advertise-client-urls=http://127.0.0.1:2379
+      -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
+    volumes:
+      - milvus_etcd_data:/etcd
+
+  milvus:
+    image: milvusdb/milvus:v2.4.15
+    restart: always
+    command: ["milvus", "run", "standalone"]
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+      MINIO_ACCESS_KEY_ID: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_ACCESS_KEY: ${MINIO_SECRET_KEY:-minioadmin123}
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+    volumes:
+      - milvus_data:/var/lib/milvus
+    depends_on:
+      - etcd
+      - minio
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+      start_period: 90s
+
+  milvus_ui:
+    image: zilliz/attu:v2.4
+    restart: always
+    environment:
+      MILVUS_URL: milvus:19530
+    ports:
+      - "9004:3000"
+    depends_on:
+      - milvus
+
+  migrator:
+    <<: *backend
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: "no"
+    entrypoint: []
+    command: ["alembic", "upgrade", "head"]
+
+  api:
+    <<: *backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+    ports:
+      - "5055:5055"
+    command:
+      ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "5055", "--proxy-headers", "--forwarded-allow-ips", "*"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5055/health', timeout=5)"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - default
+      - cahy-internal
+
+  worker:
+    <<: *backend
+    depends_on:
+      api:
+        condition: service_healthy
+    command: ["arq", "app.worker.WorkerSettings"]
+
+  worker_skills:
+    <<: *backend
+    depends_on:
+      api:
+        condition: service_healthy
+    command: ["arq", "app.worker.SkillWorkerSettings"]
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5055}
+        INTERNAL_API_URL: http://api:5055
+    restart: always
+    ports:
+      - "3119:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+
+networks:
+  cahy-internal:
+    external: true
+    name: ${CAHY_NETWORK_NAME:-cahy-internal}
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+  milvus_etcd_data:
+  milvus_data:
