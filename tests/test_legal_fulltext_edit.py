@@ -105,7 +105,12 @@ async def test_on_demand_pages_keep_existing_doc_slug():
     mock_store.assert_not_called()
 
 
-def test_commit_with_every_page_failed_reports_error(monkeypatch):
+@pytest.mark.parametrize("page_error, outage", [
+    ("TimeoutError", True),
+    ("UpstreamUnavailable: [ai_unavailable] Dịch vụ AI 'llm' không phản hồi.", True),
+    ("ValueError: bad plan", False),
+])
+def test_commit_with_every_page_failed_reports_error(monkeypatch, page_error, outage):
     import app.ai.registry as registry_mod
     from app.ai.mrp import pipeline
     from app.ai.mrp.writer import PageWriteResult
@@ -146,9 +151,11 @@ def test_commit_with_every_page_failed_reports_error(monkeypatch):
     source = types.SimpleNamespace(id=uuid.uuid4(), title="Doc", file_name=None)
     results = [
         PageWriteResult(slug="bad", title="Bad", page_type="concept", action="CREATE",
-                        content_md=make_failure_stub("Bad", "TimeoutError"), summary="Bad"),
+                        content_md=make_failure_stub("Bad", page_error), summary="Bad"),
     ]
     out = asyncio.run(pipeline.run_commit_phase(_Sess(), source, results, None, None, None, None, None))
     assert out["status"] == "error"
     assert src_row.wiki_status == "error"
     assert src_row.pipeline_phase == "refine"
+    # an outage keeps the marker so resume_ai_unavailable_cron picks the source up again
+    assert src_row.wiki_error_message.startswith("[ai_unavailable] ") is outage

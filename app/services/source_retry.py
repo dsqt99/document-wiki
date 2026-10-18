@@ -122,11 +122,15 @@ TRANSIENT_SIGNATURES = (
 )
 
 
-def failed_by_ai_outage(source) -> bool:
+def is_ai_outage_text(text: Optional[str]) -> bool:
     from app.ai.upstream import AI_UNAVAILABLE_MARKER
 
-    text = _failure_text(source)
+    text = text or ""
     return AI_UNAVAILABLE_MARKER in text or any(sig in text for sig in TRANSIENT_SIGNATURES)
+
+
+def failed_by_ai_outage(source) -> bool:
+    return is_ai_outage_text(_failure_text(source))
 
 
 async def ai_ready(db, need_ocr: bool = False) -> tuple[bool, str]:

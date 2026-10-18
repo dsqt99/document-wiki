@@ -136,8 +136,14 @@ async def run_commit_phase(session, source, page_results, plan, embedding_provid
     if failed_slugs and created + updated == 0:
         # Nothing was written (typically every page call timed out): report an error so the
         # retry/cron paths pick the source up again, resuming at REFINE.
+        from app.ai.upstream import AI_UNAVAILABLE_MARKER
+        from app.services.source_retry import is_ai_outage_text
+
         shown = ", ".join(failed_slugs[:SKIPPED_SLUGS_SHOWN])
         msg = f"All {len(failed_slugs)} page(s) failed to generate: {shown}"
+        # The per-page reasons live only in the stubs; keep the marker so the outage cron resumes it.
+        if any(is_ai_outage_text(r.content_md) for r in page_results if is_failure_stub(r.content_md)):
+            msg = f"{AI_UNAVAILABLE_MARKER} {msg}"
         src.pipeline_phase = "refine"
         src.wiki_status = "error"
         src.wiki_progress = 0
