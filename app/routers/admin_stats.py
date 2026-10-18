@@ -22,6 +22,9 @@ from app.services.auth_service import require_permission
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin/stats", tags=["admin-stats"])
 
+# Xem thống kê chỉ cần quyền đọc nhật ký (quản trị tri thức có); chạy lại rollup vẫn cần quyền cấu hình.
+_READ = "org:audit:read"
+
 MAX_RANGE_DAYS = 366
 DEFAULT_RANGE_DAYS = 30
 
@@ -150,7 +153,7 @@ def _range_params(
 
 
 @router.get("/overview")
-async def overview(db: AsyncSession = Depends(get_db), user=require_permission("org:settings:manage")):
+async def overview(db: AsyncSession = Depends(get_db), user=require_permission(_READ)):
     from app.services import stats_aggregator
 
     today = _today()
@@ -196,19 +199,19 @@ async def overview(db: AsyncSession = Depends(get_db), user=require_permission("
 
 @router.get("/content", response_model=SectionResponse)
 async def content(rng=Depends(_range_params), db: AsyncSession = Depends(get_db),
-                  user=require_permission("org:settings:manage")):
+                  user=require_permission(_READ)):
     return await _section(db, "content", *rng)
 
 
 @router.get("/contribution", response_model=SectionResponse)
 async def contribution(rng=Depends(_range_params), db: AsyncSession = Depends(get_db),
-                       user=require_permission("org:settings:manage")):
+                       user=require_permission(_READ)):
     return await _section(db, "contribution", *rng)
 
 
 @router.get("/usage", response_model=SectionResponse)
 async def usage(rng=Depends(_range_params), db: AsyncSession = Depends(get_db),
-                user=require_permission("org:settings:manage")):
+                user=require_permission(_READ)):
     return await _section(db, "usage", *rng)
 
 
@@ -217,7 +220,7 @@ async def gaps(
     rng=Depends(_range_params),
     limit: int = Query(50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
-    user=require_permission("org:settings:manage"),
+    user=require_permission(_READ),
 ):
     from_date, to_date = rng
     merged: dict[str, dict] = {}
@@ -242,7 +245,7 @@ async def gaps(
 
 @router.get("/export/{section}.csv")
 async def export_csv(section: str, rng=Depends(_range_params), db: AsyncSession = Depends(get_db),
-                     user=require_permission("org:settings:manage")):
+                     user=require_permission(_READ)):
     if section not in SECTION_METRICS:
         raise HTTPException(status_code=404, detail=f"unknown section: {section}")
     from_date, to_date = rng

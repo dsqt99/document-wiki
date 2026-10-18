@@ -9,7 +9,8 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, cast, func, or_, select
+from sqlalchemy.dialects.postgresql import ARRAY, UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -140,7 +141,7 @@ def _visibility_clause(user):
     depts = list(_user_depts(user))
     if depts:
         clauses.append(
-            and_(PromptTemplate.scope_type == "department", PromptTemplate.department_ids.overlap(depts))
+            and_(PromptTemplate.scope_type == "department", PromptTemplate.department_ids.op("&&")(cast(depts, ARRAY(UUID(as_uuid=True)))))
         )
     return or_(*clauses)
 
