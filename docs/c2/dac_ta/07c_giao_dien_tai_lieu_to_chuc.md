@@ -125,15 +125,19 @@ Kiểu dữ liệu dùng chung:
      | `documents` (mặc định) | "Tài liệu" | `description` | `total` từ API danh sách tài liệu (theo bộ lọc hiện tại) |
      | `types` | "Kiểu tri thức" | `category` | số kiểu tri thức đã tải |
 
-   - Phải, khi tab = documents và `canManage`: DropdownMenu, nút kích hoạt viền, cao ~32px, chữ xs đậm vừa: icon `auto_fix_high` + "Xử lý nội dung" + icon `expand_more`. Menu căn phải, rộng tối thiểu ~16rem:
+   - Phải, khi tab = documents và `canManage`: DropdownMenu, nút kích hoạt viền, cao ~32px, chữ xs đậm vừa: icon `auto_fix_high` + "Xử lý nội dung" + (khi có tài liệu lỗi) huy hiệu đỏ "{n} lỗi" + icon `expand_more`. Menu căn phải, rộng tối thiểu ~18rem, chia 4 nhóm có tiêu đề, ngăn cách bằng đường kẻ. Mỗi mục có số đếm bên phải lấy từ `GET /api/sources/processing-summary` (tải khi vào trang, khi danh sách tải xong, khi mở menu và sau mỗi tác vụ). Mục tác vụ có số đếm = 0 bị vô hiệu; mục "Xem nhanh" luôn bấm được:
 
-     | Mục | Icon | Hành động |
-     |---|---|---|
-     | "Trích xuất thuộc tính còn thiếu" | `data_info_alert` | Backfill với `only_missing=true` |
-     | "Trích xuất lại toàn bộ thuộc tính" | `restart_alt` | Backfill với `only_missing=false` |
-     | (ngăn cách) | | |
-     | "Xem tài liệu lỗi" | `error` | Đặt bộ lọc trạng thái `failed`, trang 1 |
-     | "Xem tài liệu chờ duyệt" | `fact_check` | Đặt bộ lọc trạng thái `review`, trang 1 |
+     | Nhóm | Mục | Icon | Số đếm | Hành động |
+     |---|---|---|---|---|
+     | Chạy lại | "Chạy lại tất cả tài liệu lỗi" | `replay` | `failed` | `POST /api/sources/retry-failed?only_ai_outage=false` |
+     | Chạy lại | "Chỉ chạy lại lỗi do AI gián đoạn" (chỉ hiện khi 0 < `failed_ai_outage` < `failed`) | `cloud_off` | `failed_ai_outage` | `POST /api/sources/retry-failed?only_ai_outage=true` |
+     | Thuộc tính văn bản | "Trích xuất thuộc tính còn thiếu" | `data_info_alert` | — | Backfill với `only_missing=true` |
+     | Thuộc tính văn bản | "Trích xuất lại toàn bộ thuộc tính" | `restart_alt` | — | Backfill với `only_missing=false` |
+     | Chỉ mục tìm kiếm | "Tạo vector cho trang còn thiếu" | `hub` | `pages_missing_vectors` | `POST /api/sources/reembed-missing` |
+     | Chỉ mục tìm kiếm | "Tạo chunk văn bản gốc còn thiếu" | `segment` | `chunk_missing` | `POST /api/settings/embeddings/backfill-source-chunks` |
+     | Xem nhanh | "Tài liệu lỗi" | `error` | `failed` | Đặt bộ lọc trạng thái `failed`, trang 1 |
+     | Xem nhanh | "Đang xử lý" | `progress_activity` | `running` | Đặt bộ lọc trạng thái `running`, trang 1 |
+     | Xem nhanh | "Chờ duyệt" | `fact_check` | `review` | Đặt bộ lọc trạng thái `review`, trang 1 |
 
    - Phải, khi tab = types: nút outline cỡ sm cao ~32px chữ xs, icon `add`, "Thêm kiểu tri thức" → mở KnowledgeTypeDialog ở chế độ tạo.
 3. **Banner thông báo cấp trang** (nếu có): tông `ok` (emerald nhạt, icon `check_circle`) hoặc `error` (destructive nhạt, icon `error`), nút `close` ẩn banner.
@@ -175,6 +179,12 @@ Kiểu dữ liệu dùng chung:
 **Polling:** khi trong trang hiện tại có ít nhất một tài liệu trạng thái `pending` hoặc `processing`, cứ 3000 ms gọi lại danh sách ở chế độ im lặng với truy vấn hiện tại; dừng khi không còn tài liệu đang chạy.
 
 **Làm mới (nút header):** đặt cờ làm mới, gọi song song danh sách (không im lặng) và metadata, xong thì tắt cờ.
+
+**Tác vụ trong menu Xử lý nội dung:** mọi tác vụ đều hỏi `confirm` trước, gọi POST (không body), thành công thì hiện banner ok với `message` server trả về (không có thì dùng câu mặc định), lỗi thì banner lỗi; sau đó tải lại danh sách (im lặng) và số đếm.
+
+- **Chạy lại tất cả tài liệu lỗi:** confirm "Chạy lại {n} tài liệu lỗi hoặc xử lý một phần? Mỗi tài liệu chỉ chạy lại phần bị lỗi." Server lấy mọi tài liệu `error`/`partial` trong phạm vi người dùng được đọc (`source_read_filter`), bỏ qua tài liệu đã có tác vụ trong hàng đợi, tài liệu thiếu tệp/URL, và (với người không phải admin) tài liệu đã vượt `max_auto_recover_attempts`; admin được đặt lại bộ đếm. Mỗi tài liệu chạy lại đúng nhánh lỗi như nút "Chạy lại" ở dòng. Không thăm dò AI trước. Banner nêu số đã xếp hàng và số bị bỏ qua theo lý do.
+- **Tạo vector cho trang còn thiếu:** trang wiki (trừ `_index`, `_log`, `_hot`, nội dung rỗng) thiếu vector trang hoặc vector chunk của mô hình embedding đang dùng → task `reembed_missing_pages_task` chạy nền, mỗi trang commit riêng.
+- **Tạo chunk văn bản gốc còn thiếu:** tài liệu `ready`/`partial` có văn bản nhưng `chunk_status` là `pending`/`error`.
 
 **Backfill (menu Xử lý nội dung):** hỏi `confirm` với chuỗi "Trích xuất lại số hiệu, ngày ban hành, hiệu lực... cho {nhãn}? Việc này chạy nền và có thể dùng LLM." trong đó {nhãn} = "các tài liệu còn thiếu thuộc tính" (only_missing) hoặc "toàn bộ tài liệu". Đồng ý → `POST /api/wiki/legal-docs/backfill?only_missing={true|false}&use_llm=true` (không body). Thành công → banner ok "Đã đưa vào hàng đợi. Thuộc tính văn bản sẽ cập nhật sau ít phút."; lỗi → banner lỗi message hoặc "Không chạy được trích xuất".
 
@@ -741,6 +751,10 @@ Tạo: `POST /api/employees`; sửa: `PUT /api/employees/{id}`. Thành công →
 | POST | `/api/sources/{id}/plan/regenerate` | `{ note }` | Tạo lại kế hoạch |
 | POST | `/api/sources/{id}/approve-extraction` | — | Duyệt dung lượng |
 | POST | `/api/wiki/legal-docs/backfill` | query `only_missing`, `use_llm=true` | Xử lý nội dung |
+| GET | `/api/sources/processing-summary` | — → `{ failed, failed_ai_outage, running, review, chunk_missing, pages_missing_vectors }` | Xử lý nội dung (quyền `org:settings:manage`) |
+| POST | `/api/sources/retry-failed` | query `only_ai_outage` → `{ requeued, skipped_busy, skipped_cap, skipped_other[], message }` | Xử lý nội dung (quyền `org:settings:manage`) |
+| POST | `/api/sources/reembed-missing` | — → `{ job_id, candidates, message }` | Xử lý nội dung (quyền `org:settings:manage`) |
+| POST | `/api/settings/embeddings/backfill-source-chunks` | query `limit?`, `force?` → `{ job_id, candidates, enqueued, message }` | Xử lý nội dung |
 | GET | `/api/wiki/legal-doc-fields` | — → `{ fields }` | Chỉnh sửa tài liệu |
 | GET | `/api/wiki/pages` | `source_id`, `limit=1000` | Ngăn kéo Điều |
 | GET/POST | `/api/knowledge-types` | POST: `{ name, slug?, color, description }` | Kiểu tri thức |
