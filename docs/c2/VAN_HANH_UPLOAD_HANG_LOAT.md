@@ -86,10 +86,10 @@ Test: `tests/test_ai_upstream.py`, `tests/test_source_retry.py`.
 
 ```bash
 # Đưa lại mọi nguồn error/partial vào hàng đợi; --wait: chờ tới khi AI trả lời rồi mới đưa vào
-docker exec -w /app wiki_c2_worker python -m app.services.source_retry --wait --reset-recover
+docker exec -w /app cahy_wiki_worker python -m app.services.source_retry --wait --reset-recover
 
 # Chỉ các nguồn lỗi do AI sập (cron cũng tự làm việc này mỗi 5 phút)
-docker exec -w /app wiki_c2_worker python -m app.services.source_retry --only-ai-outage
+docker exec -w /app cahy_wiki_worker python -m app.services.source_retry --only-ai-outage
 ```
 
 - Script bỏ qua nguồn còn job trong hàng đợi.
@@ -99,7 +99,7 @@ docker exec -w /app wiki_c2_worker python -m app.services.source_retry --only-ai
 Kiểm tra gateway AI có trả lời chưa:
 
 ```bash
-docker exec -w /app wiki_c2_worker python -c "import asyncio; from app.database import async_session_factory as f; from app.services.source_retry import ai_ready
+docker exec -w /app cahy_wiki_worker python -c "import asyncio; from app.database import async_session_factory as f; from app.services.source_retry import ai_ready
 async def m():
     async with f() as s: print(await ai_ready(s, need_ocr=True))
 asyncio.run(m())"
@@ -110,7 +110,7 @@ asyncio.run(m())"
 - Gateway vẫn sập: OCR lỗi 500, LLM và vision bị Cloudflare cắt (524) sau khoảng 100 giây.
 - Breaker của `ocr` và `qwen-3.5-9b` đã mở. Job lỗi do AI kết thúc với `{'status': 'error', 'reason': 'ai_unavailable'}` và không bị arq thử lại. Ví dụ: "Thông tư 154" (4/4 trang scan) báo lỗi rõ ràng, không bị index rỗng.
 - Đợt lỗi đầu tiên của mỗi model vẫn chậm, vì phải đủ 3 lần timeout (mỗi lần khoảng 100–200 giây) thì breaker mới mở.
-- Đang chạy ngầm trong `wiki_c2_worker`: `python -m app.services.source_retry --wait --reset-recover --interval 180`, log ở `/tmp/retry_all.log`. Khi AI trả lời được, script đưa mọi nguồn `error`/`partial` vào hàng đợi lại. Các nguồn còn đang `processing` nếu lỗi do AI thì `resume_ai_unavailable_cron` sẽ tự đưa lại. Script sẽ mất nếu worker restart; khi đó chạy lại lệnh ở trên.
+- Đang chạy ngầm trong `cahy_wiki_worker`: `python -m app.services.source_retry --wait --reset-recover --interval 180`, log ở `/tmp/retry_all.log`. Khi AI trả lời được, script đưa mọi nguồn `error`/`partial` vào hàng đợi lại. Các nguồn còn đang `processing` nếu lỗi do AI thì `resume_ai_unavailable_cron` sẽ tự đưa lại. Script sẽ mất nếu worker restart; khi đó chạy lại lệnh ở trên.
 - Hàng đợi khoảng 87 job, trong đó có khoảng 29 job cron xếp sau các job dài (`WORKER_MAX_JOBS=2`).
 
 ### Lỗi còn lại sau khi gateway hồi phục (tối 2026-10-18)
@@ -183,19 +183,19 @@ Các lệnh chạy từ thư mục `document-wiki-c2`.
 
 ```bash
 # Trạng thái container
-docker ps --format '{{.Names}}\t{{.Status}}' | grep wiki_c2
+docker ps --format '{{.Names}}\t{{.Status}}' | grep cahy_wiki
 
 # Tiến độ hàng đợi (dòng "recording health" in mỗi khoảng 30 giây)
-docker logs --tail 50 wiki_c2_worker 2>&1 | grep -E "recording health| ! | ← "
+docker logs --tail 50 cahy_wiki_worker 2>&1 | grep -E "recording health| ! | ← "
 
 # Thống kê trạng thái nguồn
-docker exec wiki_c2_postgres psql -U arkon -d arkon -c "select status, chunk_status, wiki_status, count(*) from sources group by 1,2,3 order by 4 desc"
+docker exec cahy_wiki_postgres psql -U arkon -d arkon -c "select status, chunk_status, wiki_status, count(*) from sources group by 1,2,3 order by 4 desc"
 
 # DNS và mạng từ bên trong worker
-docker exec wiki_c2_worker python -c "import socket; [print(h, socket.gethostbyname(h)) for h in ['vllm.anm05.com','langfuse.cahy.io.vn','milvus','redis']]"
+docker exec cahy_wiki_worker python -c "import socket; [print(h, socket.gethostbyname(h)) for h in ['vllm.anm05.com','langfuse.cahy.io.vn','milvus','redis']]"
 
 # Worker đã nối được Milvus chưa
-docker exec wiki_c2_worker python -c "from app.services.milvus_service import get_milvus_client as g; c=g(); print(c.list_collections() if c else 'NO MILVUS')"
+docker exec cahy_wiki_worker python -c "from app.services.milvus_service import get_milvus_client as g; c=g(); print(c.list_collections() if c else 'NO MILVUS')"
 ```
 
 Khi log có `Failed to connect to Milvus` lúc khởi động: kiểm tra những nguồn được báo `ready` trong khoảng thời gian đó có vector trong `arkon_source_chunks_1024` không. Nguồn nào thiếu thì đưa lại vào hàng đợi bằng `worker.commit_and_enqueue_chunk_branch(session, source)`, hoặc chạy `backfill_source_chunks_task` với `force=True`.

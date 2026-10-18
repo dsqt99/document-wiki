@@ -1,8 +1,8 @@
-name: document-wiki-c2
+name: cahy-wiki
 
 x-backend: &backend
   # Thẻ ảnh ghim theo phiên bản (không dùng thẻ trôi nổi); đổi BACKEND_IMAGE trong .env khi dựng bản mới
-  image: ${BACKEND_IMAGE:-wiki-c2-backend:0.1.0}
+  image: ${BACKEND_IMAGE:-cahy-wiki-backend:0.1.0}
   env_file: ${APP_ENV_FILE:-.env}
   restart: always
   depends_on:
@@ -20,7 +20,7 @@ x-backend: &backend
 services:
   postgres:
     image: pgvector/pgvector:pg16
-    container_name: wiki_c2_postgres
+    container_name: cahy_wiki_postgres
     restart: always
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-arkon}
@@ -31,7 +31,8 @@ services:
     networks:
       default:
         aliases:
-          - ${POSTGRES_ALIAS:-wiki2_postgres}
+          - ${POSTGRES_ALIAS:-wiki_postgres}
+          - wiki2_postgres
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-arkon} -d ${POSTGRES_DB:-arkon}"]
       interval: 5s
@@ -43,7 +44,7 @@ services:
     # phải xoá volume redis_data trước khi đổi (7.2 không đọc được tệp RDB của 7.4; volume chỉ chứa hàng đợi tạm).
     # Thay thế tương đương: valkey/valkey:8-alpine (BSD-3).
     image: redis:7.2-alpine
-    container_name: wiki_c2_redis
+    container_name: cahy_wiki_redis
     restart: always
     command: ["redis-server", "--save", "60", "1", "--requirepass", "${REDIS_PASSWORD:-arkon_secret}"]
     volumes:
@@ -58,15 +59,15 @@ services:
     # MinIO (AGPL-3.0, dịch vụ độc lập, không sửa mã) ghim theo bản phát hành. Kho Docker Hub minio/minio
     # không còn công khai: ảnh lấy từ gói cài ngoại tuyến / registry nội bộ.
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z
-    container_name: wiki_c2_minio
+    container_name: cahy_wiki_minio
     restart: always
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
       MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin123}
     ports:
-      - "${MINIO_API_PORT:-9102}:9000"
-      - "${MINIO_CONSOLE_PORT:-9103}:9001"
+      - "${MINIO_API_PORT:-9002}:9000"
+      - "${MINIO_CONSOLE_PORT:-9003}:9001"
     volumes:
       - minio_data:/data
     healthcheck:
@@ -77,7 +78,7 @@ services:
 
   etcd:
     image: quay.io/coreos/etcd:v3.5.14
-    container_name: wiki_c2_etcd
+    container_name: cahy_wiki_etcd
     restart: always
     environment:
       ETCD_AUTO_COMPACTION_MODE: revision
@@ -92,7 +93,7 @@ services:
 
   milvus:
     image: milvusdb/milvus:v2.4.15
-    container_name: wiki_c2_milvus
+    container_name: cahy_wiki_milvus
     restart: always
     command: ["milvus", "run", "standalone"]
     environment:
@@ -101,8 +102,8 @@ services:
       MINIO_ACCESS_KEY_ID: ${MINIO_ACCESS_KEY:-minioadmin}
       MINIO_SECRET_ACCESS_KEY: ${MINIO_SECRET_KEY:-minioadmin123}
     ports:
-      - "${MILVUS_PORT_HOST:-19630}:19530"
-      - "${MILVUS_HEALTH_PORT:-9191}:9091"
+      - "${MILVUS_PORT_HOST:-19530}:19530"
+      - "${MILVUS_HEALTH_PORT:-9091}:9091"
     volumes:
       - milvus_data:/var/lib/milvus
     depends_on:
@@ -118,12 +119,12 @@ services:
   milvus_ui:
     # Attu dòng v2.4 tương thích Milvus v2.4.15 (dòng v3 nhắm Milvus mới hơn)
     image: zilliz/attu:v2.4.12
-    container_name: wiki_c2_milvus_ui
+    container_name: cahy_wiki_milvus_ui
     restart: always
     environment:
       MILVUS_URL: milvus:19530
     ports:
-      - "${ATTU_PORT:-9104}:3000"
+      - "${ATTU_PORT:-9004}:3000"
     depends_on:
       - milvus
 
@@ -132,14 +133,14 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: wiki_c2_migrator
+    container_name: cahy_wiki_migrator
     restart: "no"
     entrypoint: []
     command: ["alembic", "upgrade", "head"]
 
   api:
     <<: *backend
-    container_name: wiki_c2_api
+    container_name: cahy_wiki_api
     depends_on:
       postgres:
         condition: service_healthy
@@ -150,7 +151,7 @@ services:
       migrator:
         condition: service_completed_successfully
     ports:
-      - "${API_PORT:-5155}:5055"
+      - "${API_PORT:-5055}:5055"
     command:
       ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "5055", "--proxy-headers", "--forwarded-allow-ips", "*"]
     healthcheck:
@@ -163,11 +164,12 @@ services:
       default:
       cahy-internal:
         aliases:
-          - ${API_NETWORK_ALIAS:-wiki2_api}
+          - ${API_NETWORK_ALIAS:-wiki_api}
+          - wiki2_api
 
   worker:
     <<: *backend
-    container_name: wiki_c2_worker
+    container_name: cahy_wiki_worker
     # Longer than WORKER_SHUTDOWN_WAIT_S so running jobs finish instead of being SIGKILLed.
     stop_grace_period: 330s
     depends_on:
@@ -177,7 +179,7 @@ services:
 
   worker_skills:
     <<: *backend
-    container_name: wiki_c2_worker_skills
+    container_name: cahy_wiki_worker_skills
     # Longer than WORKER_SHUTDOWN_WAIT_S so running jobs finish instead of being SIGKILLed.
     stop_grace_period: 330s
     depends_on:
@@ -192,11 +194,11 @@ services:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5155}
         INTERNAL_API_URL: ${INTERNAL_API_URL:-http://api:5055}
     # Thẻ ảnh ghim theo phiên bản (không dùng thẻ trôi nổi); đổi FRONTEND_IMAGE trong .env khi dựng bản mới
-    image: ${FRONTEND_IMAGE:-wiki-c2-frontend:0.1.0}
-    container_name: wiki_c2_frontend
+    image: ${FRONTEND_IMAGE:-cahy-wiki-frontend:0.1.0}
+    container_name: cahy_wiki_frontend
     restart: always
     ports:
-      - "${FRONTEND_PORT:-3219}:3000"
+      - "${FRONTEND_PORT:-3119}:3000"
     environment:
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:5155}
       - INTERNAL_API_URL=${INTERNAL_API_URL:-http://api:5055}
