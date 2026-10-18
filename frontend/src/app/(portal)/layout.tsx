@@ -2,9 +2,12 @@
 
 import { useEffect, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { clearToken } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { currentPathForHost, postToHost, useIsEmbedded } from "@/lib/embed";
+import { currentPathForHost, postToHost, subscribeHostIdentity, useIsEmbedded } from "@/lib/embed";
 import { Sidebar } from "@/components/layout/sidebar";
+
+const IDENTITY_RESET_KEY = "dw-embed-identity-reset";
 
 export default function PortalLayout({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -21,6 +24,29 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
     if (embedded) router.replace(target);
     else router.push(target);
   }, [loading, user, embedded, router]);
+
+  // Embedded: drop a session left by whoever used this browser before the chatbot user
+  // now signed in, then sign in again through the chatbot. Once per expected user, no loops.
+  useEffect(() => {
+    if (!embedded || loading || !user) return;
+    return subscribeHostIdentity((email) => {
+      const expected = email.trim().toLowerCase();
+      if ((user.email ?? "").trim().toLowerCase() === expected) return;
+      try {
+        if (sessionStorage.getItem(IDENTITY_RESET_KEY) === expected) return;
+        sessionStorage.setItem(IDENTITY_RESET_KEY, expected);
+      } catch {
+        return;
+      }
+      clearToken();
+      try {
+        localStorage.removeItem("arkon_sso");
+      } catch {
+        /* storage unavailable */
+      }
+      window.location.replace(`/login?next=${encodeURIComponent(currentPathForHost())}`);
+    });
+  }, [embedded, loading, user]);
 
   // Embedded: tell the host page we are ready, then report every navigation.
   useEffect(() => {

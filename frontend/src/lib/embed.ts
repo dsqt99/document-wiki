@@ -97,6 +97,22 @@ export function useHostTheme(): HostTheme | null {
   return useSyncExternalStore(subscribeHostTheme, readHostTheme, () => null);
 }
 
+// ── Danh tính người dùng ở trang cha ──────────────────────────────────────
+// Phiên wiki nằm trong localStorage riêng, không mất khi chatbot đăng xuất. Trang cha báo
+// email đang đăng nhập ('cahy-host:identity'); lệch thì phiên wiki là của người trước.
+
+/** Gọi onIdentity(email) mỗi khi trang cha báo người dùng đang đăng nhập. */
+export function subscribeHostIdentity(onIdentity: (email: string) => void): () => void {
+  const onMessage = (event: MessageEvent) => {
+    if (event.source !== window.parent || window.parent === window) return;
+    const data = event.data;
+    if (!data || typeof data !== "object" || data.type !== "cahy-host:identity") return;
+    if (typeof data.email === "string" && data.email) onIdentity(data.email);
+  };
+  window.addEventListener("message", onMessage);
+  return () => window.removeEventListener("message", onMessage);
+}
+
 export function postToHost(message: HostMessage): void {
   if (!isEmbedded()) return;
   // Chỉ gửi trạng thái điều hướng, không chứa bí mật, nên không cần giới hạn origin đích.
