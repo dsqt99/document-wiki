@@ -15,10 +15,11 @@ from app.services.wiki_write_guard import (
     missing_row_identities,
     table_row_identities,
 )
-from app.utils.text import parse_json_loose, strip_code_fence
+from app.config import settings
+from app.utils.text import clip_text, parse_json_loose, strip_code_fence
 
-MAX_PARALLEL_PAGES = 4
-LLM_TIMEOUT_S = 300
+MAX_PARALLEL_PAGES = settings.mrp_write_parallel_pages
+LLM_TIMEOUT_S = settings.mrp_llm_timeout_s
 COMPLEX_EVIDENCE_COUNT = 8
 COMPLEX_EXISTING_CHARS = 3000
 AGENT_MAX_STEPS = 10
@@ -261,6 +262,9 @@ def _evidence_catalog(evidence: list[dict]) -> str:
     return "\n".join(lines)
 
 
+SUMMARY_MAX = 300
+
+
 def make_summary(content_md: str) -> str:
     parts: list[str] = []
     total = 0
@@ -272,7 +276,7 @@ def make_summary(content_md: str) -> str:
         total += len(s)
         if total > 100:
             break
-    return " ".join(parts)[:300]
+    return clip_text(" ".join(parts), SUMMARY_MAX)
 
 
 # ---------------------------------------------------------------------------
@@ -397,7 +401,7 @@ async def write_with_agent(llm, session, item, linkable, existing, source_ctx, e
             args = call.arguments or {}
             if call.name == "finish":
                 content = strip_code_fence(args.get("content_md") or "").strip()
-                return content, (args.get("summary") or make_summary(content))[:300]
+                return content, clip_text(args.get("summary") or make_summary(content), SUMMARY_MAX)
             if call.name == "read_kb_page":
                 page = await wiki_service.get_page_by_slug(
                     session, str(args.get("slug") or ""), scope_type=scope[0], scope_id=scope[1]
@@ -492,6 +496,32 @@ def _claims_from_extracts(chunk_extracts: list, plan_json: dict) -> list[dict]:
     return out
 
 
+VERBATIM_LEGAL_MARKER = "> **Căn cứ pháp lý**"
+
+
+def is_verbatim_legal_page(content_md: Optional[str]) -> bool:
+    return bool(content_md) and content_md.lstrip().startswith(VERBATIM_LEGAL_MARKER)
+
+
+async def _drop_verbatim_targets(items: list[dict], scope) -> list[dict]:
+    """Article pages written by the legal splitter stay verbatim; the LLM never rewrites them."""
+    from app import database
+    from app.services import wiki_service
+
+    kept = []
+    async with database.async_session_factory() as s:
+        for item in items:
+            try:
+                page = await wiki_service.get_page_by_slug(s, item["slug"], scope_type=scope[0], scope_id=scope[1])
+            except Exception:
+                page = None
+            if page is not None and is_verbatim_legal_page(page.content_md):
+                logger.info(f"refine[{item['slug']}]: verbatim legal article, not rewritten")
+                continue
+            kept.append(item)
+    return kept
+
+
 async def run_refine_phase(session, source, plan, chunk_extracts, full_text, llm, embedding_provider,
                            kt_slug, tracker) -> list[PageWriteResult]:
     from app import database
@@ -511,6 +541,8 @@ async def run_refine_phase(session, source, plan, chunk_extracts, full_text, llm
     except Exception:
         scopes = [("global", None)]
     scope = scopes[0] if scopes else ("global", None)
+
+    items = await _drop_verbatim_targets(items, scope)
 
     if tracker is not None:
         await tracker.update(78, f"Writing {len(items)} wiki page(s)...")

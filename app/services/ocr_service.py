@@ -198,6 +198,10 @@ def normalize_ocr_base_url(url: str) -> str:
     return url
 
 
+# Circuit-breaker key for the dedicated OCR endpoint (see app.ai.upstream).
+OCR_UPSTREAM_KEY = "ocr"
+
+
 class OCRService:
     """Service for running dedicated OCR on document page images."""
 
@@ -242,6 +246,7 @@ class OCRService:
                 api_key=key,
                 default_headers={"User-Agent": "curl/8.5.0"},
                 timeout=120.0,
+                max_retries=settings.ai_client_max_retries,
             )
             self._cached_url = url
             self._cached_key = key
@@ -252,6 +257,7 @@ class OCRService:
             api_key=key,
             default_headers={"User-Agent": "curl/8.5.0"},
             timeout=120.0,
+            max_retries=settings.ai_client_max_retries,
         )
 
     def _call_ocr_stream_sync(
@@ -400,6 +406,11 @@ class OCRService:
             "4. Tuyệt đối không thêm lời bình, không tóm tắt hay tự ý suy diễn từ ngữ."
         )
 
+        from app.ai import upstream
+
+        if upstream.is_open(OCR_UPSTREAM_KEY):
+            return None
+
         b64_image = base64.b64encode(image_bytes).decode("utf-8")
         start_time = datetime.now(timezone.utc)
 
@@ -414,6 +425,7 @@ class OCRService:
                 effective_model,
                 with_finish_reason=True,
             )
+            upstream.record_success(OCR_UPSTREAM_KEY)
             # Tolerate mocks / overrides that still return a plain string.
             if isinstance(result, tuple):
                 out_text, finish_reason = result
@@ -450,6 +462,7 @@ class OCRService:
             return cleaned
 
         except Exception as e:
+            upstream.record_failure(OCR_UPSTREAM_KEY, e)
             logger.warning(f"Dedicated OCR failed: {e}")
             try:
                 from app.ai.tracing import record_generation

@@ -110,3 +110,69 @@ def test_part_label_skips_broken_lowercase_heading():
 
     assert _first_heading("## tiện\n\nabc\n\n## Mục 7\n\nxyz") == "Mục 7"
     assert _first_heading("không có tiêu đề") is None
+
+
+def test_to_openai_tools_wraps_neutral_and_keeps_wrapped():
+    from app.ai.agent_protocol import to_openai_tools
+
+    neutral = {"name": "finish", "description": "d", "parameters": {"type": "object", "properties": {}}}
+    wrapped = {"type": "function", "function": {"name": "x", "parameters": {}}}
+    out = to_openai_tools([neutral, wrapped])
+    assert out[0] == {"type": "function", "function": neutral}
+    assert out[1] is wrapped
+
+
+def test_verbatim_legal_page_detection():
+    from app.ai.mrp.writer import is_verbatim_legal_page
+
+    assert is_verbatim_legal_page("> **Căn cứ pháp lý**: Điều 1 — Luật 107/2025/QH15\n\nĐiều 1. ...")
+    assert not is_verbatim_legal_page("# Cung cấp thông tin lý lịch tư pháp")
+    assert not is_verbatim_legal_page(None)
+
+
+@pytest.mark.asyncio
+async def test_relink_tolerates_duplicate_target_units():
+    from app.services.legal_relation_extractor import relink_legal_relations
+
+    rel = MagicMock(target_doc_number="90/VBHN-VPQH", target_article_number="5",
+                    target_clause_number="2", target_unit_id=None)
+    art, clause, dup = MagicMock(id=uuid.uuid4()), MagicMock(id=uuid.uuid4()), MagicMock(id=uuid.uuid4())
+
+    def _res(rows):
+        r = MagicMock()
+        r.scalars.return_value.all.return_value = rows
+        r.scalars.return_value.first.return_value = rows[0] if rows else None
+        r.scalar_one_or_none.side_effect = AssertionError("must tolerate duplicates")
+        return r
+
+    session = MagicMock()
+    session.execute = AsyncMock(side_effect=[_res([rel]), _res([art, dup]), _res([clause, dup])])
+    session.commit = AsyncMock()
+    out = await relink_legal_relations(session)
+    assert out == {"linked_count": 1, "unresolved_count": 0}
+    assert rel.target_unit_id == clause.id
+
+
+@pytest.mark.asyncio
+async def test_vision_calls_share_one_process_limit():
+    import asyncio
+    from app.ai.providers import openai_provider
+
+    openai_provider._vision_slots = None
+    with patch.object(openai_provider, "settings", create=True), \
+         patch("app.config.settings.vision_max_concurrency", 2):
+        sem = openai_provider._vision_semaphore()
+    assert sem is openai_provider._vision_semaphore()
+    peak = cur = 0
+
+    async def _call():
+        nonlocal peak, cur
+        async with openai_provider._vision_semaphore():
+            cur += 1
+            peak = max(peak, cur)
+            await asyncio.sleep(0.01)
+            cur -= 1
+
+    await asyncio.gather(*(_call() for _ in range(8)))
+    assert peak == 2
+    openai_provider._vision_slots = None

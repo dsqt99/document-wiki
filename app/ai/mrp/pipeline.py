@@ -133,6 +133,19 @@ async def run_commit_phase(session, source, page_results, plan, embedding_provid
     src = await session.get(Source, source.id)
     if src is None:
         src = source
+    if failed_slugs and created + updated == 0:
+        # Nothing was written (typically every page call timed out): report an error so the
+        # retry/cron paths pick the source up again, resuming at REFINE.
+        shown = ", ".join(failed_slugs[:SKIPPED_SLUGS_SHOWN])
+        msg = f"All {len(failed_slugs)} page(s) failed to generate: {shown}"
+        src.pipeline_phase = "refine"
+        src.wiki_status = "error"
+        src.wiki_progress = 0
+        src.wiki_progress_message = f"Wiki error: {msg[:200]}"
+        src.wiki_error_message = msg
+        await source_status.update_source_dual_status(session, src)
+        await session.commit()
+        return {"pages_created": 0, "pages_updated": 0, "pages_skipped": failed_slugs, "status": "error"}
     src.pipeline_phase = "commit"
     src.wiki_status = "ready"
     src.wiki_progress = 100

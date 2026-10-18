@@ -76,9 +76,24 @@ class Settings(BaseSettings):
     redis_password: str = ""
     redis_db: int = 0
     worker_max_jobs: int = 3
+    # Process-wide cap on in-flight vision calls (OCR + captions share one upstream server).
+    vision_max_concurrency: int = 2
+    # Per-request limits for the OpenAI-compatible clients; analyze_image already retries 3 times itself.
+    vision_request_timeout_s: int = 120
+    llm_request_timeout_s: int = 480
+    ai_client_max_retries: int = 1
+    # Stream LLM completions: a proxy in front of the model (Cloudflare: 120s read timeout, 524) cuts long
+    # non-streamed answers even though the model is still generating. Turn off for endpoints without SSE.
+    llm_stream: bool = True
     worker_job_timeout: int = 7200
+    # On SIGTERM a worker stops taking jobs and waits this long for running ones; keep below compose stop_grace_period.
+    worker_shutdown_wait_s: int = 300
 
     # Pipeline
+    # MRP LLM budget: one 9B gateway serves every job, so parallelism stays low and each call gets a long timeout.
+    mrp_llm_timeout_s: int = 480
+    mrp_map_parallel_calls: int = 3
+    mrp_write_parallel_pages: int = 2
     mrp_auto_approve_plan: bool = True
     mrp_multipass_writer_enabled: bool = True
     max_upload_size_bytes: int = 52428800

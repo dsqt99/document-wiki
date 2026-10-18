@@ -97,8 +97,10 @@ _MD_EMPH = re.compile(r"\*\*|__|(?<!\w)[*_]|[*_](?!\w)")
 #   "...cấp I, II, III, IV.</mark> **Điều 8. Khổ đường sắt**"
 #   "**BẢO ĐẢM TRẬT TỰ, AN TOÀN GIAO THÔNG ĐƯỜNG SẮT Điều 51. Hoạt động ...**"
 #   "**Điều 39.**<sup>45</sup> **_(được bãi bỏ)_ Điều 40.**<sup>46</sup> ..."
+# Each emphasis token must split one way only: "(?:__?)+" over a form's "________" blanks backtracks
+# exponentially and froze the worker's event loop (Thông tư 79/2024/TT-BCA).
 _GLUED_BOLD_ARTICLE = re.compile(
-    r"(?:(?<=\S)[ \t]+(?=(?:\*\*|__?|<mark>)+Điều\s+\d+[a-z]?\.)"
+    r"(?:(?<=\S)[ \t]+(?=(?:\*\*|_|<mark>)+Điều\s+\d+[a-z]?\.)"
     r"|(?<=[*_>])[ \t]+(?=Điều\s+\d+[a-z]?\.(?![ \t]*(?:\n|$))))"
 )
 _HTML_FOOTNOTE = re.compile(r"<sup>.*?</sup>", re.IGNORECASE)

@@ -12,6 +12,7 @@ from typing import Any, Optional
 from loguru import logger
 from sqlalchemy import select
 
+from app.config import settings
 from app.utils.text import parse_json_loose, slugify, strip_code_fence
 
 AUTO_MERGE_SIM = 0.90
@@ -22,7 +23,7 @@ MAX_PLAN_CONCEPTS = 300
 EMBED_TEXT_MAX = 4000
 ARBITRATE_TIMEOUT_S = 60
 MAYBE_TIMEOUT_S = 30
-PLANNING_TIMEOUT_S = 120
+PLANNING_TIMEOUT_S = settings.mrp_llm_timeout_s
 
 _PUNCT_RE = re.compile(r"[^\w\s]", re.UNICODE)
 _WS_RE = re.compile(r"\s+")

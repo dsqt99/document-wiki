@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.models import KnowledgeType, Source, WikiPage
 from app.services import wiki_service
-from app.utils.text import slugify
+from app.utils.text import clip_text, slugify
 
 # Regex to detect Vietnamese legal articles ("Điều X...").
 # Matches markdown bold (**Điều 1**), headers (### Điều 1), quotes, etc.
@@ -369,6 +369,56 @@ def build_legal_doc_slug(
     return f"{base}-{h}"
 
 
+ARTICLE_SUMMARY_MAX = 400
+ARTICLE_TITLE_MAX = 500  # LegalUnit.title column; long OCR titles exist, the shape rules below decide
+# A full stop after a word ("ký. Quyết định ..."), not after a number ("7 . Đấu giá biển số xe").
+_SENTENCE_BREAK = re.compile(r"[^\d\s]\.\s+[A-ZÀ-Ỹ]")
+# "Quyết định này có hiệu lực ...", "Thông tư này quy định ...": a clause with a predicate, not a title.
+_THIS_DOC_PREDICATE = re.compile(
+    r"\bnày\s+(?:có|được|quy định|áp dụng|thay thế|bãi bỏ|hướng dẫn|sửa đổi)\b", re.IGNORECASE
+)
+
+
+def is_body_sentence(title: Optional[str]) -> bool:
+    """'Điều 2. Quyết định này có hiệu lực ... thay thế:' is an untitled article whose first
+    sentence sits on the heading line. Real titles are noun phrases, sometimes long ones
+    ("Yêu cầu về phòng cháy và chữa cháy khi lập quy hoạch xây dựng ... theo Luật Quy hoạch")."""
+    t = (title or "").strip().strip("*_ ")
+    if not t:
+        return False
+    return (
+        len(t) > ARTICLE_TITLE_MAX
+        or t.endswith(":")
+        or bool(_SENTENCE_BREAK.search(t))
+        or bool(_THIS_DOC_PREDICATE.search(t))
+    )
+
+
+def article_summary(art_num: str, title: Optional[str], lead: Optional[str], content_md: str,
+                    limit: int = ARTICLE_SUMMARY_MAX) -> str:
+    """'Điều N: <tên> — <đoạn đầu>' from the verbatim text, cut at a sentence/word boundary."""
+    from app.services.legal_hierarchy_parser import strip_markup
+
+    head = f"Điều {art_num}" + (f": {title}" if title else "")
+    parts = [lead] if lead else []
+    total = len(lead or "")
+    for line in (content_md or "").splitlines():
+        if total > limit:
+            break
+        raw = line.strip()
+        if not raw or raw.startswith(">"):
+            continue
+        s = strip_markup(raw)
+        if not s or re.match(r"(?i)^điều\s+\d", s):
+            continue
+        s = re.sub(r"^[-+•–]\s*", "", s)
+        if s:
+            parts.append(s)
+            total += len(s)
+    body = " ".join(parts)
+    return clip_text(f"{head} — {body}" if body else head, limit)
+
+
 def split_legal_text_by_articles(
     full_text: str,
     doc_title: str = "",
@@ -386,7 +436,8 @@ def split_legal_text_by_articles(
             - 'articles': list of dicts with:
                 - 'num': article number (e.g. '1', '18a')
                 - 'heading': full header line (e.g. 'Điều 1. Phạm vi điều chỉnh')
-                - 'title': extracted title string
+                - 'title': extracted title string, None when the heading line holds body text
+                - 'lead': that body text (the first sentence on the heading line), else None
                 - 'content_md': verbatim article text
                 - 'slug': unique page slug
                 - 'part_num': optional part number (Phần)
@@ -419,14 +470,15 @@ def split_legal_text_by_articles(
     for art in all_articles:
         art_num = art.number
         raw_heading = f"Điều {art.number}. {art.title}" if art.title else f"Điều {art.number}"
-        art_title = art.title
+        lead = art.title if is_body_sentence(art.title) else None
+        art_title = None if lead else art.title
         art_content = art.content
 
-        # Build unique slug for this article (dieu-X-doc-slug)
+        # Build unique slug for this article (dieu-X-doc-slug); the raw heading text keeps slugs stable.
         base_slug = f"dieu-{art_num.lower()}-{doc_slug}"
         art_slug = base_slug
         if art_slug in seen_slugs:
-            title_part = slugify(art_title)[:30].rstrip("-")
+            title_part = slugify(art.title)[:30].rstrip("-")
             if title_part and f"{base_slug}-{title_part}" not in seen_slugs:
                 art_slug = f"{base_slug}-{title_part}"
             else:
@@ -440,6 +492,7 @@ def split_legal_text_by_articles(
             "num": art_num,
             "heading": raw_heading,
             "title": art_title,
+            "lead": lead,
             "content_md": art_content,
             "slug": art_slug,
             "chapter_num": art.chapter_num,
@@ -482,7 +535,7 @@ async def is_legal_source(session: AsyncSession, source: Source) -> bool:
 
 
 async def finalize_legal_source(
-    session: AsyncSession, source: Source, tracker: Any, final: bool = True
+    session: AsyncSession, source: Source, tracker: Any, final: bool = True, refresh_metadata: bool = True
 ) -> dict:
     """Legal path: parse document by articles into WikiPages and compute vector embeddings.
 
@@ -518,14 +571,20 @@ async def finalize_legal_source(
     meta = parse_legal_metadata(full_text, source.file_name or "")
     display_doc_name = meta.get("canonical_name") or doc_title
 
-    if _is_auto_title(source, display_doc_name):
+    if refresh_metadata and _is_auto_title(source, display_doc_name):
         source.title = display_doc_name
         source.metadata_ = {**(source.metadata_ or {}), "auto_title": display_doc_name}
     await session.commit()
 
     # Build unique, deterministic slug for this document
     doc_number = meta.get("doc_number")
-    doc_slug = build_legal_doc_slug(doc_title, doc_number=doc_number, source_id=source.id)
+    from app.services.doc_metadata_service import get_doc_meta, store_document_metadata
+    if refresh_metadata:
+        doc_slug = build_legal_doc_slug(doc_title, doc_number=doc_number, source_id=source.id)
+    else:
+        # Keep the slug the law UI already shows (same fallback as the legal-docs router): a slug built
+        # from doc_number would collide with other files of the same decision (e.g. its appendix).
+        doc_slug = (get_doc_meta(source) or {}).get("doc_slug") or f"doc-{source.id.hex[:8]}"
 
     # Extract articles
     parsed = split_legal_text_by_articles(full_text, doc_title, doc_slug=doc_slug)
@@ -533,12 +592,13 @@ async def finalize_legal_source(
     articles = parsed["articles"]
 
     # Persist document metadata (thông tin văn bản) for the legal wiki UI.
-    from app.services.doc_metadata_service import store_document_metadata
-    await tracker.update(58, "Đang trích xuất thông tin văn bản (số hiệu, hiệu lực, lĩnh vực)...")
-    await store_document_metadata(
-        session, source, regex_meta=meta, article_count=len(articles), doc_slug=doc_slug,
-    )
-    await session.commit()
+    if refresh_metadata:
+        await tracker.update(58, "Đang trích xuất thông tin văn bản (số hiệu, hiệu lực, lĩnh vực)...")
+        await store_document_metadata(
+            session, source, use_llm=refresh_metadata, regex_meta=meta, article_count=len(articles),
+            doc_slug=doc_slug,
+        )
+        await session.commit()
 
     wiki_scopes = await wiki_service.resolve_wiki_scopes(session, source)
 
@@ -552,10 +612,20 @@ async def finalize_legal_source(
     pages_to_index: list[WikiPage] = []
     total_articles = len(articles)
 
+    async def _human_edited(slug: str, scope_type, scope_id) -> Optional[WikiPage]:
+        """A page someone corrected by hand (e.g. OCR fixes) is kept instead of being re-split."""
+        page = await wiki_service.get_page_by_slug(session, slug, scope_type=scope_type, scope_id=scope_id)
+        if page is not None and await wiki_service.human_edited_page_ids(session, [page.id]):
+            logger.info(f"finalize_legal_source: keeping hand-edited page {slug}")
+            return page
+        return None
+
     # 1. Create/update Overview WikiPage (Preamble & Table of Contents)
     toc_lines = []
     for art in articles:
-        label = f"Điều {art['num']}" + (f": {art['title']}" if art['title'] else "")
+        label = f"Điều {art['num']}" + (
+            f": {art['title']}" if art['title'] else (f" — {clip_text(art['lead'], 100)}" if art.get("lead") else "")
+        )
         toc_lines.append(f"- [[{art['slug']}|{label}]]")
     toc_md = "\n".join(toc_lines)
 
@@ -584,11 +654,11 @@ async def finalize_legal_source(
 
     overview_summary = (
         meta.get("official_title")
-        or (preamble[:280].replace("\n", " ").strip() if preamble else f"Tổng quan văn bản quy phạm pháp luật {display_doc_name}")
+        or (clip_text(preamble, 280) if preamble else f"Tổng quan văn bản quy phạm pháp luật {display_doc_name}")
     )
 
     for scope_type, scope_id in wiki_scopes:
-        overview_page = await wiki_service.upsert_page(
+        overview_page = await _human_edited(doc_slug, scope_type, scope_id) or await wiki_service.upsert_page(
             session,
             slug=doc_slug,
             title=f"{display_doc_name} - Tổng quan & Căn cứ ban hành",
@@ -607,7 +677,6 @@ async def finalize_legal_source(
         # 2. Create/update each Điều as a separate WikiPage (Verbatim content with citation)
         for idx, art in enumerate(articles):
             art_slug = art["slug"]
-            heading = art["heading"]
             art_num = art["num"]
             art_title = art["title"]
             verbatim_content = art["content_md"]
@@ -615,7 +684,7 @@ async def finalize_legal_source(
             page_title = (
                 f"Điều {art_num}: {art_title} - {display_doc_name}"
                 if art_title
-                else f"{heading} - {display_doc_name}"
+                else f"Điều {art_num} - {display_doc_name}"
             )
 
             citation_lines = [
@@ -628,17 +697,9 @@ async def finalize_legal_source(
 
             page_content = f"{citation_header}\n\n{verbatim_content}\n"
 
-            first_para = ""
-            for line in verbatim_content.splitlines():
-                line_s = line.strip()
-                if line_s and not line_s.lower().startswith("điều ") and not line_s.startswith(("#", "*", ">")):
-                    first_para = line_s
-                    break
-            page_summary = f"Điều {art_num}" + (f": {art_title}" if art_title else "")
-            if first_para:
-                page_summary += f" — {first_para[:180]}"
+            page_summary = article_summary(art_num, art_title, art.get("lead"), verbatim_content)
 
-            art_page = await wiki_service.upsert_page(
+            art_page = await _human_edited(art_slug, scope_type, scope_id) or await wiki_service.upsert_page(
                 session,
                 slug=art_slug,
                 title=page_title,
@@ -672,8 +733,12 @@ async def finalize_legal_source(
         # Persist now: the embedding phase below is slow and may be cancelled by the job timeout.
         await session.commit()
     except Exception as e:
+        source_id = source.id if "id" in source.__dict__ else None
         await session.rollback()
-        logger.warning(f"Failed to ingest legal graph for source {source.id}: {e}")
+        # Rollback expires every loaded object; reload them asynchronously before reuse.
+        for obj in [source, *pages_to_index]:
+            await session.refresh(obj)
+        logger.warning(f"Failed to ingest legal graph for source {source_id}: {e}")
 
     # 3. Compute vector embeddings (Page-level and Chunk-level)
     total_pages = len(pages_to_index)
@@ -946,6 +1011,6 @@ def format_legal_validity_warning_callout(warnings: list[dict[str, Any]]) -> str
 
         lines.append(f"> - {msg}")
         if w.get("quote_context"):
-            lines.append(f">   *Trích dẫn*: \"{w['quote_context'][:150]}...\"")
+            lines.append(f">   *Trích dẫn*: \"{clip_text(w['quote_context'], 300)}\"")
 
     return "\n".join(lines)

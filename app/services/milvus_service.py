@@ -9,6 +9,7 @@ Provides high-performance vector storage and similarity search for:
 
 from __future__ import annotations
 
+import time
 import uuid
 from typing import Any, Optional
 
@@ -18,14 +19,20 @@ from app.config import settings
 
 _milvus_client: Optional[Any] = None
 _milvus_initialized: bool = False
+# A failed connect is retried after this many seconds instead of disabling Milvus for the process lifetime.
+_MILVUS_RETRY_S = 30
+_milvus_retry_at: float = 0.0
 
 
 def get_milvus_client() -> Optional[Any]:
     """Get or initialize the MilvusClient singleton."""
-    global _milvus_client, _milvus_initialized
+    global _milvus_client, _milvus_initialized, _milvus_retry_at
 
     if not settings.milvus_enabled:
         return None
+
+    if _milvus_client is None and _milvus_initialized and time.monotonic() >= _milvus_retry_at:
+        _milvus_initialized = False
 
     if not _milvus_initialized:
         _milvus_initialized = True
@@ -44,8 +51,9 @@ def get_milvus_client() -> Optional[Any]:
             )
             logger.info(f"Milvus client connected successfully to {uri}")
         except Exception as e:
-            logger.warning(f"Failed to connect to Milvus at {uri}: {e}")
+            logger.warning(f"Failed to connect to Milvus at {uri}, retrying in {_MILVUS_RETRY_S}s: {e}")
             _milvus_client = None
+            _milvus_retry_at = time.monotonic() + _MILVUS_RETRY_S
 
     return _milvus_client
 

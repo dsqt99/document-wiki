@@ -30,10 +30,11 @@ def _mock_db(source):
     return db
 
 
-async def _call_retry(source, branch=None):
+async def _call_retry(source, branch=None, uncaptioned=False):
     db = _mock_db(source)
     with patch("app.routers.sources.get_arq_pool") as mock_get_pool, \
          patch("app.routers.sources._to_response"), \
+         patch("app.services.source_retry.has_uncaptioned_images", AsyncMock(return_value=uncaptioned)), \
          patch("app.services.source_status.update_source_dual_status", AsyncMock()), \
          patch("app.worker.commit_and_enqueue_chunk_branch", AsyncMock()) as chunk_enq:
         pool = AsyncMock()
@@ -98,3 +99,12 @@ async def test_retry_all_starts_fresh_attempt():
     pool, _ = await _call_retry(src, branch="all")
     assert src.attempt_id != old_attempt
     pool.enqueue_job.assert_called_once_with("ingest_file_task", str(src.id), str(src.attempt_id))
+
+
+@pytest.mark.asyncio
+async def test_retry_wiki_with_uncaptioned_images_resumes_captioning():
+    """A caption run stopped by an AI outage resumes at captioning, not MAP."""
+    src = _mock_source(status="partial", chunk_status="ready", wiki_status="error")
+    pool, chunk_enq = await _call_retry(src, uncaptioned=True)
+    chunk_enq.assert_not_awaited()
+    pool.enqueue_job.assert_called_once_with("caption_images_task", str(src.id), str(src.wiki_attempt_id))

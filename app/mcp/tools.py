@@ -26,6 +26,7 @@ from sqlalchemy.orm import aliased, contains_eager, selectinload
 from app.mcp import permissions_compat
 from app.mcp.logging import current_identity, logged_tool
 from app.services import security_label
+from app.utils.text import clip_text
 
 logger = logging.getLogger(__name__)
 
@@ -519,7 +520,7 @@ def _relation_line(rel, other: str, arrow: str) -> str:
         line += " (không còn hiệu lực)"
     quote = (getattr(rel, "quote_context", None) or "").strip()
     if quote:
-        line += f" — “{quote[:300]}”"
+        line += f" — “{clip_text(quote, 500)}”"
     return line
 
 

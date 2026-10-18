@@ -14,6 +14,10 @@ RUN mkdir -p app && touch app/__init__.py \
     && pip install --no-cache-dir . \
     && rm -rf app build *.egg-info
 
+# Bake the tiktoken dictionary into the image; otherwise every container start downloads it and ingest fails on any DNS hiccup.
+ENV TIKTOKEN_CACHE_DIR=/opt/tiktoken
+RUN python -c "import tiktoken; tiktoken.get_encoding('cl100k_base')"
+
 COPY app/ ./app/
 COPY alembic/ ./alembic/
 COPY alembic.ini ./

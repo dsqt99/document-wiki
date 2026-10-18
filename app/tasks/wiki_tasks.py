@@ -168,6 +168,8 @@ async def ingest_map_reduce_task(ctx, source_id, attempt_id_str=None, **_ignored
                 except BaseException:  # noqa: BLE001
                     pass
                 await _fail("ingest_map_reduce_task", exc, sid, attempt_id_str)
+                if w._is_ai_outage(exc):
+                    return {"status": "error", "reason": "ai_unavailable"}
                 raise
     finally:
         _flush()
@@ -215,6 +217,8 @@ async def ingest_refine_task(ctx, source_id, attempt_id_str=None):
                 except BaseException:  # noqa: BLE001
                     pass
                 await _fail("ingest_refine_task", exc, sid, attempt_id_str)
+                if w._is_ai_outage(exc):
+                    return {"status": "error", "reason": "ai_unavailable"}
                 raise
     finally:
         _flush()

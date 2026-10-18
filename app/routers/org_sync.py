@@ -493,6 +493,42 @@ async def org_sync(request: Request, db: AsyncSession = Depends(get_db)):
     return result
 
 
+async def _skill_sync_items(skills) -> list[dict]:
+    """Mỗi kỹ năng thành một mục cho chatbot: content là thân SKILL.md (đã bỏ frontmatter), description lấy từ frontmatter.
+
+    Kỹ năng chưa có nội dung, thiếu SKILL.md hoặc kho lưu trữ lỗi thì bỏ qua (ghi log) để một kỹ năng hỏng
+    không làm mất cả danh sách. Chatbot chỉ nhận mục có cả slug và content.
+    """
+    from app.routers.skills import _read_skill_md, frontmatter_description, split_frontmatter
+
+    items = []
+    for skill in skills:
+        if not skill.storage_path:
+            logger.warning(f"Skill sync: bỏ qua {skill.slug} (chưa có nội dung)")
+            continue
+        try:
+            _, text, _ = await _read_skill_md(skill)
+        except Exception as e:
+            logger.warning(f"Skill sync: bỏ qua {skill.slug} ({type(e).__name__})")
+            continue
+        lines, content = split_frontmatter(text)
+        if not content:
+            logger.warning(f"Skill sync: bỏ qua {skill.slug} (không có SKILL.md)")
+            continue
+        items.append(
+            {
+                "slug": skill.slug,
+                "name": skill.name,
+                "description": frontmatter_description(lines),
+                "content": content,
+                "is_system": bool(skill.is_system),
+                "version": skill.current_version,
+                "updated_at": skill.updated_at.isoformat() if skill.updated_at else None,
+            }
+        )
+    return items
+
+
 @router.post("/internal/skill-sync")
 async def skill_sync(request: Request, db: AsyncSession = Depends(get_db)):
     """Danh sách kỹ năng phạm vi toàn hệ thống (kèm SKILL.md) để Trợ lý ảo AI nạp vào menu kỹ năng của chat.
@@ -501,7 +537,6 @@ async def skill_sync(request: Request, db: AsyncSession = Depends(get_db)):
     không đưa sang vì bên chatbot mọi người đều đọc được.
     """
     from app.database.models import Skill
-    from app.routers.skills import _read_skill_files, _split_skill_md
 
     auth = request.headers.get("authorization", "")
     if not auth.lower().startswith("bearer "):
@@ -516,25 +551,4 @@ async def skill_sync(request: Request, db: AsyncSession = Depends(get_db)):
             select(Skill).where(Skill.status == "active", Skill.scope_type == "global").order_by(Skill.name)
         )
     ).scalars().all()
-    items = []
-    for skill in rows:
-        try:
-            _, text = await _read_skill_files(skill, only_skill_md=True)
-        except Exception as e:
-            logger.warning(f"Skill sync: bỏ qua {skill.slug} ({type(e).__name__})")
-            continue
-        description, content = _split_skill_md(text)
-        if not content:
-            continue
-        items.append(
-            {
-                "slug": skill.slug,
-                "name": skill.name,
-                "description": description,
-                "content": content,
-                "is_system": skill.is_system,
-                "version": skill.current_version,
-                "updated_at": skill.updated_at.isoformat() if skill.updated_at else None,
-            }
-        )
-    return {"items": items}
+    return {"items": await _skill_sync_items(rows)}

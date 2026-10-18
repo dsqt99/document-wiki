@@ -22,6 +22,7 @@ from sqlalchemy.orm import configure_mappers, selectinload
 from app.database.models import LegalRelation, LegalRelationType, LegalUnit, WikiPage
 from app.services.legal_route_service import route_exact_legal_query
 from app.services.reranker_service import RerankerService
+from app.utils.text import clip_text
 
 
 async def expand_graph_neighbors(
@@ -171,7 +172,7 @@ def format_graph_neighbors_section(neighbors: list[dict[str, Any]]) -> str:
         else:
             lines.append(f"- Văn bản này tác động đến **{doc}{art_ref}** ({rel_label}){title}")
         if n.get("quote_context"):
-            lines.append(f"  *Trích yếu*: \"{n['quote_context'][:180]}...\"")
+            lines.append(f"  *Trích yếu*: \"{clip_text(n['quote_context'], 300)}\"")
 
     return "\n".join(lines)
 

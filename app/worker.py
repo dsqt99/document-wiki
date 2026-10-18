@@ -138,6 +138,12 @@ def _error_text(exc: BaseException) -> str:
     return kind if message == kind else f"{kind}: {message}"
 
 
+def _is_ai_outage(exc: BaseException) -> bool:
+    from app.ai import upstream
+
+    return isinstance(exc, upstream.UpstreamUnavailable) or upstream.AI_UNAVAILABLE_MARKER in str(exc)
+
+
 def _job_id(job):
     return getattr(job, "job_id", None) if job is not None else None
 
@@ -577,17 +583,23 @@ async def ingest_file_task(ctx, source_id, attempt_id_str=None):
 
                 t0 = time.perf_counter()
                 images = await asyncio.to_thread(image_service.extract_images, data, file_name, str(sid))
+                from sqlalchemy import select
+
+                # A retry re-extracts the same images: reuse their rows (and ids, which pages may link to).
+                existing = {
+                    r.image_index: r
+                    for r in (await session.execute(select(SourceImage).where(SourceImage.source_id == sid))).scalars()
+                }
                 for img in images:
-                    row = SourceImage(
-                        source_id=sid,
-                        minio_key=img.minio_key,
-                        page_number=img.page_number,
-                        image_index=img.image_index,
-                        caption=img.caption,
-                        content_type=img.content_type,
-                        size_bytes=img.size_bytes,
-                    )
-                    session.add(row)
+                    row = existing.get(img.image_index)
+                    if row is None:
+                        row = SourceImage(source_id=sid, image_index=img.image_index)
+                        session.add(row)
+                    row.minio_key = img.minio_key
+                    row.page_number = img.page_number
+                    row.caption = img.caption
+                    row.content_type = img.content_type
+                    row.size_bytes = img.size_bytes
                     await session.flush()
                     img.image_id = str(row.id)
                 kb_service._inline_image_markers(pages, images)
@@ -608,6 +620,9 @@ async def ingest_file_task(ctx, source_id, attempt_id_str=None):
             sid, exc, "ingest_file_task", attempt_id_str,
             {"file_name": file_name} if file_name else None, _error_text(exc),
         )
+        if _is_ai_outage(exc):
+            # Retrying now would fail the same way and burn arq tries; resume_ai_unavailable_cron re-queues it.
+            return {"status": "error", "reason": "ai_unavailable"}
         raise
     finally:
         _flush_langfuse()
@@ -668,6 +683,9 @@ async def ingest_url_task(ctx, source_id, attempt_id_str=None):
             sid, exc, "ingest_url_task", attempt_id_str,
             {"url": url} if url else None, (str(exc) or type(exc).__name__)[:500],
         )
+        if _is_ai_outage(exc):
+            # Retrying now would fail the same way and burn arq tries; resume_ai_unavailable_cron re-queues it.
+            return {"status": "error", "reason": "ai_unavailable"}
         raise
     finally:
         _flush_langfuse()
@@ -750,12 +768,24 @@ async def caption_images_task(ctx, source_id, attempt_id_str=None):
                     await _chain()
                     return None
 
-                sem = asyncio.Semaphore(CAPTION_CONCURRENCY)
+                from app.ai import upstream
+
+                # More slots than the process-wide vision semaphore only makes captions time out while queued.
+                sem = asyncio.Semaphore(max(1, min(CAPTION_CONCURRENCY, int(settings.vision_max_concurrency))))
+                outage: list = []
 
                 async def _guarded(row):
+                    if (row.caption or "").strip():
+                        # Captioned by an earlier, interrupted run.
+                        return row, row.caption.strip()
                     async with sem:
+                        if outage:
+                            return row, None
                         try:
                             return await _caption_one(vision, row)
+                        except upstream.UpstreamUnavailable as e:
+                            outage.append(e)
+                            return row, None
                         except Exception as e:  # noqa: BLE001
                             logger.warning("Captioning image %s of %s failed: %s", row.id, sid, e)
                             return row, None
@@ -794,6 +824,12 @@ async def caption_images_task(ctx, source_id, attempt_id_str=None):
                 except Exception as e:  # noqa: BLE001
                     logger.warning("Indexing image captions for %s failed: %s", sid, e)
 
+                if outage:
+                    # MAP would fail the same way; retry resumes here and keeps the captions already saved.
+                    state["chained"] = True
+                    missing = sum(1 for _, c in results if not c)
+                    await w.mark_wiki_error(sid, f"{outage[0]} ({missing}/{len(rows)} ảnh chưa có mô tả)")
+                    return {"status": "error", "reason": "ai_unavailable", "captioned": len(captions)}
                 await _chain()
                 return {"status": "ok", "captioned": len(captions), "images": len(rows)}
     except BaseException:
@@ -883,6 +919,23 @@ async def detach_source_wiki_task(ctx, source_id, old_scopes):
 # ---------------------------------------------------------------------------
 
 
+async def _source_ids_with_pending_jobs(redis) -> set[uuid.UUID]:
+    """Source ids referenced by any job still in the arq queue; arq keeps a running job there until it finishes."""
+    busy: set[uuid.UUID] = set()
+    for job in await redis.queued_jobs():
+        if job is None:
+            continue
+        for value in (*(job.args or ()), *(job.kwargs or {}).values()):
+            if isinstance(value, uuid.UUID):
+                busy.add(value)
+            elif isinstance(value, str):
+                try:
+                    busy.add(uuid.UUID(value))
+                except ValueError:
+                    pass
+    return busy
+
+
 async def sweep_stuck_processing_cron(ctx):
     import app.database as _db
     from sqlalchemy import or_, select
@@ -895,6 +948,12 @@ async def sweep_stuck_processing_cron(ctx):
     minutes = threshold_s // 60
     cap = int(settings.max_auto_recover_attempts)
     cutoff = datetime.now(timezone.utc) - timedelta(seconds=threshold_s)
+    # A long queue (bulk upload) leaves sources idle for hours between stages; those are waiting, not stuck.
+    try:
+        busy = await _source_ids_with_pending_jobs(ctx["redis"])
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"sweep_stuck_processing_cron skipped: could not read the job queue: {e}")
+        return 0
     swept = 0
     async with _db.async_session_factory() as session:
         rows = (
@@ -906,6 +965,8 @@ async def sweep_stuck_processing_cron(ctx):
             )
         ).scalars().all()
         for source in rows:
+            if source.id in busy:
+                continue
             n = int(source.auto_recover_count or 0) + 1
             source.auto_recover_count = n
             if n >= cap:
@@ -953,6 +1014,25 @@ async def sweep_stuck_processing_cron(ctx):
     if swept:
         logger.warning("sweep_stuck_processing_cron marked %d stuck source(s) as failed", swept)
     return swept
+
+
+async def resume_ai_unavailable_cron(ctx):
+    """Re-queue sources that failed because the AI gateway was down, once a probe request succeeds."""
+    from app.services import source_retry
+
+    try:
+        busy = await _source_ids_with_pending_jobs(ctx["redis"])
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"resume_ai_unavailable_cron skipped: could not read the job queue: {e}")
+        return 0
+    res = await source_retry.retry_failed_sources(
+        lambda task, *a: ctx["redis"].enqueue_job(task, *a), busy, only_ai_outage=True,
+    )
+    if res["requeued"]:
+        logger.info("resume_ai_unavailable_cron re-queued %d source(s)", len(res["requeued"]))
+    elif res["probe"] not in (None, "ok"):
+        logger.info("resume_ai_unavailable_cron: AI gateway still down (%s)", res["probe"])
+    return len(res["requeued"])
 
 
 async def cleanup_orphan_awaiting_approval_cron(ctx):
@@ -1003,6 +1083,18 @@ async def backfill_source_chunks_task(ctx, *args, **kwargs):
     from app.tasks import retrieval_tasks
 
     return await retrieval_tasks.backfill_source_chunks_task(ctx, *args, **kwargs)
+
+
+async def reembed_missing_pages_task(ctx, limit: int = 2000) -> dict:
+    """Index wiki pages that lack page or chunk vectors for the active embedding model."""
+    import app.database as _db
+    from app.services import processing_ops
+
+    async with _db.async_session_factory() as db:
+        ids = await processing_ops.missing_vector_page_ids(db, limit=limit)
+    out = await processing_ops.reembed_pages(ids)
+    logger.info(f"reembed_missing_pages_task: {out['done']}/{len(ids)} pages, failed={out['failed'][:5]}")
+    return {"candidates": len(ids), **out}
 
 
 async def generate_questions_task(ctx, *args, **kwargs):
@@ -1088,6 +1180,7 @@ class WorkerSettings:
         ingest_url_task,
         ingest_source_chunks_task,
         backfill_source_chunks_task,
+        reembed_missing_pages_task,
         _caption_function(),
         ingest_map_reduce_task,
         ingest_refine_task,
@@ -1105,6 +1198,7 @@ class WorkerSettings:
     on_shutdown = on_shutdown
     max_jobs = settings.worker_max_jobs
     job_timeout = settings.worker_job_timeout
+    job_completion_wait = settings.worker_shutdown_wait_s
     max_tries = 3
     retry_delay = 10
     health_check_interval = 30
@@ -1113,6 +1207,7 @@ class WorkerSettings:
         cron(sweep_stuck_ai_review_cron, minute={0, 10, 20, 30, 40, 50}),
         cron(sweep_stuck_processing_cron, minute={5, 15, 25, 35, 45, 55}),
         cron(cleanup_orphan_awaiting_approval_cron, minute={15}),
+        cron(resume_ai_unavailable_cron, minute={2, 7, 12, 17, 22, 27, 32, 37, 42, 47, 52, 57}),
     ]
 
 
@@ -1124,6 +1219,7 @@ class SkillWorkerSettings:
     on_shutdown = on_shutdown
     max_jobs = settings.worker_max_jobs
     job_timeout = settings.worker_job_timeout
+    job_completion_wait = settings.worker_shutdown_wait_s
     max_tries = 3
     retry_delay = 10
     health_check_interval = 30

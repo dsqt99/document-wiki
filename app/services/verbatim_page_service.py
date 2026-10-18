@@ -11,7 +11,7 @@ from loguru import logger
 
 from app.config import settings
 from app.services import wiki_service
-from app.utils.text import slugify
+from app.utils.text import clip_text, slugify
 
 _BLOCK_SPLIT = re.compile(r"\n[ \t]*\n")
 _HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*#*\s*$")
@@ -89,7 +89,7 @@ def _summary(md: str, fallback: str) -> str:
     for line in md.splitlines():
         s = line.strip()
         if s and not s.startswith(("#", "!", "|", ">", "<")) and len(s) > 20:
-            return s.strip("*_ ")[:280]
+            return clip_text(s.strip("*_ "), 280)
     return fallback
 
 

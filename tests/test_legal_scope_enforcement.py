@@ -26,6 +26,7 @@ async def test_legal_service_respects_department_scope():
     # resolve_wiki_scopes returns department scope
     with patch("app.services.wiki_service.resolve_wiki_scopes", new_callable=AsyncMock) as mock_resolve, \
          patch("app.services.wiki_service.upsert_page", new_callable=AsyncMock) as mock_upsert, \
+         patch("app.services.wiki_service.get_page_by_slug", new_callable=AsyncMock, return_value=None), \
          patch("app.services.wiki_service.regenerate_index", new_callable=AsyncMock) as mock_regen, \
          patch("app.services.wiki_service.append_log", new_callable=AsyncMock) as mock_log, \
          patch("app.services.page_indexing.ProviderRegistry") as mock_registry_cls:
@@ -83,6 +84,7 @@ async def test_legal_finalize_stops_embedding_after_consecutive_failures():
 
     with patch("app.services.wiki_service.resolve_wiki_scopes", new_callable=AsyncMock, return_value=[("global", None)]), \
          patch("app.services.wiki_service.upsert_page", new_callable=AsyncMock) as mock_upsert, \
+         patch("app.services.wiki_service.get_page_by_slug", new_callable=AsyncMock, return_value=None), \
          patch("app.services.wiki_service.regenerate_index", new_callable=AsyncMock), \
          patch("app.services.wiki_service.append_log", new_callable=AsyncMock), \
          patch("app.services.legal_service.ingest_legal_graph", side_effect=_graph), \

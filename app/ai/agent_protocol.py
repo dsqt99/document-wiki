@@ -122,6 +122,21 @@ def neutral_to_gemini_contents(messages: list[dict]) -> list:
 _EMPTY_OBJECT_SCHEMA = {"type": "object", "properties": {}}
 
 
+def to_openai_tools(tools: list[dict]) -> list:
+    """Accept neutral {name, description, parameters} or already-wrapped tools."""
+    out = []
+    for t in tools or []:
+        if t.get("type") == "function" and "function" in t:
+            out.append(t)
+            continue
+        out.append({"type": "function", "function": {
+            "name": t["name"],
+            "description": t.get("description", ""),
+            "parameters": t.get("parameters") or dict(_EMPTY_OBJECT_SCHEMA),
+        }})
+    return out
+
+
 def openai_tools_to_anthropic(tools: list[dict]) -> list:
     out = []
     for t in tools or []:

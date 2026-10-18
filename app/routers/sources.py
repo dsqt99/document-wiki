@@ -70,7 +70,6 @@ DEPT_ERROR = "You can only assign documents to your own departments"
 RETRYABLE = ("error", "partial", "plan_ready")
 READ_CHUNK = 64 * 1024
 LIBREOFFICE_EXTS = ("doc", "ppt", "rtf")
-REFINE_PHASES = ("refine", "verify", "commit")
 PLAN_PRIVATE_KEYS = ("_claims", "_entities", "_concepts", "_page_drafts")
 
 MEDIA_TYPES = {
@@ -541,6 +540,74 @@ async def list_sources(
         "page_size": page_size,
         "total_pages": max(1, math.ceil(total / page_size)),
     }
+
+
+# ---------------------------------------------------------------------------
+# Bulk manual processing ("Xử lý nội dung" menu)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/sources/processing-summary")
+async def processing_summary(
+    db: AsyncSession = Depends(get_db),
+    user: Employee = require_permission("org:settings:manage"),
+):
+    from app.services import processing_ops
+
+    _, clause = source_read_filter(user)
+    return await processing_ops.summary(db, clause)
+
+
+@router.post("/sources/retry-failed")
+async def retry_failed(
+    only_ai_outage: bool = Query(False),
+    db: AsyncSession = Depends(get_db),
+    user: Employee = require_permission("org:settings:manage"),
+):
+    """Re-queue every failed (error/partial) source the user can read that is not already queued."""
+    from app import worker
+    from app.services import source_retry
+
+    _, clause = source_read_filter(user)
+    pool = await _maybe_await(_self().get_arq_pool())
+    busy = await worker._source_ids_with_pending_jobs(pool)
+    res = await source_retry.retry_failed_sources(
+        _enqueue, busy, only_ai_outage=only_ai_outage, reset_recover=_is_admin(user), where=clause, probe=False,
+    )
+    n = len(res["requeued"])
+    await log_audit(db, user, "retry_failed_sources", "source", "*", reason=f"requeued={n} ai_only={only_ai_outage}")
+    await db.commit()
+    parts = [f"Đã xếp hàng chạy lại {n} tài liệu lỗi."]
+    if res["skipped_busy"]:
+        parts.append(f"{res['skipped_busy']} tài liệu đang có tác vụ trong hàng đợi.")
+    if res["skipped_cap"]:
+        parts.append(f"{res['skipped_cap']} tài liệu đã vượt số lần tự chạy lại, cần quản trị hệ thống chạy lại.")
+    if res["skipped_other"]:
+        parts.append(f"{len(res['skipped_other'])} tài liệu không chạy lại được (thiếu tệp hoặc nội dung).")
+    return {
+        "requeued": n,
+        "skipped_busy": res["skipped_busy"],
+        "skipped_cap": res["skipped_cap"],
+        "skipped_other": [{"id": sid, "reason": why} for sid, why in res["skipped_other"]],
+        "message": " ".join(parts),
+    }
+
+
+@router.post("/sources/reembed-missing")
+async def reembed_missing(
+    db: AsyncSession = Depends(get_db),
+    user: Employee = require_permission("org:settings:manage"),
+):
+    """Queue vector indexing for wiki pages that lack page or chunk vectors for the active model."""
+    from app.services import processing_ops
+
+    ids = await processing_ops.missing_vector_page_ids(db)
+    if not ids:
+        return {"job_id": None, "candidates": 0, "message": "Tất cả trang tri thức đã có vector tìm kiếm."}
+    await log_audit(db, user, "reembed_missing_pages", "wiki_page", "*", reason=f"candidates={len(ids)}")
+    await db.commit()
+    job_id = _job_id_of(await _enqueue("reembed_missing_pages_task"))
+    return {"job_id": job_id, "candidates": len(ids), "message": f"Đã xếp hàng tạo vector cho {len(ids)} trang tri thức."}
 
 
 async def _source_for_read(db, user, source_id) -> Source:
@@ -1104,27 +1171,12 @@ async def update_source(
 
 
 def _pick_branch(source, branch: Optional[str]) -> str:
-    has_text = bool((source.full_text or "").strip())
-    chunk_status = source.chunk_status or "pending"
-    wiki_status = source.wiki_status or "pending"
-    chunk_failed = chunk_status == "error"
-    wiki_failed = wiki_status == "error" or source.status == "plan_ready"
-    legacy = chunk_status == "pending" and wiki_status == "pending"
+    from app.services import source_retry
 
-    if not branch:
-        if not has_text or legacy or not (chunk_failed or wiki_failed):
-            branch = "all"
-        elif chunk_failed and wiki_failed:
-            branch = "both"
-        elif chunk_failed:
-            branch = "chunk"
-        else:
-            branch = "wiki"
-    if branch in ("chunk", "wiki", "both") and not has_text:
-        raise HTTPException(400, "Source has no extracted text; retry with branch=all")
-    if branch in ("wiki", "both") and source.preserve_verbatim:
-        branch = "chunk"
-    return branch
+    try:
+        return source_retry.pick_branch(source, branch)
+    except source_retry.NotRetryable as e:
+        raise HTTPException(400, str(e)) from e
 
 
 @router.post("/sources/{source_id}/retry", response_model=SourceResponse)
@@ -1153,41 +1205,10 @@ async def retry_source(
     elif not source.minio_key:
         raise HTTPException(400, "Source file not found in storage")
 
-    chosen = _pick_branch(source, branch)
-    source.error_message = None
-    job_id = None
+    _pick_branch(source, branch)
+    from app.services import source_retry
 
-    if chosen == "all":
-        source.attempt_id = uuid.uuid4()
-        source.status = "pending"
-        source.progress = 0
-        source.progress_message = "Queued for retry..."
-        await db.flush()
-        task = "ingest_url_task" if source.source_type == "url" else "ingest_file_task"
-        await db.commit()
-        job_id = _job_id_of(await _enqueue(task, str(source.id), str(source.attempt_id)))
-    else:
-        if chosen in ("chunk", "both"):
-            from app import worker
-
-            attempt = str(source.attempt_id) if source.attempt_id else None
-            job_id = await worker.commit_and_enqueue_chunk_branch(db, source, attempt)
-        if chosen in ("wiki", "both"):
-            from app.services import source_status
-
-            task = "ingest_refine_task" if source.pipeline_phase in REFINE_PHASES else "ingest_map_reduce_task"
-            source.wiki_status = "queued"
-            source.wiki_progress = 0
-            source.wiki_progress_message = "Queued for retry..."
-            source.wiki_error_message = None
-            wiki_attempt = source_status.start_wiki_attempt(source)
-            await source_status.update_source_dual_status(db, source)
-            await db.commit()
-            job_id = _job_id_of(await _enqueue(task, str(source.id), wiki_attempt)) or job_id
-
-    if isinstance(job_id, str) and job_id:
-        source.job_id = job_id
-    await db.commit()
+    await source_retry.requeue_source(db, source, _enqueue, branch)
     source = await _reload(db, source.id)
     return _self()._to_response(source)
 

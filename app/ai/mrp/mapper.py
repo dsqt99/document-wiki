@@ -10,12 +10,14 @@ from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from app.ai import upstream
+from app.config import settings
 from app.utils.text import parse_json_loose, strip_code_fence
 
 CHUNK_TARGET_CHARS = 20_000
 OVERLAP_CHARS = 1_000
-MAX_PARALLEL_CALLS = 6
-LLM_TIMEOUT_S = 300
+MAX_PARALLEL_CALLS = settings.mrp_map_parallel_calls
+LLM_TIMEOUT_S = settings.mrp_llm_timeout_s
 SINGLE_PASS_MAX = 30_000
 STANDARD_MAX = 200_000
 TAIL_MIN_CHARS = 100
@@ -232,6 +234,7 @@ async def run_map_phase(session, source_id, full_text: str, outline_json, tracke
     sem = asyncio.Semaphore(MAX_PARALLEL_CALLS)
     lock = asyncio.Lock()
     results: dict[int, tuple[str, Optional[dict], Optional[str]]] = {}
+    outage: list[upstream.UpstreamUnavailable] = []
 
     async def _run(chunk: DocumentChunk) -> None:
         nonlocal completed
@@ -240,6 +243,8 @@ async def run_map_phase(session, source_id, full_text: str, outline_json, tracke
                 data = await extract_chunk(llm, chunk, source_title)
                 results[chunk.index] = ("done", data, None)
             except Exception as e:
+                if isinstance(e, upstream.UpstreamUnavailable):
+                    outage.append(e)
                 results[chunk.index] = ("error", None, f"{type(e).__name__}: {e}")
         async with lock:
             completed += 1
@@ -254,7 +259,7 @@ async def run_map_phase(session, source_id, full_text: str, outline_json, tracke
 
     # Retry failed chunks once, sequentially.
     for chunk in todo:
-        if results.get(chunk.index, ("error",))[0] != "error":
+        if outage or results.get(chunk.index, ("error",))[0] != "error":
             continue
         try:
             data = await extract_chunk(llm, chunk, source_title)
@@ -267,6 +272,9 @@ async def run_map_phase(session, source_id, full_text: str, outline_json, tracke
         status, data, err = results[chunk.index]
         await _upsert_row(session, source_id, chunk, status, data, err)
     await session.commit()
+    if outage:
+        # Done chunks are saved above, so the resumed run only extracts the rest.
+        raise outage[0]
 
     rows = (await session.execute(
         select(SourceChunkExtract)

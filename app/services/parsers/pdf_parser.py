@@ -572,9 +572,13 @@ class PDFParser(BaseParser):
                         f"PDFParser: render page {idx+1} failed for '{file_name}': {render_err}"
                     )
 
+            from app.ai import upstream
+            from app.services.ocr_service import OCR_UPSTREAM_KEY
+
             sem = asyncio.Semaphore(5)
             progress_lock = asyncio.Lock()
             completed = 0
+            outage: List[upstream.UpstreamUnavailable] = []
             prompt_to_use = ocr_prompt or self.DEFAULT_OCR_PROMPT
 
             async def _run_ocr_one(idx: int, img_bytes: bytes) -> None:
@@ -606,13 +610,15 @@ class PDFParser(BaseParser):
                         if refined:
                             ocr_res = refined
 
-                    if (not ocr_res or not ocr_res.strip()) and has_vision:
+                    if (not ocr_res or not ocr_res.strip()) and has_vision and not outage:
                         try:
                             ocr_res = await vision_provider.analyze_image(
                                 img_bytes,
                                 mime_type="image/jpeg",
                                 prompt=prompt_to_use,
                             )
+                        except upstream.UpstreamUnavailable as e:
+                            outage.append(e)
                         except Exception as e:
                             logger.warning(
                                 f"PDFParser: Vision OCR fallback failed on page {idx+1}: {e}"
@@ -648,6 +654,15 @@ class PDFParser(BaseParser):
                 *[_run_ocr_one(idx, img_b) for idx, img_b in page_images],
                 return_exceptions=True,
             )
+
+            # Indexing a scanned PDF without its OCR text yields an empty document that looks "ready";
+            # fail it instead so it is retried once the AI gateway answers again.
+            missing = [i for i, _ in page_images if i not in ocr_successful_pages]
+            if missing and (outage or (not has_vision and upstream.is_open(OCR_UPSTREAM_KEY))):
+                key = outage[0].key if outage else OCR_UPSTREAM_KEY
+                raise upstream.UpstreamUnavailable(
+                    key, f"{len(missing)}/{total_ocr} trang scan của '{file_name}' chưa OCR được"
+                )
 
         # Step 4: Post-processing pipeline:
         # A. Strip recurring headers and footers

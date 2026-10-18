@@ -23,6 +23,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.models import LegalRelation, LegalRelationType, LegalUnit, LegalUnitType
+from app.utils.text import clip_around, clip_text
 
 
 @dataclass
@@ -132,7 +133,7 @@ class LegalRelationExtractor:
                         relation_type=LegalRelationType.SUA_DOI,
                         target_doc_number=target_doc,
                         target_article_number=art_num,
-                        quote_context=line_str[:250],
+                        quote_context=clip_around(line_str, m.start(), m.end()),
                     )
                 )
 
@@ -149,7 +150,7 @@ class LegalRelationExtractor:
                             relation_type=LegalRelationType.BO_SUNG,
                             target_doc_number=target_doc,
                             target_article_number=art_num,
-                            quote_context=line_str[:250],
+                            quote_context=clip_around(line_str, m.start(), m.end()),
                         )
                     )
 
@@ -168,7 +169,7 @@ class LegalRelationExtractor:
                         target_doc_number=target_doc,
                         target_article_number=art_num,
                         target_clause_number=clause_num,
-                        quote_context=line_str[:250],
+                        quote_context=clip_around(line_str, m.start(), m.end()),
                     )
                 )
 
@@ -193,7 +194,7 @@ class LegalRelationExtractor:
                                 target_doc_number=target_doc,
                                 target_article_number=art_num,
                                 target_clause_number=clause_num,
-                                quote_context=line_str[:250],
+                                quote_context=clip_around(line_str, m.start(), m.end()),
                             )
                         )
 
@@ -216,11 +217,13 @@ class LegalRelationExtractor:
         out: List[ExtractedRelation] = []
         seen: set[tuple[LegalRelationType, str]] = set()
 
-        def add(rel_type: LegalRelationType, doc: str) -> None:
+        def add(rel_type: LegalRelationType, doc: str, start: int, end: int) -> None:
             if doc == own or (rel_type, doc) in seen:
                 return
             seen.add((rel_type, doc))
-            out.append(ExtractedRelation(relation_type=rel_type, target_doc_number=doc, quote_context=line[:250]))
+            out.append(ExtractedRelation(
+                relation_type=rel_type, target_doc_number=doc, quote_context=clip_around(line, start, end),
+            ))
 
         for pattern, rel_type in ((RE_DOC_REPLACE, LegalRelationType.THAY_THE), (RE_DOC_REPEAL, LegalRelationType.BAI_BO)):
             m = pattern.search(line)
@@ -228,13 +231,15 @@ class LegalRelationExtractor:
                 tail = line[m.end():m.end() + 160]
                 docs = find_doc_numbers(tail)
                 if docs:
-                    add(rel_type, docs[0])
+                    at = tail.upper().find(docs[0])
+                    add(rel_type, docs[0], m.start(), m.end() + (at + len(docs[0]) if at >= 0 else len(tail)))
 
         m = RE_DOC_EXPIRE.search(line)
         if m:
             docs = find_doc_numbers(line[:m.start()])
             if docs:
-                add(LegalRelationType.BAI_BO, docs[-1])
+                at = line[:m.start()].upper().rfind(docs[-1])
+                add(LegalRelationType.BAI_BO, docs[-1], at if at >= 0 else m.start(), m.end())
         return out
 
     def extract_preamble_basis(self, preamble_text: str) -> List[ExtractedRelation]:
@@ -258,7 +263,7 @@ class LegalRelationExtractor:
                     ExtractedRelation(
                         relation_type=LegalRelationType.CAN_CU,
                         target_doc_number=dn,
-                        quote_context=line_s[:250],
+                        quote_context=clip_text(line_s, 500),
                     )
                 )
 
@@ -302,7 +307,7 @@ async def relink_legal_relations(
             LegalUnit.unit_number.ilike(target_art),
         )
         unit_res = await session.execute(target_unit_query)
-        target_unit = unit_res.scalar_one_or_none()
+        target_unit = unit_res.scalars().first()
 
         if target_unit:
             # If target clause is specified, see if child clause unit exists
@@ -313,7 +318,7 @@ async def relink_legal_relations(
                     LegalUnit.unit_number == rel.target_clause_number,
                 )
                 clause_res = await session.execute(clause_query)
-                clause_unit = clause_res.scalar_one_or_none()
+                clause_unit = clause_res.scalars().first()
                 if clause_unit:
                     target_unit = clause_unit
 

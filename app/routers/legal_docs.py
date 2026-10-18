@@ -162,6 +162,38 @@ async def _find_source(db, key: str) -> Optional[Source]:
     return src
 
 
+VERBATIM_ARTICLE_MARKER = "> **Căn cứ pháp lý**"
+PREAMBLE_HEADING = "## Căn cứ ban hành & Phần mở đầu"
+TOC_HEADING = "\n## Danh mục các Điều"
+
+
+def _article_body(page, edited: bool) -> Optional[str]:
+    """Article text kept on its wiki page (citation blockquote stripped), so OCR fixes show in "Toàn văn"."""
+    content = (getattr(page, "content_md", None) or "").replace("\r\n", "\n").strip()
+    if content.startswith(VERBATIM_ARTICLE_MARKER):
+        lines = content.split("\n")
+        i = 0
+        while i < len(lines) and lines[i].startswith(">"):
+            i += 1
+        return "\n".join(lines[i:]).strip()
+    return content if edited and content else None
+
+
+def _overview_preamble(page) -> Optional[str]:
+    content = (getattr(page, "content_md", None) or "").replace("\r\n", "\n")
+    start = content.find(PREAMBLE_HEADING)
+    if start < 0:
+        return None
+    body = content[start + len(PREAMBLE_HEADING):]
+    end = body.find(TOC_HEADING)
+    return (body[:end] if end >= 0 else body).strip()
+
+
+class _NoProgress:
+    async def update(self, progress: int, message: str) -> None:
+        return None
+
+
 def _text_type():
     from sqlalchemy import Text
 
@@ -216,17 +248,22 @@ async def get_legal_doc(key: str, db: AsyncSession = Depends(get_db), user: Empl
     except Exception as e:  # noqa: BLE001
         logger.warning("Could not split legal text for %s: %s", source.id, e)
         parsed = {"preamble": "", "articles": []}
+    edited_ids = await wiki_service.human_edited_page_ids(db, [p.id for p in by_slug.values()])
     articles = []
     for a in parsed.get("articles") or []:
         slug = a.get("slug")
+        page = by_slug.get(slug) if slug else None
+        edited = page is not None and page.id in edited_ids
+        body = _article_body(page, edited) if page is not None else None
         articles.append({
             "num": a.get("num"),
             "heading": a.get("heading"),
             "title": a.get("title"),
-            "content_md": a.get("content_md"),
+            "content_md": body if body is not None else a.get("content_md"),
             "chapter_num": a.get("chapter_num"),
             "chapter_title": a.get("chapter_title"),
-            "wiki_slug": slug if slug and slug in by_slug else None,
+            "wiki_slug": slug if page is not None else None,
+            "edited": edited,
         })
 
     try:
@@ -236,6 +273,9 @@ async def get_legal_doc(key: str, db: AsyncSession = Depends(get_db), user: Empl
         relations = {"outgoing": [], "incoming": []}
 
     overview = by_slug.get(doc_slug)
+    preamble = _overview_preamble(overview) if overview is not None else None
+    if preamble is None:
+        preamble = parsed.get("preamble") or ""
     summary_page = next((p for p in by_slug.values() if wiki_service._page_type_of(p) == "summary"), None)
     summary = (
         (summary_page.summary if summary_page is not None and summary_page.summary else None)
@@ -255,7 +295,8 @@ async def get_legal_doc(key: str, db: AsyncSession = Depends(get_db), user: Empl
 
     contributor = getattr(source, "contributor", None)
     item.update({
-        "preamble": parsed.get("preamble") or "",
+        "preamble": preamble,
+        "preamble_edited": overview is not None and overview.id in edited_ids,
         "articles": articles,
         "relations": relations,
         "wiki_pages": wiki_pages,
@@ -269,3 +310,40 @@ async def get_legal_doc(key: str, db: AsyncSession = Depends(get_db), user: Empl
         "contributed_by_name": getattr(contributor, "name", None) if contributor is not None else None,
     })
     return item
+
+
+@router.post("/wiki/legal-docs/{key}/pages")
+async def create_legal_doc_pages(
+    key: str, db: AsyncSession = Depends(get_db), user: Employee = Depends(get_current_user)
+):
+    """Split the document into an overview page and one verbatim page per Điều so each can be corrected
+    by hand (OCR fixes). Pages someone already edited are kept; the wiki status is left unchanged."""
+    from app.routers.wiki import _has_wiki_write_all
+    from app.services import permission_engine
+    from app.utils.progress import WIKI_ACTIVE
+
+    if not _has_wiki_write_all(user):
+        raise HTTPException(403, "Requires wiki:write:all permission")
+    source = await _find_source(db, key)
+    if source is None:
+        raise HTTPException(404, "Document not found")
+    if not await permission_engine.can_access_document(db, user, source, "read"):
+        raise HTTPException(403, "Access denied")
+    if (source.wiki_status or "pending") in WIKI_ACTIVE:
+        raise HTTPException(409, "Văn bản đang được xử lý, thử lại sau khi xử lý xong")
+    if not (source.full_text or "").strip():
+        raise HTTPException(400, "Văn bản chưa có nội dung trích xuất")
+
+    result = await legal_service.finalize_legal_source(
+        db, source, _NoProgress(), final=False, refresh_metadata=False
+    )
+    await log_audit(db, user, "create", "wiki_page", source.id, reason="legal doc pages for manual correction")
+    await db.commit()
+    doc_slug = _doc_slug(source, _meta(source))
+    parsed = legal_service.split_legal_text_by_articles(source.full_text or "", source.title or "", doc_slug)
+    return {
+        "doc_slug": doc_slug,
+        "overview_slug": doc_slug,
+        "article_slugs": [a.get("slug") for a in parsed.get("articles") or []],
+        "articles": result.get("articles", 0),
+    }

@@ -882,6 +882,22 @@ async def reject_draft(session, draft: WikiPageDraft, reviewer_id, reviewer_note
     return draft
 
 
+HUMAN_REVISION_TYPES = ("editor_edit", "rollback", "draft_approved")
+
+
+async def human_edited_page_ids(session, page_ids) -> set:
+    """Pages whose content a person has changed (direct edit, rollback or approved draft)."""
+    ids = [i for i in page_ids if i is not None]
+    if not ids:
+        return set()
+    rows = await session.execute(
+        select(WikiPageRevision.page_id).where(
+            WikiPageRevision.page_id.in_(ids), WikiPageRevision.change_type.in_(HUMAN_REVISION_TYPES)
+        ).distinct()
+    )
+    return set(rows.scalars().all())
+
+
 async def direct_edit_page(session, page: WikiPage, editor_id, content_md: str,
                            change_note: Optional[str] = None) -> WikiPage:
     page.content_md = content_md

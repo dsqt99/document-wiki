@@ -168,6 +168,8 @@ services:
   worker:
     <<: *backend
     container_name: wiki_c2_worker
+    # Longer than WORKER_SHUTDOWN_WAIT_S so running jobs finish instead of being SIGKILLed.
+    stop_grace_period: 330s
     depends_on:
       api:
         condition: service_healthy
@@ -176,6 +178,8 @@ services:
   worker_skills:
     <<: *backend
     container_name: wiki_c2_worker_skills
+    # Longer than WORKER_SHUTDOWN_WAIT_S so running jobs finish instead of being SIGKILLed.
+    stop_grace_period: 330s
     depends_on:
       api:
         condition: service_healthy
