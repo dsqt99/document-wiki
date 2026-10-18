@@ -150,7 +150,7 @@ export function Sidebar() {
           <div className="flex flex-col items-center gap-1.5">
             <UserMenu triggerClassName="rounded-lg p-1 outline-none hover:bg-sidebar-accent">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/logo.png" alt="Document Wiki" className="size-[26px] rounded-md" />
+              <img src="/logo.png?v=3" alt="Document Wiki" className="size-[26px] rounded-md" />
             </UserMenu>
             <Tooltip>
               <TooltipTrigger
@@ -176,7 +176,7 @@ export function Sidebar() {
         <div className="mt-2 flex items-center gap-1 border-b border-sidebar-border px-2.5 pt-1.5 pb-2.5">
           <UserMenu triggerClassName="flex h-[42px] min-w-0 flex-1 items-center gap-2.5 rounded-[10px] pl-2 text-left outline-none hover:bg-sidebar-accent">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo.png" alt="Document Wiki" className="size-[26px] shrink-0 rounded-md" />
+            <img src="/logo.png?v=3" alt="Document Wiki" className="size-[26px] shrink-0 rounded-md" />
             <span className="min-w-0">
               <span className="block text-sm font-bold whitespace-nowrap text-foreground">Document Wiki</span>
               <span className="block truncate text-[11px] text-muted-foreground">

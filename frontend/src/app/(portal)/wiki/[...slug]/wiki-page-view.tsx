@@ -45,6 +45,8 @@ type Props = {
   scopeSuffix: string;
   navigate: (slug: string) => void;
   goTo: (href: string) => void;
+  /** Open the editor once the page has loaded (`?edit=1`, e.g. from the law "Toàn văn" tab). */
+  autoEdit?: boolean;
 };
 
 type Ref = { id: string; data: SourceDetail };
@@ -91,7 +93,7 @@ function sourcePseudoPage(id: string, s: SourceDetail): WikiPageDetail {
 
 const escapeLinkText = (s: string) => s.replace(/[[\]]/g, (c) => `\\${c}`);
 
-export function WikiPageView({ slug, scopeType, scopeId, scopeSuffix, navigate, goTo }: Props) {
+export function WikiPageView({ slug, scopeType, scopeId, scopeSuffix, navigate, goTo, autoEdit = false }: Props) {
   const { user, hasPermission } = useAuth();
   const embedded = useIsEmbedded();
   const { treeCollapsed, infoCollapsed, setTreeCollapsed, setInfoCollapsed } = useWikiStore();
@@ -341,6 +343,12 @@ export function WikiPageView({ slug, scopeType, scopeId, scopeSuffix, navigate, 
   // ---------------------------------------------------------------- edit mode
   const [editState, setEditState] = useState<EditState | null>(null);
   const editing = editState && editState.key === cacheKey ? editState : null;
+  // Opened once per page, from the freshly fetched copy (not the cache) so the edit bases on the latest version.
+  const [autoEditedKey, setAutoEditedKey] = useState<string | null>(null);
+  if (autoEdit && canEdit && !sourceMode && autoEditedKey !== cacheKey && pageState.key === cacheKey && pageState.page) {
+    setAutoEditedKey(cacheKey);
+    setEditState({ key: cacheKey, kind: "page" });
+  }
 
   const savePage = async (content: string, note: string) => {
     if (!page) return;

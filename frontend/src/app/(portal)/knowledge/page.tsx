@@ -22,7 +22,9 @@ import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -32,6 +34,15 @@ import { cn } from "@/lib/utils";
 
 type Tab = "documents" | "types";
 type Notice = { tone: "ok" | "error"; text: string };
+/** Counts from GET /api/sources/processing-summary, scoped to what the user may read. */
+type ProcessingSummary = {
+  failed: number;
+  failed_ai_outage: number;
+  running: number;
+  review: number;
+  chunk_missing: number;
+  pages_missing_vectors: number;
+};
 
 const POLL_MS = 3000;
 
@@ -54,6 +65,38 @@ function Icon({ name, size = 16, className }: { name: string; size?: number; cla
     <span className={cn("material-symbols-outlined", className)} style={{ fontSize: size }}>
       {name}
     </span>
+  );
+}
+
+/** One menu row; an action whose count is known to be 0 is disabled (views stay clickable). */
+function MenuAction({
+  icon,
+  label,
+  count,
+  onClick,
+  view = false,
+}: {
+  icon: string;
+  label: string;
+  count?: number;
+  onClick: () => void;
+  view?: boolean;
+}) {
+  return (
+    <DropdownMenuItem onClick={onClick} disabled={!view && count === 0}>
+      <Icon name={icon} />
+      <span className="flex-1">{label}</span>
+      {count !== undefined && (
+        <span
+          className={cn(
+            "ml-3 rounded-full px-1.5 text-[11px] tabular-nums",
+            count > 0 ? "bg-muted text-foreground" : "text-muted-foreground"
+          )}
+        >
+          {count}
+        </span>
+      )}
+    </DropdownMenuItem>
   );
 }
 
@@ -162,18 +205,69 @@ export default function KnowledgePage() {
     void Promise.all([loadList(query, false), loadMeta()]).finally(() => setRefreshing(false));
   };
 
-  const backfill = async (onlyMissing: boolean) => {
-    const label = onlyMissing ? "các tài liệu còn thiếu thuộc tính" : "toàn bộ tài liệu";
-    if (!confirm(`Trích xuất lại số hiệu, ngày ban hành, hiệu lực... cho ${label}? Việc này chạy nền và có thể dùng LLM.`)) {
-      return;
-    }
+  const [summary, setSummary] = useState<ProcessingSummary | null>(null);
+  const loadSummary = useCallback(() => {
+    if (!canManage) return;
+    api<ProcessingSummary>("/api/sources/processing-summary")
+      .then(setSummary)
+      .catch(() => setSummary(null));
+  }, [canManage]);
+
+  // Menu counts follow the list: refreshed when a list response lands or polling stops.
+  useEffect(() => {
+    if (answeredKey !== null) loadSummary();
+  }, [answeredKey, total, hasRunning, loadSummary]);
+
+  /** Confirm, POST, show the server's message, then refresh the list and the counts. */
+  const runAction = async (question: string, path: string, okText: string, failText: string) => {
+    if (!confirm(question)) return;
     try {
-      await api(`/api/wiki/legal-docs/backfill?only_missing=${onlyMissing}&use_llm=true`, { method: "POST" });
-      setNotice({ tone: "ok", text: "Đã đưa vào hàng đợi. Thuộc tính văn bản sẽ cập nhật sau ít phút." });
+      const res = await api<{ message?: string }>(path, { method: "POST" });
+      setNotice({ tone: "ok", text: res?.message || okText });
     } catch (err) {
-      setNotice({ tone: "error", text: errorText(err, "Không chạy được trích xuất") });
+      setNotice({ tone: "error", text: errorText(err, failText) });
     }
+    void loadList(query, true);
+    loadSummary();
   };
+
+  const retryFailed = (onlyAiOutage: boolean) =>
+    runAction(
+      onlyAiOutage
+        ? `Chạy lại ${summary?.failed_ai_outage ?? ""} tài liệu lỗi do dịch vụ AI gián đoạn?`
+        : `Chạy lại ${summary?.failed ?? ""} tài liệu lỗi hoặc xử lý một phần? Mỗi tài liệu chỉ chạy lại phần bị lỗi.`,
+      `/api/sources/retry-failed?only_ai_outage=${onlyAiOutage}`,
+      "Đã xếp hàng chạy lại tài liệu lỗi.",
+      "Không chạy lại được tài liệu lỗi"
+    );
+
+  const backfill = (onlyMissing: boolean) =>
+    runAction(
+      `Trích xuất lại số hiệu, ngày ban hành, hiệu lực... cho ${
+        onlyMissing ? "các tài liệu còn thiếu thuộc tính" : "toàn bộ tài liệu"
+      }? Việc này chạy nền và có thể dùng LLM.`,
+      `/api/wiki/legal-docs/backfill?only_missing=${onlyMissing}&use_llm=true`,
+      "Đã đưa vào hàng đợi. Thuộc tính văn bản sẽ cập nhật sau ít phút.",
+      "Không chạy được trích xuất"
+    );
+
+  const reembedMissing = () =>
+    runAction(
+      `Tạo vector tìm kiếm cho ${summary?.pages_missing_vectors ?? ""} trang tri thức đang thiếu?`,
+      "/api/sources/reembed-missing",
+      "Đã xếp hàng tạo vector.",
+      "Không tạo được vector"
+    );
+
+  const backfillChunks = () =>
+    runAction(
+      `Tạo chunk văn bản gốc cho ${summary?.chunk_missing ?? ""} tài liệu còn thiếu?`,
+      "/api/settings/embeddings/backfill-source-chunks",
+      "Đã xếp hàng tạo chunk văn bản gốc.",
+      "Không tạo được chunk văn bản gốc"
+    );
+
+  const showGroup = (status: SourceQuery["status"]) => onQueryChange({ status, page: 1 });
 
   const tabs: { id: Tab; label: string; icon: string; count: number }[] = [
     { id: "documents", label: "Tài liệu", icon: "description", count: total },
@@ -233,30 +327,70 @@ export default function KnowledgePage() {
         </div>
 
         {tab === "documents" && canManage && (
-          <DropdownMenu>
+          <DropdownMenu onOpenChange={(open) => open && loadSummary()}>
             <DropdownMenuTrigger className="inline-flex h-8 items-center gap-1.5 rounded-[10px] border bg-background px-3 text-xs font-medium hover:bg-secondary">
               <Icon name="auto_fix_high" />
               Xử lý nội dung
+              {!!summary?.failed && (
+                <span className="rounded-full bg-destructive/10 px-1.5 text-[11px] text-destructive tabular-nums">
+                  {summary.failed} lỗi
+                </span>
+              )}
               <Icon name="expand_more" />
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="min-w-64">
-              <DropdownMenuItem onClick={() => void backfill(true)}>
-                <Icon name="data_info_alert" />
-                Trích xuất thuộc tính còn thiếu
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => void backfill(false)}>
-                <Icon name="restart_alt" />
-                Trích xuất lại toàn bộ thuộc tính
-              </DropdownMenuItem>
+            <DropdownMenuContent align="end" className="min-w-72">
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>Chạy lại</DropdownMenuLabel>
+                <MenuAction
+                  icon="replay"
+                  label="Chạy lại tất cả tài liệu lỗi"
+                  count={summary?.failed}
+                  onClick={() => void retryFailed(false)}
+                />
+                {!!summary?.failed_ai_outage && summary.failed_ai_outage < summary.failed && (
+                  <MenuAction
+                    icon="cloud_off"
+                    label="Chỉ chạy lại lỗi do AI gián đoạn"
+                    count={summary.failed_ai_outage}
+                    onClick={() => void retryFailed(true)}
+                  />
+                )}
+              </DropdownMenuGroup>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => onQueryChange({ status: "failed", page: 1 })}>
-                <Icon name="error" />
-                Xem tài liệu lỗi
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onQueryChange({ status: "review", page: 1 })}>
-                <Icon name="fact_check" />
-                Xem tài liệu chờ duyệt
-              </DropdownMenuItem>
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>Thuộc tính văn bản</DropdownMenuLabel>
+                <MenuAction icon="data_info_alert" label="Trích xuất thuộc tính còn thiếu" onClick={() => void backfill(true)} />
+                <MenuAction icon="restart_alt" label="Trích xuất lại toàn bộ thuộc tính" onClick={() => void backfill(false)} />
+              </DropdownMenuGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>Chỉ mục tìm kiếm</DropdownMenuLabel>
+                <MenuAction
+                  icon="hub"
+                  label="Tạo vector cho trang còn thiếu"
+                  count={summary?.pages_missing_vectors}
+                  onClick={() => void reembedMissing()}
+                />
+                <MenuAction
+                  icon="segment"
+                  label="Tạo chunk văn bản gốc còn thiếu"
+                  count={summary?.chunk_missing}
+                  onClick={() => void backfillChunks()}
+                />
+              </DropdownMenuGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>Xem nhanh</DropdownMenuLabel>
+                <MenuAction icon="error" label="Tài liệu lỗi" count={summary?.failed} onClick={() => showGroup("failed")} view />
+                <MenuAction
+                  icon="progress_activity"
+                  label="Đang xử lý"
+                  count={summary?.running}
+                  onClick={() => showGroup("running")}
+                  view
+                />
+                <MenuAction icon="fact_check" label="Chờ duyệt" count={summary?.review} onClick={() => showGroup("review")} view />
+              </DropdownMenuGroup>
             </DropdownMenuContent>
           </DropdownMenu>
         )}

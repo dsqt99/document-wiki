@@ -49,6 +49,7 @@ export type LegalArticle = {
   chapter_num: string | null;
   chapter_title: string | null;
   wiki_slug: string | null;
+  edited?: boolean; // trang wiki của điều đã được sửa tay (vd. sửa lỗi OCR)
 };
 
 export type LegalDocRelation = {
@@ -62,6 +63,7 @@ export type LegalDocRelation = {
 
 export type LegalDocDetail = LegalDoc & {
   preamble: string;
+  preamble_edited?: boolean;
   articles: LegalArticle[];
   relations: { outgoing: LegalDocRelation[]; incoming: LegalDocRelation[] };
   wiki_pages: { slug: string; title: string; page_type: string; summary: string }[];

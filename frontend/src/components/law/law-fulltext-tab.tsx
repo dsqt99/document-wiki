@@ -2,13 +2,79 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { LegalDocDetail } from "@/types/legal-doc";
+import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { FormattedInlineText } from "@/components/wiki/formatted-inline-text";
 import { WikiContent } from "@/components/wiki/wiki-content";
 import { slugPath } from "@/components/review/review-utils";
 
+type CreatedPages = { overview_slug: string; article_slugs: (string | null)[] };
+
+function EditedBadge() {
+  return (
+    <span
+      title="Nội dung đã được hiệu đính trên trang wiki"
+      className="shrink-0 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-400"
+    >
+      Đã hiệu đính
+    </span>
+  );
+}
+
+/** Opens the wiki page holding this part of the text, in edit mode when the user may edit. */
+function PageAction({
+  slug,
+  canEdit,
+  busy,
+  onCreate,
+}: {
+  slug: string | null;
+  canEdit: boolean;
+  busy: boolean;
+  onCreate: () => void;
+}) {
+  const cls = "inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-primary";
+  if (slug) {
+    return (
+      <Link
+        href={`/wiki/${slugPath(slug)}${canEdit ? "?edit=1" : ""}`}
+        title={canEdit ? "Mở trang wiki để sửa nội dung (vd. lỗi OCR)" : "Mở trang wiki"}
+        className={cls}
+      >
+        <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
+          {canEdit ? "edit_note" : "open_in_new"}
+        </span>
+        {canEdit && <span>Sửa</span>}
+      </Link>
+    );
+  }
+  if (!canEdit) return null;
+  return (
+    <button
+      type="button"
+      disabled={busy}
+      onClick={onCreate}
+      title="Tạo trang wiki cho văn bản này để sửa nội dung"
+      className={cls + " disabled:opacity-50"}
+    >
+      <span className={"material-symbols-outlined" + (busy ? " animate-spin" : "")} style={{ fontSize: 16 }}>
+        {busy ? "progress_activity" : "edit_note"}
+      </span>
+      <span>Sửa</span>
+    </button>
+  );
+}
+
 /** "Toàn văn": preamble and articles grouped under chapter headings, with a searchable index. */
 export function LawFulltextTab({ doc }: { doc: LegalDocDetail }) {
+  const router = useRouter();
+  const { user, hasPermission } = useAuth();
+  const canEdit = user?.role === "admin" || hasPermission("wiki:write:all");
+  // Part whose pages are being created: -1 = phần mở đầu, otherwise the article index.
+  const [creating, setCreating] = useState<number | null>(null);
+  const [createError, setCreateError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
@@ -18,6 +84,25 @@ export function LawFulltextTab({ doc }: { doc: LegalDocDetail }) {
   const matches = articles
     .map((a, i) => ({ a, i }))
     .filter(({ a }) => !needle || (a.heading ?? "").toLowerCase().includes(needle));
+
+  // Văn bản chưa có trang wiki theo điều: tách thành trang tổng quan + mỗi điều một trang, rồi mở trang cần sửa.
+  const createAndEdit = async (target: number) => {
+    setCreating(target);
+    setCreateError(null);
+    try {
+      const res = await api<CreatedPages>(`/api/wiki/legal-docs/${encodeURIComponent(doc.id)}/pages`, {
+        method: "POST",
+        timeoutMs: 300_000,
+      });
+      const slug = target < 0 ? res.overview_slug : res.article_slugs[target];
+      if (slug) router.push(`/wiki/${slugPath(slug)}?edit=1`);
+      else setCreateError("Không xác định được trang của điều này");
+    } catch (err: unknown) {
+      setCreateError(err instanceof Error && err.message ? err.message : "Không tạo được trang wiki");
+    } finally {
+      setCreating(null);
+    }
+  };
 
   const jumpTo = (i: number) => {
     setActive(i);
@@ -62,8 +147,22 @@ export function LawFulltextTab({ doc }: { doc: LegalDocDetail }) {
   return (
     <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_17rem] 2xl:grid-cols-[minmax(0,1fr)_20rem]">
       <div className="min-w-0 rounded-xl border bg-card p-6 md:p-8">
+        {createError && (
+          <p className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {createError}
+          </p>
+        )}
         {preamble && (
           <div className="mb-6 border-b pb-6 text-[15px]">
+            <div className="mb-1 flex items-center justify-end gap-2">
+              {doc.preamble_edited && <EditedBadge />}
+              <PageAction
+                slug={doc.overview_slug}
+                canEdit={canEdit}
+                busy={creating === -1}
+                onCreate={() => createAndEdit(-1)}
+              />
+            </div>
             <WikiContent markdown={doc.preamble} />
           </div>
         )}
@@ -87,17 +186,15 @@ export function LawFulltextTab({ doc }: { doc: LegalDocDetail }) {
                   <h3 className="text-[15px] font-bold">
                     <FormattedInlineText text={a.heading} />
                   </h3>
-                  {a.wiki_slug && (
-                    <Link
-                      href={`/wiki/${slugPath(a.wiki_slug)}`}
-                      title="Mở trang wiki của điều này"
-                      className="shrink-0 text-muted-foreground/60 hover:text-primary"
-                    >
-                      <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
-                        open_in_new
-                      </span>
-                    </Link>
-                  )}
+                  <div className="flex shrink-0 items-center gap-2">
+                    {a.edited && <EditedBadge />}
+                    <PageAction
+                      slug={a.wiki_slug}
+                      canEdit={canEdit}
+                      busy={creating === i}
+                      onCreate={() => createAndEdit(i)}
+                    />
+                  </div>
                 </div>
                 {(a.content_md ?? "").trim() && (
                   <div className="mt-2 text-[15px]">

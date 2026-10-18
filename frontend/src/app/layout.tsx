@@ -9,7 +9,7 @@ export const metadata: Metadata = {
   title: "Document Wiki — Enterprise AI Knowledge Hub",
   description:
     "Hệ thống quản trị tri thức doanh nghiệp: tài liệu, wiki, kỹ năng AI và máy chủ MCP cho tác tử AI.",
-  icons: { icon: "/favicon.svg" },
+  icons: { icon: "/favicon.ico" },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

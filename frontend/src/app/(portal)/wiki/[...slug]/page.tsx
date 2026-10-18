@@ -76,6 +76,7 @@ function WikiSlugRoute() {
       scopeSuffix={scopeSuffix}
       navigate={navigate}
       goTo={(href) => router.push(href)}
+      autoEdit={searchParams.get("edit") === "1" && slug === paramSlug}
     />
   );
 }

@@ -18,7 +18,7 @@ export function Header({ title }: { title?: string }) {
       <NotificationBell />
       <UserMenu triggerClassName="flex items-center gap-2 rounded-lg px-2 py-1 text-sm hover:bg-muted">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/logo.png" alt="" className="size-6 rounded-md" />
+        <img src="/logo.png?v=3" alt="" className="size-6 rounded-md" />
         <span className="max-w-40 truncate">{user.name}</span>
       </UserMenu>
     </header>
