@@ -14,7 +14,7 @@ Ghi chú sau sự cố ngày 2026-10-17: upload khoảng 90 file vào c2 thì g�
 | # | Nguyên nhân | Dấu hiệu trong log worker |
 |---|---|---|
 | 1 | Container worker mất DNS một lúc sau khi Docker khởi động lại. `tiktoken` tải từ điển `cl100k_base` từ Internet **mỗi lần container khởi động**, nên mọi job đếm token đều lỗi. | `NameResolutionError ... openaipublic.blob.core.windows.net ... cl100k_base.tiktoken` |
-| 2 | Cùng lúc đó các lời gọi OCR, vision và LLM tới `vllm.anm05.com` cũng lỗi mạng. | `Vision call failed (attempt n/3): Connection error.` |
+| 2 | Cùng lúc đó các lời gọi OCR, vision và LLM tới endpoint vLLM cũng lỗi mạng. | `Vision call failed (attempt n/3): Connection error.` |
 | 3 | `get_milvus_client()` nhớ lần kết nối thất bại đầu tiên **suốt vòng đời process**. Nếu worker khởi động trước khi Milvus sẵn sàng thì mọi lần ghi vector bị bỏ qua, nhưng nguồn vẫn báo `ready`. | Một dòng `Failed to connect to Milvus` duy nhất, sau đó không còn dòng nào về Milvus |
 | 4 | `sweep_stuck_processing_cron` đánh failed mọi nguồn `processing` không cập nhật quá 60 phút, **kể cả nguồn chỉ đang chờ trong hàng đợi**. Khi hàng đợi dài, nguồn chờ hàng giờ giữa các bước (ingest → chunk → caption → map_reduce → refine) nên bị quét nhầm. | `sweep_stuck_processing_cron marked N stuck source(s) as failed` |
 | 5 | Worker bị kill khi đang chạy job (exit 137 do `docker compose stop` hoặc `restart`). arq mặc định hủy job ngay khi nhận SIGTERM, và mỗi lần hủy tốn một lượt thử. Sau 3 lượt thì job hỏng hẳn. | `max retries 3 exceeded` |
@@ -47,7 +47,7 @@ Test: `tests/test_stuck_sweep.py`.
 
 ### Nguyên nhân
 
-Các backend sau gateway LiteLLM `https://vllm.anm05.com/v1` bị sập. Chỉ embedding còn chạy:
+Các backend sau gateway LiteLLM/vLLM bị sập. Chỉ embedding còn chạy:
 
 | Model | Kết quả khi gọi thử |
 |---|---|
@@ -154,7 +154,7 @@ Tab Toàn văn của `/wiki/law/<văn bản>` đọc nội dung từ trang wiki 
 
 ### LLM gọi ở chế độ stream (chiều 2026-10-18)
 
-- **Hiện tượng:** job MRP lỗi `InternalServerError: Error code: 524`. Cloudflare đứng trước `vllm.anm05.com` cắt kết nối nếu trong 120 giây không nhận được byte nào. Lệnh gọi lập kế hoạch (REDUCE) và lệnh viết trang (REFINE) sinh output dài, có lúc tổng thời gian vượt 120 giây dù model vẫn đang chạy.
+- **Hiện tượng:** job MRP lỗi `InternalServerError: Error code: 524`. Proxy đứng trước vLLM cắt kết nối nếu trong 120 giây không nhận được byte nào. Lệnh gọi lập kế hoạch (REDUCE) và lệnh viết trang (REFINE) sinh output dài, có lúc tổng thời gian vượt 120 giây dù model vẫn đang chạy.
 - **Đã sửa:** `OpenAILLM.generate` và `generate_with_tools` gọi với `stream=True` (kèm `stream_options.include_usage`). Token về liên tục nên Cloudflare không cắt; text, tool call, usage và tracing vẫn như cũ. Tắt bằng `LLM_STREAM=false` cho endpoint không hỗ trợ SSE. Test: `tests/test_openai_stream.py`.
 - **Giới hạn:** stream không cứu được khi gateway quá tải hoặc sập (token đầu tiên không về trong 120 giây, hoặc `Connection error`). Chiều 2026-10-18 gateway sập nhiều lần: request 1 từ cũng timeout và embedding báo `Connection error`. Các nguồn lỗi do sập được gắn `[ai_unavailable]` và `resume_ai_unavailable_cron` tự đưa lại khi probe thành công. Lỗi 524 trước khi breaker mở thì không có nhãn này, phải requeue tay (`requeue_source(..., branch="wiki")`).
 
@@ -192,7 +192,7 @@ docker logs --tail 50 cahy_wiki_worker 2>&1 | grep -E "recording health| ! | ←
 docker exec cahy_wiki_postgres psql -U arkon -d arkon -c "select status, chunk_status, wiki_status, count(*) from sources group by 1,2,3 order by 4 desc"
 
 # DNS và mạng từ bên trong worker
-docker exec cahy_wiki_worker python -c "import socket; [print(h, socket.gethostbyname(h)) for h in ['vllm.anm05.com','langfuse.cahy.io.vn','milvus','redis']]"
+docker exec cahy_wiki_worker python -c "import socket; [print(h, socket.gethostbyname(h)) for h in ['vllm','langfuse','milvus','redis']]"
 
 # Worker đã nối được Milvus chưa
 docker exec cahy_wiki_worker python -c "from app.services.milvus_service import get_milvus_client as g; c=g(); print(c.list_collections() if c else 'NO MILVUS')"

@@ -5,9 +5,7 @@ Sản phẩm này được cấp phép theo Apache License, Version 2.0 (xem fil
 
 Nguồn gốc mã nguồn
 ------------------
-Toàn bộ mã trong kho này do nhóm phát triển CAHY tự viết. Kho không chứa
-mã của Arkon (Bitsness Technology and Solutions Company Limited), vốn được
-cấp phép theo PolyForm Internal Use 1.0.0.
+Toàn bộ mã trong kho này do nhóm phát triển CAHY tự viết.
 
 Các file ban đầu được chuyển từ kho nội bộ `document-wiki` (commit f2b73f3,
 gồm cả thay đổi chưa commit). Chỉ chuyển những file do nhóm tạo mới, có tỷ lệ
