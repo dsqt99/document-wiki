@@ -26,7 +26,7 @@ const TONES: Record<string, Tone> = {
 
 type SubLine = { text: string; error: boolean } | null;
 
-function subLineFor(source: Source): SubLine {
+function subLineFor(source: Source, showWikiCount: boolean): SubLine {
   switch (source.status) {
     case "processing": {
       const parts: string[] = [];
@@ -51,19 +51,19 @@ function subLineFor(source: Source): SubLine {
     case "ready":
       if (source.preserve_verbatim) return { text: "Nguyên văn theo Điều", error: false };
       if (source.wiki_status === "error") return { text: "Wiki lỗi — chỉ có đoạn trích", error: true };
-      if ((source.wiki_page_count ?? 0) > 0) return { text: `${source.wiki_page_count} trang wiki`, error: false };
+      if (showWikiCount && (source.wiki_page_count ?? 0) > 0) return { text: `${source.wiki_page_count} trang wiki`, error: false };
       return null;
     default:
       return null;
   }
 }
 
-export function StatusDot({ source }: { source: Source }) {
+export function StatusDot({ source, showWikiCount = true }: { source: Source; showWikiCount?: boolean }) {
   const { t } = useI18n();
   const known = TONES[source.status];
   const tone = known ?? TONES.pending;
   const label = known ? t(`knowledge.status.${source.status}`, known.fallback) : source.status;
-  const sub = subLineFor(source);
+  const sub = subLineFor(source, showWikiCount);
 
   return (
     <div className="flex flex-col">

@@ -28,7 +28,6 @@ import {
   formatCreatedDate,
   hasBranchRetry,
   isFailed,
-  lastWordInitial,
   lawKey,
   sourceIcon,
 } from "./utils";
@@ -65,7 +64,7 @@ export const DEFAULT_QUERY: SourceQuery = {
 };
 
 const PAGE_SIZES = [10, 20, 50, 100];
-const COLUMN_COUNT = 13;
+const COLUMN_COUNT = 7;
 
 type SortField = "title" | "issued" | "effective" | "created";
 
@@ -179,6 +178,7 @@ export function KnowledgeTable({
   const [actionError, setActionError] = useState<string | null>(null);
   const [retrying, setRetrying] = useState<Set<string>>(() => new Set());
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [expandedInfo, setExpandedInfo] = useState<string | null>(null);
   const [editing, setEditing] = useState<Source | null>(null);
   const [planFor, setPlanFor] = useState<Source | null>(null);
   const [extractionFor, setExtractionFor] = useState<Source | null>(null);
@@ -319,8 +319,8 @@ export function KnowledgeTable({
   const from = total > 0 ? (query.page - 1) * query.pageSize + 1 : 0;
   const to = Math.min(query.page * query.pageSize, total);
 
-  const th = "px-2 py-1.5 text-left align-middle text-[10.5px] font-semibold tracking-[0.05em] text-muted-foreground uppercase";
-  const td = "px-2 py-2.5 align-middle";
+  const th = "px-3 py-3 text-left align-middle text-xs font-medium text-muted-foreground";
+  const td = "px-3 py-3.5 align-middle";
   const thPlain = "align-middle text-xs font-medium text-foreground";
 
   return (
@@ -403,7 +403,10 @@ export function KnowledgeTable({
           </button>
         )}
 
-        <span className="ml-auto text-xs text-muted-foreground tabular-nums">{total} tài liệu</span>
+        <NativeSelect ariaLabel="Sắp xếp tài liệu" value={query.sort} onChange={(sort) => onQueryChange({ sort, page: 1 })}>
+          <option value="created_desc">Mới tải lên</option><option value="created_asc">Cũ nhất</option>
+          <option value="title_asc">Tên A → Z</option><option value="title_desc">Tên Z → A</option><option value="issued_desc">Mới ban hành</option><option value="issued_asc">Ban hành cũ nhất</option><option value="effective_desc">Mới có hiệu lực</option><option value="effective_asc">Hiệu lực cũ nhất</option>
+        </NativeSelect>
       </div>
 
       {/* Bulk bar */}
@@ -472,7 +475,7 @@ export function KnowledgeTable({
           )
         ) : (
           <div className={cn("overflow-x-auto transition-opacity", loading && "opacity-60")}>
-            <table className="w-full border-collapse text-xs">
+            <table className="w-full table-auto border-collapse text-xs">
               <thead>
                 <tr className="h-10 border-b bg-muted/30">
                   <th className={cn(thPlain, "w-[25px] py-0 pl-3")}>
@@ -487,17 +490,11 @@ export function KnowledgeTable({
                       onChange={(e) => toggleAll(e.target.checked)}
                     />
                   </th>
-                  <th className={cn(th, "w-[300px] min-w-[300px]")}>{sortHeader("Tài liệu", "title")}</th>
-                  <th className={th}>Kiểu tri thức</th>
-                  <th className={th}>Phạm vi hiển thị</th>
-                  <th className={th}>Phòng ban phụ trách</th>
-                  <th className={cn(th, "text-right")}>Số trang</th>
-                  <th className={th}>Wiki</th>
-                  <th className={th}>Người đóng góp</th>
-                  <th className={th}>Trạng thái</th>
-                  <th className={th}>{sortHeader("Ngày ban hành", "issued")}</th>
-                  <th className={th}>{sortHeader("Hiệu lực", "effective")}</th>
-                  <th className={th}>{sortHeader("Ngày tạo", "created")}</th>
+                  <th className={th}>{sortHeader("Tài liệu", "title")}</th>
+                  <th className={cn(th, "hidden xl:table-cell")}>Phạm vi</th>
+                  <th className={cn(th, "hidden md:table-cell")}>Trang Wiki</th>
+                  <th className={cn(th, "hidden sm:table-cell")}>Trạng thái</th>
+                  <th className={cn(th, "hidden lg:table-cell whitespace-nowrap")}>{sortHeader("Ngày tải lên", "created")}</th>
                   <th className={cn(thPlain, "w-11 px-2")} />
                 </tr>
               </thead>
@@ -505,8 +502,13 @@ export function KnowledgeTable({
                 {sources.map((s) => {
                   const isSel = selected.has(s.id);
                   const isOpen = expanded === s.id;
+                  const isInfoOpen = expandedInfo === s.id;
+                  const infoId = `source-info-${s.id}`;
                   const meta = s.doc_meta;
-                  const subParts = [meta?.doc_number, meta?.issuing_authority].filter(Boolean);
+                  const subParts = [
+                    meta?.doc_number && !s.title.includes(meta.doc_number) ? meta.doc_number : null,
+                    meta?.issuing_authority && !s.title.toLocaleLowerCase("vi").includes(meta.issuing_authority.toLocaleLowerCase("vi")) ? meta.issuing_authority : null,
+                  ].filter(Boolean);
                   const deptNames =
                     s.department_names && s.department_names.length > 0
                       ? s.department_names
@@ -522,7 +524,8 @@ export function KnowledgeTable({
                       <tr
                         data-state={isSel ? "selected" : undefined}
                         className={cn(
-                          "group border-b last:border-b-0",
+                          "group last:border-b-0",
+                          !isInfoOpen && "border-b",
                           isOpen ? "bg-accent/40" : isSel ? "bg-primary/5" : "hover:bg-secondary/30"
                         )}
                       >
@@ -535,7 +538,7 @@ export function KnowledgeTable({
                             onChange={(e) => toggleRow(s.id, e.target.checked)}
                           />
                         </td>
-                        <td className={cn(td, "max-w-[300px] min-w-[300px]")}>
+                        <td className={cn(td, "w-full max-w-[520px] sm:w-auto sm:min-w-[260px]")}>
                           <div className="flex min-w-0 items-center gap-2.5">
                             <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
                               <Icon name={sourceIcon(s)} size={16} />
@@ -544,116 +547,64 @@ export function KnowledgeTable({
                               <Link
                                 href={`/wiki/source/${s.id}`}
                                 title={s.title}
-                                className="block truncate text-[13px] leading-4 font-medium hover:text-primary"
+                                className="line-clamp-2 break-words text-sm leading-5 font-medium hover:text-primary hover:underline"
                               >
                                 {s.title}
                               </Link>
                               {subParts.length > 0 && (
-                                <p className="truncate text-[11px] leading-3 text-muted-foreground">{subParts.join(" · ")}</p>
+                                <p className="mt-1 truncate text-xs leading-4 text-muted-foreground">{subParts.join(" · ")}</p>
                               )}
+                              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                                {s.knowledge_type_name && <TypePill name={s.knowledge_type_name} color={s.knowledge_type_color} />}
+                                {s.preserve_verbatim && <span title="Giữ nguyên văn, tách theo Điều, không biên soạn lại" className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">Nguyên văn</span>}
+                                <button
+                                  type="button"
+                                  id={`${infoId}-toggle`}
+                                  aria-expanded={isInfoOpen}
+                                  aria-controls={infoId}
+                                  onClick={() => setExpandedInfo(isInfoOpen ? null : s.id)}
+                                  className={cn(
+                                    "inline-flex cursor-pointer items-center gap-1 rounded-sm py-0.5 text-xs transition-colors hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+                                    isInfoOpen ? "text-primary" : "text-muted-foreground"
+                                  )}
+                                >
+                                  <span aria-hidden="true" className="inline-flex"><Icon name={isInfoOpen ? "expand_less" : "expand_more"} size={14} /></span>
+                                  Thông tin bổ sung
+                                </button>
+                              </div>
+                              <div className="mt-2 sm:hidden"><StatusDot source={s} /></div>
                             </div>
                           </div>
                         </td>
-                        <td className={cn(td, "whitespace-nowrap")}>
-                          <div className="flex items-center gap-1">
-                            {s.knowledge_type_name ? (
-                              <TypePill name={s.knowledge_type_name} color={s.knowledge_type_color} />
-                            ) : (
-                              <Dash />
-                            )}
-                            {s.preserve_verbatim && (
-                              <span
-                                title="Giữ nguyên văn — tách theo Điều, không biên soạn lại"
-                                className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
-                              >
-                                Nguyên văn
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className={td}>
+                        <td className={cn(td, "hidden xl:table-cell")}>
                           <ScopeBadge scopeType={s.scope_type ?? undefined} scopeId={s.scope_id} className="px-2.5 py-0.5 text-[11px]" />
+                          {deptNames.length > 0 && <p className="mt-1 max-w-40 truncate text-xs text-muted-foreground" title={deptNames.join(", ")}>{deptNames.join(", ")}</p>}
                         </td>
-                        <td className={cn(td, "max-w-[140px]")}>
-                          {deptNames.length > 0 ? (
-                            <span className="block truncate" title={deptNames.join(", ")}>
-                              {deptNames[0]}
-                              {deptNames.length > 1 && (
-                                <span className="text-muted-foreground"> +{deptNames.length - 1}</span>
-                              )}
-                            </span>
-                          ) : (
-                            <Dash />
-                          )}
-                        </td>
-                        <td className={cn(td, "text-right text-muted-foreground tabular-nums")}>
-                          {s.page_count ?? <Dash />}
-                        </td>
-                        <td className={cn(td, "whitespace-nowrap")}>
-                          {showWiki ? (
+                        <td className={cn(td, "hidden md:table-cell whitespace-nowrap")}>
+                          {showWiki && wikiCount > 0 ? (
                             <div className="flex items-center gap-1.5">
-                              <Link
-                                href={`/wiki/law/${lawKey(s)}`}
-                                className="inline-flex items-center gap-0.5 font-medium text-primary hover:underline"
-                              >
-                                Xem wiki
-                                <Icon name="arrow_outward" size={13} />
-                              </Link>
-                              {wikiCount > 0 && (
                                 <button
                                   type="button"
-                                  title="Xem nhanh các Điều"
+                                  title="Xem các trang Wiki của tài liệu"
+                                  aria-label={`Xem ${wikiCount} trang Wiki của ${s.title}`}
                                   onClick={() => setExpanded(isOpen ? null : s.id)}
                                   className={cn(
                                     "inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums",
                                     isOpen ? "bg-primary text-primary-foreground" : "bg-primary/10 text-primary"
                                   )}
                                 >
-                                  {wikiCount}
+                                  {wikiCount} trang
                                   <Icon name={isOpen ? "expand_less" : "expand_more"} size={12} />
                                 </button>
-                              )}
                             </div>
                           ) : (
                             <Dash />
                           )}
                         </td>
-                        <td className={cn(td, "max-w-[130px]")}>
-                          {s.contributed_by_name ? (
-                            <div className="flex min-w-0 items-center gap-1.5">
-                              <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-secondary text-[10px] font-semibold">
-                                {lastWordInitial(s.contributed_by_name)}
-                              </span>
-                              <span className="truncate" title={s.contributed_by_name}>
-                                {s.contributed_by_name}
-                              </span>
-                            </div>
-                          ) : (
-                            <Dash />
-                          )}
+                        <td className={cn(td, "hidden sm:table-cell min-w-32")}>
+                          <StatusDot source={s} showWikiCount={false} />
                         </td>
-                        <td className={td}>
-                          <StatusDot source={s} />
-                        </td>
-                        <td className={cn(td, "whitespace-nowrap tabular-nums")}>
-                          {meta?.issued_date ? formatViDate(meta.issued_date) : <Dash />}
-                        </td>
-                        <td className={cn(td, "whitespace-nowrap")}>
-                          {validity ? (
-                            <span
-                              title={meta?.effective_date ? `Hiệu lực từ ${formatViDate(meta.effective_date)}` : undefined}
-                              className={cn(
-                                "inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold",
-                                validity.badge
-                              )}
-                            >
-                              {validity.label}
-                            </span>
-                          ) : (
-                            <Dash />
-                          )}
-                        </td>
-                        <td className={cn(td, "whitespace-nowrap text-muted-foreground tabular-nums")}>
+                        <td className={cn(td, "hidden lg:table-cell whitespace-nowrap text-muted-foreground tabular-nums")}>
                           {formatCreatedDate(s.created_at)}
                         </td>
                         <td className={cn(td, "w-11 text-right")}>
@@ -731,6 +682,41 @@ export function KnowledgeTable({
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
+                        </td>
+                      </tr>
+                      <tr className="border-b last:border-b-0" hidden={!isInfoOpen}>
+                        <td colSpan={COLUMN_COUNT} className="p-0">
+                          <div id={infoId} role="region" aria-labelledby={`${infoId}-toggle`} className="bg-muted/25 px-4 py-3 sm:pr-6 sm:pl-[75px]">
+                            <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-xs leading-5 lg:grid-cols-4">
+                              <div className="min-w-0">
+                                <dt className="text-muted-foreground">Số trang tệp</dt>
+                                <dd className="mt-0.5 font-medium tabular-nums">{s.page_count ?? "Chưa có"}</dd>
+                              </div>
+                              <div className="min-w-0">
+                                <dt className="text-muted-foreground">Người đóng góp</dt>
+                                <dd className="mt-0.5 break-words font-medium">{s.contributed_by_name || "Chưa có"}</dd>
+                              </div>
+                              <div className="min-w-0">
+                                <dt className="text-muted-foreground">Ngày ban hành</dt>
+                                <dd className="mt-0.5 font-medium tabular-nums">{meta?.issued_date ? formatViDate(meta.issued_date) : "Chưa có"}</dd>
+                              </div>
+                              <div className="min-w-0">
+                                <dt className="text-muted-foreground">Hiệu lực</dt>
+                                <dd className="mt-0.5 flex flex-wrap items-center gap-x-1.5 font-medium">
+                                  <span>{validity?.label || "Chưa xác định"}</span>
+                                  {meta?.effective_date && <span className="text-muted-foreground tabular-nums">· {formatViDate(meta.effective_date)}</span>}
+                                </dd>
+                              </div>
+                              <div className="col-span-2 min-w-0 xl:hidden">
+                                <dt className="text-muted-foreground">Phạm vi</dt>
+                                <dd className="mt-0.5 flex flex-wrap items-center gap-2 break-words">
+                                  <ScopeBadge scopeType={s.scope_type ?? undefined} scopeId={s.scope_id} />
+                                  {deptNames.length > 0 && <span>{deptNames.join(", ")}</span>}
+                                </dd>
+                              </div>
+                              {showWiki && wikiCount > 0 && <div className="col-span-2 md:hidden"><button type="button" aria-expanded={isOpen} onClick={() => setExpanded(isOpen ? null : s.id)} className="inline-flex cursor-pointer items-center gap-1 rounded-sm text-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"><Icon name="auto_stories" size={14} />{isOpen ? "Thu gọn" : "Xem"} {wikiCount} trang Wiki<Icon name={isOpen ? "expand_less" : "expand_more"} size={14} /></button></div>}
+                            </dl>
+                          </div>
                         </td>
                       </tr>
                       {isOpen && (
