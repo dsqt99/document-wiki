@@ -63,3 +63,20 @@ cases; independent review found no actionable issue. The worker was gracefully
 drained for deployment; one 8-page job completed and one long-running job was
 cancelled by ARQ after the shutdown grace period and retained for retry. Remaining
 jobs stay queued. Queue acceptance alone is not successful processing.
+
+## Deployment snapshot (2026-10-22 16:59 UTC / 2026-10-23 local midnight)
+
+- Backend, both workers and frontend deployed at revision
+  `1bb420a2752824648b20f713d50fdf8e339bad2a` (includes `a19d12a`).
+- `/health` healthy; database, Redis and MinIO healthy; image tags persisted in
+  the runtime `.env`.
+- 42 ready / 8 processing; all remaining 8 sources have queued or active jobs,
+  all retain ready raw indexes. The interrupted ARQ job resumed on the new worker.
+- The previous shutdown cancellation marker was cleared from the actively
+  resumed source; it did not represent a new generation failure.
+- Decree 238 was requeued for the updated writer. An initial diagnostic priority
+  enqueue used an invalid expiry and failed; the phantom queue member expired
+  without executing, and the source was successfully requeued with explicit
+  24-hour expiry. No source content was changed by that failed enqueue.
+
+The remaining eight sources have **not** yet been confirmed successfully published.
