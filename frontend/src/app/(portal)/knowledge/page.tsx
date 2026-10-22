@@ -334,7 +334,7 @@ function KnowledgePageContent() {
 
         {tab === "documents" && canManage && (
           <DropdownMenu onOpenChange={(open) => { if (open) { loadSummary(); void summaryMaintenance.refresh(); } }}>
-            <DropdownMenuTrigger className="inline-flex h-8 items-center gap-1.5 rounded-[10px] border bg-background px-3 text-xs font-medium hover:bg-secondary">
+            <DropdownMenuTrigger data-summary-result-trigger className="inline-flex h-8 items-center gap-1.5 rounded-[10px] border bg-background px-3 text-xs font-medium hover:bg-secondary">
               <Icon name="auto_fix_high" />
               Xử lý nội dung
               {!!summary?.failed && (
@@ -412,7 +412,7 @@ function KnowledgePageContent() {
         )}
       </div>
 
-      {canManage && <SummaryJobProgress job={summaryMaintenance.job} error={summaryMaintenance.error} onDismiss={summaryMaintenance.dismiss} />}
+      {canManage && <SummaryJobProgress job={summaryMaintenance.job} error={summaryMaintenance.error} onDismiss={summaryMaintenance.dismiss} onRetry={() => void summaryMaintenance.refresh()} onDetails={(trigger) => summaryMaintenance.openDetails(summaryMaintenance.job, trigger)} detailsOpen={summaryMaintenance.detailsOpen} />}
       {canManage && <SummarySourceNotes maintenance={summaryMaintenance} />}
 
       {notice && (

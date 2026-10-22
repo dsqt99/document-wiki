@@ -1,4 +1,7 @@
-# Summary progress UX (draft for approval)
+# Summary progress UX (approved 2026-10-23)
+
+User approved the recommended interaction in chat. Proceed with implementation,
+verification and a frontend-only deployment without another design approval.
 
 ## Problem and evidence
 
