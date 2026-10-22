@@ -10,8 +10,10 @@ RUN pip install --no-cache-dir --upgrade pip
 
 # Dependencies first so Docker can cache this layer.
 COPY pyproject.toml ./
+COPY requirements-runtime.lock ./
 RUN mkdir -p app && touch app/__init__.py \
-    && pip install --no-cache-dir . \
+    && pip install --no-cache-dir -r requirements-runtime.lock \
+    && pip install --no-cache-dir --no-deps . \
     && rm -rf app build *.egg-info
 
 # Bake the tiktoken dictionary into the image; otherwise every container start downloads it and ingest fails on any DNS hiccup.
