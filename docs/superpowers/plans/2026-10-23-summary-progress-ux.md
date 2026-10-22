@@ -42,5 +42,5 @@ Files: `summary-job-details.tsx`, presentation tests and narrowly scoped browser
 - [x] Run all frontend tests, `tsc --noEmit` and focused ESLint; fix concrete failures.
 - [x] Inspect actual components in a local browser with isolated mock summary responses: idle, running, completion/autohide, warning, history, one row, many rows, search empty and mobile. No live AI jobs needed.
 - [x] Independent code review; address actionable findings and rerun affected checks.
-- [ ] Commit code and build production frontend image with existing API URL args and revision label. Deploy only `frontend` using original runtime project directory and existing backend image. Persist only FRONTEND_IMAGE in runtime .env.
-- [ ] Verify container revision, host HTTP response and worker start times unchanged. Save screenshots and validation report.
+- [x] Commit code and build production frontend image with existing API URL args and revision label. Deploy only `frontend` using original runtime project directory and existing backend image. Persist only FRONTEND_IMAGE in runtime .env.
+- [x] Verify container revision, host HTTP response and worker start times unchanged. Save screenshots and validation report.

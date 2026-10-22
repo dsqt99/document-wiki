@@ -52,6 +52,22 @@ remove that route before building the deployment image.
 
 ## Deployment
 
-Frontend-only production build/deployment is recorded after verification. The
-temporary QA route has been removed from the source tree. Backend code, workers,
+Deployed at **2026-10-23 00:37 Asia/Bangkok** from revision
+`3a8848524279bc371331fadb8a892f01e5aa75bc`:
+
+- Frontend image: `cahy-wiki-frontend:summary-ux-261023-3a884852`.
+- Final production build passed, including TypeScript; route list excludes QA.
+- `GET http://localhost:3219/knowledge` returned 200.
+- `GET http://localhost:3219/summary-progress-qa` returned 404.
+- Backend `/health` remains healthy, revision `1bb420a2`.
+- API and both worker start timestamps exactly match their pre-deployment values:
+  API `2026-10-22T16:58:48.82250533Z`, worker
+  `2026-10-22T16:59:00.402687096Z`, skills worker
+  `2026-10-22T16:59:00.416421767Z`.
+- Only FRONTEND_IMAGE was updated in the original runtime `.env`. The feature
+  branch/worktree is retained for continued work. The QA container/tab was removed.
+- Final rerun: 32/32 frontend tests passed; working tree contains only the final
+  documentation update before its commit.
+
+The temporary QA route has been removed from the source tree. Backend code,
 summary generation, permissions and original uploads are outside this UI change.
