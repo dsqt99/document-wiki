@@ -54,6 +54,9 @@ async def run_commit_phase(session, source, page_results, plan, embedding_provid
         if isinstance(full_text, str) and not is_failure_stub(r.content_md):
             r.publication_blockers = factual_publication_blockers(r.content_md, full_text)
     failed_slugs = sorted(r.slug for r in page_results if is_failure_stub(r.content_md) or getattr(r, "publication_blockers", []))
+    failure_reasons = {r.slug: r.publication_blockers for r in page_results
+                       if getattr(r, "publication_blockers", [])}
+    validation_detail = ", ".join(sorted({reason for reasons in failure_reasons.values() for reason in reasons}))
     good = [r for r in page_results if r.slug not in failed_slugs]
     planned = (getattr(plan, "plan_json", None) or {}).get("pages") if plan is not None else None
     expected = max(len(planned or []), len(page_results)) * len(wiki_scopes or [("global", None)])
@@ -182,12 +185,15 @@ async def run_commit_phase(session, source, page_results, plan, embedding_provid
     warnings = []
     if failed:
         warnings.append({"code": "wiki_pages_skipped", "message": f"{failed}/{expected} planned Wiki page(s) were not published: {', '.join(failed_slugs[:SKIPPED_SLUGS_SHOWN])}"})
+    if validation_detail:
+        warnings.append({"code": "wiki_factual_validation", "message": f"Wiki evidence validation failed: {validation_detail}"})
     if index_failures:
         warnings.append({"code": "wiki_index_failed", "message": f"Wiki vector indexing failed for {len(index_failures)} page(s). Keyword search remains available."})
     saved = await source_quality.save_quality(session, source, "wiki", {
         "status": "error" if not published else "partial" if failed or index_failures else "complete",
         "expected": expected, "published": published, "failed": failed,
-        "skipped_slugs": failed_slugs, "index_failed_slugs": index_failures, "warnings": warnings,
+        "skipped_slugs": failed_slugs, "failure_reasons": failure_reasons,
+        "index_failed_slugs": index_failures, "warnings": warnings,
     })
     if not saved:
         await session.rollback()
@@ -202,6 +208,8 @@ async def run_commit_phase(session, source, page_results, plan, embedding_provid
 
         shown = ", ".join(failed_slugs[:SKIPPED_SLUGS_SHOWN])
         msg = f"All {len(failed_slugs)} page(s) failed to generate: {shown}"
+        if validation_detail:
+            msg += f"; evidence validation: {validation_detail}"
         # The per-page reasons live only in the stubs; keep the marker so the outage cron resumes it.
         if any(is_ai_outage_text(r.content_md) for r in page_results if is_failure_stub(r.content_md)):
             msg = f"{AI_UNAVAILABLE_MARKER} {msg}"
@@ -224,6 +232,8 @@ async def run_commit_phase(session, source, page_results, plan, embedding_provid
     else:
         src.wiki_progress_message = "Done"
     src.wiki_error_message = f"Wiki incomplete: {failed} page(s) skipped; {len(index_failures)} index failure(s)" if failed or index_failures else None
+    if src.wiki_error_message and validation_detail:
+        src.wiki_error_message += f"; evidence validation: {validation_detail}"
     src.auto_recover_count = 0
     await source_status.update_source_dual_status(session, src)
     await session.commit()

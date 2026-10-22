@@ -11,6 +11,7 @@ from loguru import logger
 
 from app.services.wiki_write_guard import (
     check_machine_rewrite,
+    is_failure_stub,
     make_failure_stub,
     missing_row_identities,
     table_row_identities,
@@ -280,6 +281,9 @@ def make_summary(content_md: str) -> str:
 
 WRITER_SYSTEM_PROMPT = """You compile pages for an internal knowledge wiki.
 Compile, do not summarise: keep figures, rules, procedures and their steps, examples and definitions.
+The source material is the authority. Plan titles, slugs and extracted claims may contain mistakes.
+Never use outside knowledge to fill gaps. Copy legal document identifiers exactly from the source;
+never infer an identifier from a slug or replace it with a more familiar law or decree.
 Write in the same language as the source material.
 Structure: an opening paragraph, then H2 sections; bold key terms; finish with a "Xem thêm" section of related links.
 Do not add a references, citations or footnotes section.
@@ -369,6 +373,37 @@ async def write_simple(llm, item, linkable, existing, source_ctx, evidence, imag
     content = await _generate(llm, _page_prompt(item, linkable, existing, source_ctx, evidence, images),
                               WRITER_SYSTEM_PROMPT, 0.15)
     return content, make_summary(content)
+
+
+async def repair_evidence(llm, content: str, source_ctx: str, full_text: str) -> str:
+    """One bounded corrective pass; an unsuccessful correction stays blocked at COMMIT."""
+    from app.ai.mrp.verifier import factual_publication_blockers
+
+    blockers = factual_publication_blockers(content, full_text)
+    if not blockers or is_failure_stub(content) or "empty_source" in blockers:
+        return content
+    budget = min(source_budget_chars(llm), DEFAULT_SOURCE_BUDGET_CHARS)
+    # Keep both the draft and the source header intact. A huge draft needs
+    # regeneration with the normal multipass writer, not a truncated repair.
+    if len(content) > budget // 2:
+        return content
+    available = max(0, budget - len(content) - 2000)
+    material = full_text if len(full_text) <= available else full_text[:6000] + "\n\n" + source_ctx
+    prompt = (
+        "Correct this draft against the source. Validation errors: " + ", ".join(blockers)
+        + ". The source overrides the plan, slug and draft. Copy document identifiers exactly. "
+        "Correct unsupported references using source evidence; do not simply strip references to pass validation. "
+        "Keep supported facts, procedures, numbers, tables and links. Do not invent or silently omit material. "
+        "Do not add footnotes. Return the complete corrected Markdown only.\n\n"
+        "=== SOURCE MATERIAL ===\n" + material[:available]
+        + "\n\n=== DRAFT TO CORRECT ===\n" + content
+    )
+    candidate = await _generate(llm, prompt, WRITER_SYSTEM_PROMPT, 0.0)
+    if (is_failure_stub(candidate) or factual_publication_blockers(candidate, full_text)
+            or check_machine_rewrite(content, candidate, max_row_loss=0, min_length_ratio=0.85, min_old_chars=1)):
+        logger.warning("Evidence correction did not pass validation; keeping blocked draft")
+        return content
+    return candidate
 
 
 async def write_with_agent(llm, session, item, linkable, existing, source_ctx, evidence, images,
@@ -601,8 +636,9 @@ async def run_refine_phase(session, source, plan, chunk_extracts, full_text, llm
                             content, summary = await write_simple(
                                 llm, item, linkable, existing, ctx, evidence, images
                             )
-                result.content_md = content
-                result.summary = summary or title
+                corrected = await repair_evidence(llm, content, _render_sections(full_text or "", included), full_text or "")
+                result.content_md = corrected
+                result.summary = make_summary(corrected) if corrected != content else summary or title
                 if existing:
                     reason = check_machine_rewrite(existing, content)
                     if reason:
