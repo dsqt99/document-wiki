@@ -1,0 +1,15 @@
+# Dependency snapshot: requirements-runtime.lock, base image d489956adcf5.
+# Rebuild dependencies with Dockerfile when the verified runtime base is unavailable.
+FROM cahy-wiki-backend:runtime-d489956adcf5
+USER root
+RUN rm -rf /app/app /app/alembic /app/skills
+COPY --chown=appuser:appuser app/ /app/app/
+COPY --chown=appuser:appuser alembic/ /app/alembic/
+COPY --chown=appuser:appuser alembic.ini /app/alembic.ini
+COPY --chown=appuser:appuser skills/ /app/skills/
+USER appuser
+RUN python -c "from app.main import app; print(app.title)"
+ARG BUILD_REVISION=unknown
+LABEL org.opencontainers.image.revision=$BUILD_REVISION
+LABEL org.opencontainers.image.ref.name=feature/optimize-261022
+ENV CAHY_BUILD_REVISION=$BUILD_REVISION

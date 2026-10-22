@@ -1,5 +1,6 @@
 param(
-    [Parameter(Mandatory = $true)][string]$RuntimeDirectory
+    [Parameter(Mandatory = $true)][string]$RuntimeDirectory,
+    [switch]$FreshRuntime
 )
 $ErrorActionPreference = 'Stop'
 $sourceDirectory = Split-Path -Parent $PSScriptRoot
@@ -12,7 +13,14 @@ $pending = git -C $sourceDirectory status --porcelain
 if ($pending) { throw 'Commit the reviewed feature snapshot before deployment' }
 $env:BACKEND_IMAGE = "cahy-wiki-backend:quality-261022-$($revision.Substring(0, 8))"
 $env:FRONTEND_IMAGE = "cahy-wiki-frontend:quality-261022-$($revision.Substring(0, 8))"
-docker build --build-arg "BUILD_REVISION=$revision" -t $env:BACKEND_IMAGE $sourceDirectory
+$backendDockerfile = if ($FreshRuntime) { 'Dockerfile' } else { 'Dockerfile.runtime' }
+if (-not $FreshRuntime) {
+    $runtimeBase = docker inspect cahy-wiki-backend:runtime-d489956adcf5 --format '{{.Id}}'
+    if ($LASTEXITCODE -ne 0 -or $runtimeBase.Trim() -ne 'sha256:d489956adcf5b4993420db521ec541560cd696f1d2cce0d1d2614681e4774540') {
+        throw 'Verified runtime base unavailable; use -FreshRuntime to build pinned dependencies'
+    }
+}
+docker build -f (Join-Path $sourceDirectory $backendDockerfile) --build-arg "BUILD_REVISION=$revision" -t $env:BACKEND_IMAGE $sourceDirectory
 if ($LASTEXITCODE -ne 0) { throw 'Backend build failed' }
 docker build --build-arg "BUILD_REVISION=$revision" --build-arg NEXT_PUBLIC_API_URL= --build-arg INTERNAL_API_URL=http://api:5055 -t $env:FRONTEND_IMAGE (Join-Path $sourceDirectory 'frontend')
 if ($LASTEXITCODE -ne 0) { throw 'Frontend build failed' }
