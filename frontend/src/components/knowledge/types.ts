@@ -29,6 +29,15 @@ export type SourceStatus =
   | "error"
   | string;
 
+export type QualityStatus = "unknown" | "pending" | "processing" | "ready" | "complete" | "partial" | "error" | "blocked";
+
+export type ProcessingQuality = {
+  extraction: { status: QualityStatus; total_pages: number | null; text_pages: number | null; empty_pages: number | null; ocr_pages: number | null };
+  source_index: { status: QualityStatus; expected: number | null; indexed: number | null };
+  wiki: { status: QualityStatus; expected: number | null; published: number | null; failed: number | null };
+  warnings: { code: string; message: string }[];
+};
+
 export type Source = {
   id: string;
   title: string;
@@ -46,17 +55,21 @@ export type Source = {
   wiki_error_message?: string | null;
   page_count?: number | null;
   wiki_page_count?: number | null;
+  processing_quality?: ProcessingQuality | null;
   extracted_token_count?: number | null;
+  upload_review_status?: "pending" | "awaiting" | "approved" | null;
+  upload_review_error?: string | null;
   image_count?: number | null;
   knowledge_type_id?: string | null;
   knowledge_type_name?: string | null;
   knowledge_type_color?: string | null;
   department_ids?: string[];
   department_names?: string[];
+  managing_department_id?: string | null;
+  managing_department_name?: string | null;
   contributed_by_name?: string | null;
   scope_type?: string | null;
   scope_id?: string | null;
-  preserve_verbatim?: boolean;
   pipeline_strategy?: string | null;
   pipeline_phase?: string | null;
   doc_meta?: SourceDocMeta | null;
@@ -70,6 +83,15 @@ export type SourceListResponse = {
   page: number;
   page_size: number;
   total_pages: number;
+};
+
+export type SourceDetail = Source & {
+  full_text?: string | null;
+  file_size?: number | null;
+  url?: string | null;
+  download_url?: string | null;
+  preview_url?: string | null;
+  file_url?: string | null;
 };
 
 /** Error text for display: Error.message when available, otherwise the given fallback. */

@@ -44,7 +44,7 @@ async def test_ocr_service_test_connection_failure():
 async def test_ocr_service_override_params():
     svc = OCRService()
     
-    with patch.object(svc, "_call_ocr_stream_sync", return_value="# Output text") as mock_sync:
+    with patch.object(svc, "_call_ocr_sync", return_value="# Output text") as mock_sync:
         res = await svc.ocr_image(
             image_bytes=b"fake-image-bytes",
             mime_type="image/jpeg",

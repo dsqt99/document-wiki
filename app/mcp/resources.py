@@ -24,7 +24,10 @@ the original documents themselves and a library of reusable skills.
 
 1. Search before saying "I don't know": run `search_wiki` (and source tools) first.
 2. Follow wikilinks: `[[slug]]` links lead to related pages worth reading.
-3. Cite your evidence: give the page slug, or the source ID together with the page number.
+3. Read precise pages with `read_wiki_page(page_id=...)`; a bare slug may exist in several scopes.
+4. Read tools return Markdown plus `structuredContent` with metadata and citation `sources`. Search/list summaries are previews; page reads include the full AI summary and content.
+5. `origin_tag=extracted` preserves source text; `origin_tag=generated` identifies LLM compilation. Both support retrieval.
+6. Cite returned scoped URLs and source ID/page number; get_source exposes document attributes, management department, visibility and linked Wiki pages. Private pages are accessible only to their owner.
 """
 
 
@@ -54,6 +57,7 @@ def register_resources(mcp) -> None:
                     all_scopes=getattr(identity, "is_admin", False) is True,
                     clearance=mcp_tools._clearance(identity),
                     page_filter=mcp_tools._page_filter(identity),
+                    personal_owner_id=mcp_tools._scope_view(identity).employee_id,
                 )
         except Exception as e:
             logger.warning("wiki-index resource failed: %s", e)

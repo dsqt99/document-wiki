@@ -2,7 +2,9 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { sanitizeWikiLibraryReturnTo, wikiPageQuery } from "@/lib/wiki-navigation";
 import { WikiPageView } from "./wiki-page-view";
+import { SourceDetailView } from "./source-detail";
 
 export default function WikiSlugPage() {
   return (
@@ -33,6 +35,7 @@ function WikiSlugRoute() {
   const paramSlug = decodeSegments(params?.slug);
   const scopeType = searchParams.get("scopeType");
   const scopeId = searchParams.get("scopeId");
+  const returnTo = sanitizeWikiLibraryReturnTo(searchParams.get("returnTo"));
 
   // In-place navigation keeps the component mounted; a real route change resets it.
   const [nav, setNav] = useState({ base: paramSlug, slug: paramSlug });
@@ -40,11 +43,8 @@ function WikiSlugRoute() {
 
   const hasScope = !!scopeType && scopeType !== "global";
   const scopeSuffix = useMemo(
-    () =>
-      hasScope
-        ? `?scopeType=${encodeURIComponent(scopeType ?? "")}&scopeId=${encodeURIComponent(scopeId ?? "")}`
-        : "",
-    [hasScope, scopeType, scopeId],
+    () => wikiPageQuery(hasScope ? scopeType : null, hasScope ? scopeId : null, returnTo),
+    [hasScope, scopeType, scopeId, returnTo],
   );
 
   const navigate = useCallback(
@@ -68,12 +68,17 @@ function WikiSlugRoute() {
     return () => window.removeEventListener("popstate", onPop);
   }, [paramSlug]);
 
+  if (slug.startsWith("source/") && slug.split("/").length === 2) {
+    return <SourceDetailView key={slug} sourceId={slug.split("/")[1]} initialTab={searchParams.get("tab")} goTo={(href) => router.push(href)} />;
+  }
+
   return (
     <WikiPageView
       slug={slug}
       scopeType={hasScope ? scopeType : null}
       scopeId={hasScope ? scopeId : null}
       scopeSuffix={scopeSuffix}
+      returnTo={returnTo}
       navigate={navigate}
       goTo={(href) => router.push(href)}
       autoEdit={searchParams.get("edit") === "1" && slug === paramSlug}

@@ -71,6 +71,7 @@ function matches(pathname: string, href: string): boolean {
 }
 
 function isActive(pathname: string, href: string, isAdmin: boolean): boolean {
+  if (pathname.startsWith("/wiki/source/")) return href === "/knowledge";
   if (href === "/wiki/law") {
     if (pathname === "/" && !isAdmin) return true;
     if (pathname === "/wiki") return true;

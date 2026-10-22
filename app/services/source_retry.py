@@ -16,6 +16,11 @@ class NotRetryable(ValueError):
 
 
 def pick_branch(source, branch: Optional[str] = None) -> str:
+    from app.services.upload_review_service import review_status
+
+    review = review_status(source)
+    if review == "awaiting" or (review == "pending" and branch in ("chunk", "wiki", "both")):
+        raise NotRetryable("Hãy duyệt thông tin trích xuất trước khi tạo Wiki hoặc chỉ mục")
     has_text = bool((source.full_text or "").strip())
     chunk_status = source.chunk_status or "pending"
     wiki_status = source.wiki_status or "pending"
@@ -34,8 +39,6 @@ def pick_branch(source, branch: Optional[str] = None) -> str:
             branch = "wiki"
     if branch in ("chunk", "wiki", "both") and not has_text:
         raise NotRetryable("Source has no extracted text; retry with branch=all")
-    if branch in ("wiki", "both") and source.preserve_verbatim:
-        branch = "chunk"
     return branch
 
 
@@ -57,6 +60,8 @@ async def has_uncaptioned_images(db, source_id) -> bool:
 
 async def requeue_source(db, source, enqueue: Enqueue, branch: Optional[str] = None) -> Optional[str]:
     """Reset the failed branch(es) of ``source``, commit, enqueue their first task and return its job id."""
+    from app.services.processing_mode import set_mode
+    set_mode(source, "auto")
     chosen = pick_branch(source, branch)
     source.error_message = None
     job_id = None

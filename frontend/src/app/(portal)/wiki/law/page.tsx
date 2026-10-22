@@ -1,5 +1,6 @@
 "use client";
 
+import { OptionSelect } from "@/components/ui/option-select";
 import React from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -16,6 +17,9 @@ import {
   legalDocHref,
   validityOf,
 } from "@/lib/legal-doc";
+import { Sheet, SheetClose, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
+import { WikiLibrary } from "@/components/knowledge/wiki-library";
+import { WikiSummaryActions } from "@/components/knowledge/wiki-summary-actions";
 import { FormattedInlineText } from "@/components/wiki/formatted-inline-text";
 
 const PAGE_CHUNK = 30;
@@ -100,6 +104,10 @@ function MetaItem({ label, value, className }: { label: string; value: React.Rea
 export default function WikiLawPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const isWiki = searchParams.get("view") === "wiki";
+  const [filtersOpen, setFiltersOpen] = React.useState(false);
+  const [wikiRefreshKey, setWikiRefreshKey] = React.useState(0);
+  const refreshWiki = React.useCallback(() => setWikiRefreshKey((key) => key + 1), []);
   const ktParam = searchParams.get("kt") || "";
   const ktSelected = React.useMemo(() => new Set(ktParam.split(",").filter(Boolean)), [ktParam]);
 
@@ -286,18 +294,20 @@ export default function WikiLawPage() {
             Kho tri thức
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Tra cứu văn bản theo số hiệu, lĩnh vực và tình trạng hiệu lực.
+            Tra cứu văn bản và các trang Wiki được biên soạn từ tài liệu.
           </p>
         </div>
-        <Link
-          href="/wiki/graph"
-          className="flex items-center gap-1.5 px-3 h-9 rounded-lg border border-border bg-background text-sm font-medium hover:bg-muted transition-colors"
-        >
-          <span className="material-symbols-outlined" style={{ fontSize: 17 }}>hub</span>
-          Đồ thị tri thức
-        </Link>
       </div>
 
+      <nav aria-label="Thư viện tri thức" className="flex items-center gap-6 border-b">
+        <Link href="/wiki/law" aria-current={!isWiki ? "page" : undefined} className={cn("-mb-px border-b-2 px-1 pb-3 text-sm font-medium focus-visible:outline-2 focus-visible:outline-ring", !isWiki ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground")}>Văn bản</Link>
+        <Link href="/wiki/law?view=wiki" aria-current={isWiki ? "page" : undefined} className={cn("-mb-px border-b-2 px-1 pb-3 text-sm font-medium focus-visible:outline-2 focus-visible:outline-ring", isWiki ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground")}>Wiki</Link>
+        <Link href="/wiki/graph" className="ml-auto mb-2 inline-flex h-8 items-center gap-1.5 rounded-lg px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"><span aria-hidden="true" className="material-symbols-outlined text-[17px]!">hub</span>Đồ thị tri thức</Link>
+      </nav>
+      {isWiki ? <div className="space-y-4">
+        <WikiSummaryActions onComplete={refreshWiki} />
+        <WikiLibrary refreshKey={wikiRefreshKey} />
+      </div> : <>
       {loading ? (
         <div className="flex items-center justify-center h-48">
           <span className="material-symbols-outlined text-3xl text-muted-foreground animate-spin">progress_activity</span>
@@ -305,30 +315,32 @@ export default function WikiLawPage() {
       ) : error ? (
         <EmptyState icon="error" title="Không tải được danh sách" description={error} />
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_17rem] xl:grid-cols-[minmax(0,1fr)_19rem] gap-6 items-start">
+        <div className="min-w-0">
           <div className="min-w-0 flex flex-col gap-4">
             {/* Search card */}
-            <div className="bg-card border border-border rounded-xl p-3 flex flex-col gap-3">
+            <div className="flex flex-col gap-3">
               <div className="flex flex-col sm:flex-row gap-2">
-                <select
+                <OptionSelect
+                  aria-label="Tìm theo"
                   value={searchMode}
-                  onChange={(e) => setSearchMode(e.target.value as "title" | "content")}
+                  onValueChange={(value) => setSearchMode(value as "title" | "content")}
                   className="h-10 px-3 rounded-lg border border-border bg-background text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/30 cursor-pointer shrink-0"
                 >
                   <option value="title">Tiêu đề, số hiệu</option>
                   <option value="content">Nội dung văn bản</option>
-                </select>
+                </OptionSelect>
                 <div className="relative flex-1">
                   <span className="material-symbols-outlined text-lg text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2">
                     {contentLoading ? "progress_activity" : "search"}
                   </span>
                   <input
+                    aria-label="Tìm văn bản"
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     placeholder={
                       searchMode === "content" ? "Tìm cụm từ trong toàn văn..." : "Nhập tiêu đề hoặc số hiệu, ví dụ 75/VBHN-VPQH"
                     }
-                    className="h-10 w-full pl-10 pr-8 text-sm rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 placeholder:text-muted-foreground/60"
+                    className="h-10 w-full pl-10 pr-8 text-sm rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 placeholder:text-muted-foreground"
                   />
                   {query && (
                     <button
@@ -339,25 +351,32 @@ export default function WikiLawPage() {
                     </button>
                   )}
                 </div>
+                <button type="button" onClick={() => setFiltersOpen(true)} className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg border px-3 text-sm font-medium hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring">
+                  <span aria-hidden="true" className="material-symbols-outlined text-[18px]!">tune</span>Bộ lọc{activeFilterCount > 0 && <span className="rounded bg-primary/10 px-1.5 text-primary tabular-nums">{activeFilterCount}</span>}
+                </button>
               </div>
             </div>
-
+            {activeFilterCount > 0 && <div className="flex flex-wrap items-center gap-2 text-xs">
+              {(Object.keys(FACET_KEYS) as FacetKey[]).flatMap((key) => [...selectedOf(key)].map((value) => <button key={`${key}:${value}`} type="button" onClick={() => toggleFacet(key, value)} aria-label={`Bỏ bộ lọc ${facetOptions[key].find((option) => option.value === value)?.label ?? value}`} className="inline-flex max-w-full items-center gap-1 rounded-md border bg-muted/40 px-2 py-1 hover:bg-muted"><span className="truncate">{facetOptions[key].find((option) => option.value === value)?.label ?? value}</span><span aria-hidden="true" className="material-symbols-outlined text-[14px]!">close</span></button>))}
+              <button type="button" onClick={clearFilters} className="px-1 text-primary hover:underline">Xóa bộ lọc</button>
+            </div>}
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <p className="text-sm text-muted-foreground">
                 Tìm thấy <span className="font-semibold text-foreground tabular-nums">{filtered.length}</span> văn bản
               </p>
               <label className="flex h-8 items-center gap-2 px-2.5 rounded-lg border border-border bg-background text-xs shrink-0">
                 <span className="material-symbols-outlined text-muted-foreground" style={{ fontSize: 16 }}>sort</span>
-                <select
+                <OptionSelect
+                  aria-label="Sắp xếp văn bản"
                   value={sort}
-                  onChange={(e) => setSort(e.target.value as SortKey)}
+                  onValueChange={(value) => setSort(value as SortKey)}
                   className="bg-transparent font-medium focus:outline-none cursor-pointer"
                 >
                   <option value="issued_desc">Ban hành mới nhất</option>
                   <option value="issued_asc">Ban hành cũ nhất</option>
                   <option value="effective_desc">Hiệu lực mới nhất</option>
                   <option value="title">Tên A → Z</option>
-                </select>
+                </OptionSelect>
               </label>
             </div>
 
@@ -420,7 +439,6 @@ export default function WikiLawPage() {
                             >
                               {v.label}
                             </span>
-                            {m.doc_number && <MetaItem label="Số hiệu" value={m.doc_number} />}
                             <MetaItem label="Ban hành" value={formatViDate(m.issued_date)} />
                             <MetaItem label="Áp dụng" value={formatViDate(m.effective_date)} />
                             {m.issuing_authority && <MetaItem label="Cơ quan" value={m.issuing_authority} />}
@@ -431,7 +449,6 @@ export default function WikiLawPage() {
                               </span>
                             )}
                             {m.field && <MetaItem label="Lĩnh vực" value={m.field} />}
-                            <MetaItem label="Phạm vi" value={unitsOf(d).map(unitLabel).join(", ")} />
                           </div>
                           {(d.replaced_by.length > 0 || d.repealed_by.length > 0) && (
                             <p className="mt-1.5 text-xs text-muted-foreground">
@@ -440,25 +457,8 @@ export default function WikiLawPage() {
                             </p>
                           )}
                           <div className="mt-2 flex items-center gap-1 text-xs font-medium flex-wrap">
-                            {(
-                              [
-                                ["source", "Tài liệu gốc"],
-                                ["fulltext", "Toàn văn"],
-                                ["overview", "Tổng quan"],
-                                ["schema", "Lược đồ"],
-                                ["graph", "Đồ thị"],
-                              ] as const
-                            ).map(([tab, label], idx) => (
-                              <React.Fragment key={tab}>
-                                {idx > 0 && <span className="text-border">|</span>}
-                                <Link href={legalDocHref(d, tab)} className="px-1 text-primary hover:underline">
-                                  {label}
-                                </Link>
-                              </React.Fragment>
-                            ))}
                             {d.has_file && (
                               <>
-                                <span className="text-border">|</span>
                                 <button
                                   type="button"
                                   onClick={() => void download(d)}
@@ -487,10 +487,16 @@ export default function WikiLawPage() {
             )}
           </div>
 
-          {/* Facet sidebar */}
-          <aside className="order-first lg:order-none bg-card border border-border rounded-xl px-4 pt-3 pb-1 lg:sticky lg:top-0 lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto">
+          <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
+            <SheetContent showCloseButton={false} className="w-full! sm:max-w-md! gap-0 overflow-hidden">
+              <SheetHeader className="border-b pr-12">
+                <SheetTitle>Bộ lọc văn bản</SheetTitle>
+                <SheetDescription>Chọn một hoặc nhiều điều kiện. Kết quả cập nhật ngay.</SheetDescription>
+                <SheetClose aria-label="Đóng bộ lọc" className="absolute right-4 top-4 rounded-md p-1.5 hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"><span aria-hidden="true" className="material-symbols-outlined text-[20px]!">close</span></SheetClose>
+              </SheetHeader>
+              <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
             <div className="flex items-center justify-between pb-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Tra cứu nhanh</span>
+              <span className="text-sm font-medium">{filtered.length} văn bản phù hợp</span>
               {activeFilterCount > 0 && (
                 <button onClick={clearFilters} className="text-xs font-medium text-primary hover:underline cursor-pointer">
                   Xóa điều kiện lọc
@@ -508,9 +514,13 @@ export default function WikiLawPage() {
               defaultOpen: false,
             })}
             {facetGroup("year", "Năm ban hành", { defaultOpen: false })}
-          </aside>
+              </div>
+              <div className="border-t p-4"><button type="button" onClick={() => setFiltersOpen(false)} className="h-10 w-full rounded-lg bg-primary text-sm font-medium text-primary-foreground hover:bg-primary/90">Xem {filtered.length} văn bản</button></div>
+            </SheetContent>
+          </Sheet>
         </div>
       )}
+      </>}
     </div>
   );
 }

@@ -254,6 +254,11 @@ async def resolve_wiki_scopes(session, source) -> list[tuple[str, Optional[uuid.
 
     scope_type = getattr(current, "scope_type", None) or "global"
     scope_id = getattr(current, "scope_id", None)
+    if scope_type == "personal":
+        owner_id = scope_id or getattr(current, "contributed_by_employee_id", None)
+        if not owner_id:
+            raise ValueError("Tài liệu cá nhân chưa có chủ sở hữu; không tạo Wiki trong phạm vi toàn hệ thống.")
+        return [("personal", owner_id)]
     if scope_type == "project" and scope_id is not None:
         return [("project", scope_id)]
 
@@ -336,14 +341,24 @@ async def list_pages(
     all_scopes: bool = False,
     clearance: Optional[str] = None,
     page_filter=None,
+    personal_owner_id=None,
+    origin_tag: Optional[str] = None,
+    source_id=None,
 ) -> list[WikiPage]:
     stmt = select(WikiPage).where(WikiPage.slug.notin_(list(RESERVED_SLUGS)))
     if all_scopes:
         pass
-    elif department_ids or project_ids:
-        stmt = stmt.where(_identity_scope_filter(department_ids, project_ids))
+    elif department_ids or project_ids or personal_owner_id is not None:
+        identity_scope = _identity_scope_filter(department_ids, project_ids)
+        if personal_owner_id is not None:
+            identity_scope = or_(identity_scope,and_(WikiPage.scope_type == "personal",WikiPage.scope_id == personal_owner_id))
+        stmt = stmt.where(identity_scope)
     else:
         stmt = stmt.where(_scope_filter(scope_type, scope_id))
+    if origin_tag:
+        stmt = stmt.where(WikiPage.origin_tag == origin_tag)
+    if source_id is not None:
+        stmt = stmt.where(source_id == any_(WikiPage.source_ids))
     if page_type:
         stmt = stmt.where(WikiPage.page_type == page_type)
     if knowledge_type_slug:
@@ -401,6 +416,7 @@ async def apply_create(
     scope_type: str = "global",
     scope_id=None,
     status: str = "seed",
+    origin_tag: Optional[str] = None,
 ) -> WikiPage:
     # page_type is derived from the slug on the model; the argument is accepted
     # for API compatibility with callers that pass it.
@@ -410,6 +426,7 @@ async def apply_create(
         title=title,
         content_md=content_md or "",
         summary=summary,
+        origin_tag=origin_tag,
         knowledge_type_slugs=list(knowledge_type_slugs or []),
         source_ids=list(source_ids or []),
         scope_type=scope_type or "global",
@@ -437,10 +454,14 @@ async def apply_update(
     scope_id=None,
     status: Optional[str] = None,
     guard: bool = True,
+    origin_tag: Optional[str] = None,
 ) -> Optional[WikiPage]:
     page = await get_page_by_slug(session, slug, scope_type=scope_type, scope_id=scope_id)
     if page is None:
         return None
+    if origin_tag is not None:
+        from app.services.wiki_origin_service import require_compatible
+        require_compatible(page, origin_tag, add_source_id)
     if guard:
         reason = wiki_write_guard.check_machine_rewrite(page.content_md or "", new_content_md or "")
         if reason:
@@ -483,6 +504,7 @@ async def upsert_page(
     scope_type: str = "global",
     scope_id=None,
     status: Optional[str] = None,
+    origin_tag: Optional[str] = None,
 ) -> WikiPage:
     await _advisory_lock(session, slug)
     existing = await get_page_by_slug(session, slug, scope_type=scope_type, scope_id=scope_id)
@@ -490,7 +512,7 @@ async def upsert_page(
         return await apply_create(
             session, slug=slug, title=title, page_type=page_type, content_md=content_md,
             summary=summary, knowledge_type_slugs=knowledge_type_slugs, source_ids=source_ids,
-            scope_type=scope_type, scope_id=scope_id, status=status or "seed",
+            scope_type=scope_type, scope_id=scope_id, status=status or "seed", origin_tag=origin_tag,
         )
     kts = list(knowledge_type_slugs or [])
     sids = list(source_ids or [])
@@ -498,7 +520,7 @@ async def upsert_page(
         session, slug=slug, new_content_md=content_md or "", summary=summary, title=title,
         add_knowledge_type_slug=kts[0] if kts else None,
         add_source_id=sids[0] if sids else None,
-        scope_type=scope_type, scope_id=scope_id, status=status,
+        scope_type=scope_type, scope_id=scope_id, status=status, origin_tag=origin_tag,
     )
     return updated if updated is not None else existing
 
@@ -565,6 +587,7 @@ async def render_scoped_index(
     max_pages: int = 2000,
     clearance: Optional[str] = None,
     page_filter=None,
+    personal_owner_id=None,
 ) -> str:
     pages = await list_pages(
         session,
@@ -574,6 +597,7 @@ async def render_scoped_index(
         clearance=clearance,
         page_filter=page_filter,
         limit=max_pages + 1,
+        personal_owner_id=personal_owner_id,
     )
     return _render_index_md(list(pages), max_pages=max_pages)
 
@@ -859,6 +883,8 @@ async def approve_draft(
         ):
             raise DraftConflictError(page.version, draft.base_version)
         page.content_md = final_content
+        from app.services.legal_service import refresh_article_summary
+        refresh_article_summary(page)
         page.version = int(page.version or 1) + 1
         await session.flush()
         await refresh_links(session, page.id, page.slug, final_content)
@@ -900,7 +926,10 @@ async def human_edited_page_ids(session, page_ids) -> set:
 
 async def direct_edit_page(session, page: WikiPage, editor_id, content_md: str,
                            change_note: Optional[str] = None) -> WikiPage:
+    from app.services.legal_service import refresh_article_summary
+
     page.content_md = content_md
+    refresh_article_summary(page)
     page.version = int(page.version or 1) + 1
     await session.flush()
     await refresh_links(session, page.id, page.slug, content_md)
@@ -911,6 +940,8 @@ async def direct_edit_page(session, page: WikiPage, editor_id, content_md: str,
 
 
 async def rollback_to_revision(session, page: WikiPage, target_version: int, actor_id) -> WikiPage:
+    from app.services.legal_service import refresh_article_summary
+
     rev = (await session.execute(
         select(WikiPageRevision).where(
             WikiPageRevision.page_id == page.id, WikiPageRevision.version == target_version
@@ -919,6 +950,7 @@ async def rollback_to_revision(session, page: WikiPage, target_version: int, act
     if rev is None:
         raise ValueError(f"Revision v{target_version} not found for page {page.slug}")
     page.content_md = rev.content_md
+    refresh_article_summary(page)
     page.version = int(page.version or 1) + 1
     await session.flush()
     await refresh_links(session, page.id, page.slug, rev.content_md)

@@ -12,6 +12,9 @@ interface ScopedFields {
 }
 
 export interface WikiPageSummary extends ScopedFields {
+  rerank_score?: number | null;
+  id?: string;
+  origin_tag?: "extracted" | "generated" | null;
   /** Page identifier; may contain "/" */
   slug: string;
   title: string;

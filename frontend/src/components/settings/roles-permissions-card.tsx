@@ -10,6 +10,8 @@ import { cn } from "@/lib/utils";
 type RoleInfo = { id: string; name: string; description: string };
 
 type RbacMatrix = {
+  managed?: boolean;
+  portal_role_permissions?: Record<string, string[]>;
   roles: RoleInfo[];
   groups: Record<string, string[]>;
   labels: Record<string, string>;
@@ -19,6 +21,16 @@ type RbacMatrix = {
 };
 
 type SaveResponse = { success: boolean; role_permissions: Record<string, string[]> };
+
+const PORTAL_PERMISSION_LABELS: Record<string, string> = {
+  "portal.use": "Sử dụng hệ thống", "users.manage": "Quản lý cán bộ", "org.manage": "Quản lý đơn vị",
+  "roles.manage": "Quản lý vai trò và chính sách", "knowledge.manage": "Quản lý kho tri thức",
+  "knowledge.approve": "Duyệt tri thức", "ai.models.manage": "Quản lý mô hình AI",
+  "ai.prompts.manage": "Quản lý câu lệnh AI", "ai.rag.manage": "Quản lý truy xuất tri thức",
+  "ai.guardrails.manage": "Quản lý an toàn AI", "system.config.manage": "Cấu hình hệ thống",
+  "monitor.read": "Xem giám sát", "logs.read": "Xem nhật ký", "audit.read": "Xem kiểm vết",
+  "alerts.manage": "Quản lý cảnh báo", "reports.export": "Xuất báo cáo",
+};
 
 /** Roles that can be edited from this screen; admin is fixed. */
 const EDITABLE_ROLES = ["viewer", "contributor", "knowledge_manager"] as const;
@@ -154,6 +166,29 @@ export function RolesPermissionsCard() {
   const groups = Object.entries(matrix?.groups ?? {})
     .map(([key, perms]) => ({ key, perms: perms.filter(matches) }))
     .filter((g) => g.perms.length > 0);
+
+  if (matrix?.managed) {
+    return (
+      <div className="space-y-4 rounded-2xl border bg-card p-5">
+        <div>
+          <h2 className="font-semibold">Vai trò &amp; quyền dùng chung</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Quản lý tại Cán bộ &amp; đơn vị → Vai trò &amp; quyền. Quyền trên Kho tri thức áp dụng theo phạm vi đơn vị và nhãn bảo mật được cấp.</p>
+        </div>
+        <div className="overflow-x-auto rounded-xl border">
+          <table className="w-full text-left text-sm">
+            <thead className="bg-muted"><tr><th className="p-3">Vai trò</th><th className="p-3">Quyền dùng chung</th><th className="p-3">Quyền trên Kho tri thức</th></tr></thead>
+            <tbody>{matrix.roles.map((role) => (
+              <tr key={role.id} className="border-t align-top">
+                <td className="p-3 font-medium">{role.name}<p className="mt-1 text-xs font-normal text-muted-foreground">{role.description}</p></td>
+                <td className="p-3"><div className="flex flex-wrap gap-1">{(matrix.portal_role_permissions?.[role.id] ?? []).map((permission) => <span key={permission} className="rounded-md bg-muted px-2 py-1 text-xs">{PORTAL_PERMISSION_LABELS[permission] ?? permission}</span>)}</div></td>
+                <td className="p-3"><ul className="space-y-1">{(matrix.role_permissions[role.id] ?? []).map((permission) => <li key={permission} className="text-xs text-muted-foreground">{matrix.labels[permission] ?? permission}</li>)}</ul></td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-5 rounded-2xl border border-border/80 bg-card p-6 shadow-lift">

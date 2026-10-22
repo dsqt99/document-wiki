@@ -60,6 +60,8 @@ function headingId(text: string): string {
 }
 
 function stripInline(text: string): string {
+  const undecorated = text.replace(/<[^>]+>|[*_`]/g, "").trim();
+  if (/^Điều\s+\d/iu.test(undecorated)) text = text.replace(/<sup\b[^>]*>.*?<\/sup>/gi, "");
   return text
     .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
     .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
@@ -90,12 +92,18 @@ function extractToc(md: string): TocItem[] {
   return items;
 }
 
-type HastLike = { type?: string; value?: string; children?: HastLike[] };
+type HastLike = { type?: string; tagName?: string; value?: string; children?: HastLike[] };
 
-function hastText(node: HastLike | undefined): string {
+function hastText(node: HastLike | undefined, omitFootnotes = false): string {
   if (!node) return "";
+  if (omitFootnotes && node.tagName === "sup") return "";
   if (node.type === "text") return node.value ?? "";
-  return (node.children ?? []).map(hastText).join("");
+  return (node.children ?? []).map((child) => hastText(child, omitFootnotes)).join("");
+}
+
+function headingNodeText(node: HastLike | undefined): string {
+  const text = hastText(node);
+  return /^Điều\s+\d/iu.test(text.trim()) ? hastText(node, true) : text;
 }
 
 function TableOfContents({ items }: { items: TocItem[] }) {
@@ -215,13 +223,14 @@ function CodeBlock({ children }: { children: ReactNode }) {
 
 type WikiContentProps = {
   markdown: string;
+  showToc?: boolean;
   onWikiLinkClick?: (slug: string) => void;
   linkSuffix?: string;
 };
 
 const IMAGE_ID_RE = /image:\/\/([A-Za-z0-9-]+)/g;
 
-export function WikiContent({ markdown, onWikiLinkClick, linkSuffix = "" }: WikiContentProps) {
+export function WikiContent({ markdown, onWikiLinkClick, linkSuffix = "", showToc = true }: WikiContentProps) {
   const processed = useMemo(() => preprocessWikilinks(markdown ?? ""), [markdown]);
   const toc = useMemo(() => extractToc(processed), [processed]);
   const imageIds = useMemo(() => Array.from(processed.matchAll(IMAGE_ID_RE), (m) => m[1]), [processed]);
@@ -231,7 +240,7 @@ export function WikiContent({ markdown, onWikiLinkClick, linkSuffix = "" }: Wiki
     const heading = (Tag: "h2" | "h3" | "h4", cls: string) => {
       function Heading({ node, children }: { node?: unknown; children?: ReactNode }) {
         return (
-          <Tag id={headingId(hastText(node as HastLike))} className={cls}>
+          <Tag id={headingId(headingNodeText(node as HastLike))} className={cls}>
             {children}
           </Tag>
         );
@@ -342,7 +351,7 @@ export function WikiContent({ markdown, onWikiLinkClick, linkSuffix = "" }: Wiki
 
   return (
     <div className="wiki-content min-w-0 text-foreground">
-      {toc.length >= 3 && <TableOfContents items={toc} />}
+      {showToc && toc.length >= 3 && <TableOfContents items={toc} />}
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeRaw]}

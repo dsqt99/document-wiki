@@ -10,7 +10,7 @@ import { FormattedInlineText } from "@/components/wiki/formatted-inline-text";
 import { WikiContent } from "@/components/wiki/wiki-content";
 import { slugPath } from "@/components/review/review-utils";
 
-type CreatedPages = { overview_slug: string; article_slugs: (string | null)[] };
+type CreatedPages = { overview_slug: string; article_slugs: (string | null)[]; end_section_slugs?: (string | null)[] };
 
 function EditedBadge() {
   return (
@@ -72,18 +72,21 @@ export function LawFulltextTab({ doc }: { doc: LegalDocDetail }) {
   const router = useRouter();
   const { user, hasPermission } = useAuth();
   const canEdit = user?.role === "admin" || hasPermission("wiki:write:all");
-  // Part whose pages are being created: -1 = phần mở đầu, otherwise the article index.
+  // -1 is the preamble; tail sections follow the article indexes.
   const [creating, setCreating] = useState<number | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
   const articles = doc.articles ?? [];
+  const endSections = doc.end_sections ?? [];
   const preamble = (doc.preamble ?? "").trim();
   const needle = query.trim().toLowerCase();
   const matches = articles
     .map((a, i) => ({ a, i }))
     .filter(({ a }) => !needle || (a.heading ?? "").toLowerCase().includes(needle));
+  const endMatches = endSections.map((section, i) => ({ section, i: articles.length + i }))
+    .filter(({ section }) => !needle || section.title.toLowerCase().includes(needle));
 
   // Văn bản chưa có trang wiki theo điều: tách thành trang tổng quan + mỗi điều một trang, rồi mở trang cần sửa.
   const createAndEdit = async (target: number) => {
@@ -94,9 +97,10 @@ export function LawFulltextTab({ doc }: { doc: LegalDocDetail }) {
         method: "POST",
         timeoutMs: 300_000,
       });
-      const slug = target < 0 ? res.overview_slug : res.article_slugs[target];
+      const slug = target < 0 ? res.overview_slug : target < articles.length
+        ? res.article_slugs[target] : res.end_section_slugs?.[target - articles.length];
       if (slug) router.push(`/wiki/${slugPath(slug)}?edit=1`);
-      else setCreateError("Không xác định được trang của điều này");
+      else setCreateError("Không xác định được trang Wiki của phần này");
     } catch (err: unknown) {
       setCreateError(err instanceof Error && err.message ? err.message : "Không tạo được trang wiki");
     } finally {
@@ -111,7 +115,7 @@ export function LawFulltextTab({ doc }: { doc: LegalDocDetail }) {
 
   // Theo dõi điều đang đọc: điều đầu tiên còn nằm trong dải phía trên khung nhìn.
   useEffect(() => {
-    const count = doc.articles?.length ?? 0;
+    const count = (doc.articles?.length ?? 0) + (doc.end_sections?.length ?? 0);
     if (count === 0) return;
     const visible = new Set<number>();
     const observer = new IntersectionObserver(
@@ -130,7 +134,7 @@ export function LawFulltextTab({ doc }: { doc: LegalDocDetail }) {
       if (el) observer.observe(el);
     }
     return () => observer.disconnect();
-  }, [doc.articles]);
+  }, [doc.articles, doc.end_sections]);
 
   // Giữ mục đang đọc trong vùng nhìn thấy của danh sách, chỉ cuộn danh sách chứ không cuộn trang.
   useEffect(() => {
@@ -166,7 +170,7 @@ export function LawFulltextTab({ doc }: { doc: LegalDocDetail }) {
             <WikiContent markdown={doc.preamble} />
           </div>
         )}
-        {articles.length === 0 && !preamble && (
+        {articles.length === 0 && endSections.length === 0 && !preamble && (
           <p className="text-sm text-muted-foreground">Văn bản chưa có nội dung trích xuất.</p>
         )}
         {articles.map((a, i) => {
@@ -205,9 +209,22 @@ export function LawFulltextTab({ doc }: { doc: LegalDocDetail }) {
             </section>
           );
         })}
+        {endSections.map((section, i) => (
+          <section key={`end-${i}`} id={`art-${articles.length + i}`} data-idx={articles.length + i} className="scroll-mt-24 border-t py-6">
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <h3 className="text-base font-bold"><FormattedInlineText text={section.title} /></h3>
+              <div className="flex shrink-0 items-center gap-2">
+                {section.edited && <EditedBadge />}
+                <PageAction slug={section.wiki_slug} canEdit={canEdit} busy={creating === articles.length + i}
+                  onCreate={() => createAndEdit(articles.length + i)} />
+              </div>
+            </div>
+            <WikiContent markdown={section.content_md} showToc={false} />
+          </section>
+        ))}
       </div>
 
-      {articles.length > 0 && (
+      {(articles.length > 0 || endSections.length > 0) && (
         <aside className="flex flex-col gap-3 rounded-xl border bg-card p-4 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)]">
           <span className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
             Danh sách điều khoản ({articles.length})
@@ -222,12 +239,12 @@ export function LawFulltextTab({ doc }: { doc: LegalDocDetail }) {
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Tìm điều khoản..."
+              placeholder="Tìm điều khoản, phụ lục..."
               className="h-8 w-full rounded-lg border border-input bg-transparent pr-2 pl-8 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
             />
           </div>
           <div ref={listRef} className="relative max-h-[60vh] min-h-0 overflow-y-auto lg:max-h-none lg:flex-1">
-            {matches.length === 0 ? (
+            {matches.length === 0 && endMatches.length === 0 ? (
               <p className="px-2 py-3 text-xs text-muted-foreground">Không có kết quả</p>
             ) : (
               <ul className="flex flex-col">
@@ -247,6 +264,18 @@ export function LawFulltextTab({ doc }: { doc: LegalDocDetail }) {
                       <span className="line-clamp-2">
                         <FormattedInlineText text={a.heading} />
                       </span>
+                    </button>
+                  </li>
+                ))}
+                {endMatches.length > 0 && (
+                  <li className="mt-3 border-t px-2 pt-3 pb-1 text-[11px] font-semibold text-muted-foreground">Ghi chú &amp; phụ lục</li>
+                )}
+                {endMatches.map(({ section, i }) => (
+                  <li key={`end-${i}`}>
+                    <button type="button" data-toc={i} onClick={() => jumpTo(i)} title={section.title}
+                      aria-current={i === active ? "true" : undefined}
+                      className={"w-full rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted hover:text-primary " + (i === active ? "bg-muted font-medium text-primary" : "")}>
+                      <span className="line-clamp-2"><FormattedInlineText text={section.title} /></span>
                     </button>
                   </li>
                 ))}

@@ -21,6 +21,7 @@ async def test_legal_service_respects_department_scope():
     mock_source.scope_id = dept_id
 
     mock_session = AsyncMock()
+    mock_session.execute.return_value = MagicMock()
     mock_tracker = AsyncMock()
 
     # resolve_wiki_scopes returns department scope
@@ -44,7 +45,7 @@ async def test_legal_service_respects_department_scope():
         await finalize_legal_source(mock_session, mock_source, mock_tracker)
 
         # Ensure resolve_wiki_scopes was called
-        mock_resolve.assert_called_once_with(mock_session, mock_source)
+        mock_resolve.assert_any_call(mock_session, mock_source)
 
         # Check every call to upsert_page used department scope
         assert mock_upsert.call_count >= 2  # overview + at least 1 article
@@ -70,6 +71,7 @@ async def test_legal_finalize_stops_embedding_after_consecutive_failures():
 
     events = []
     mock_session = AsyncMock()
+    mock_session.execute.return_value = MagicMock()
     mock_session.commit.side_effect = lambda: events.append("commit")
 
     async def _graph(*a, **k):

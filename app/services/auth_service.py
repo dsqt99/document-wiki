@@ -16,6 +16,7 @@ from sqlalchemy.orm import selectinload
 from app.config import settings
 from app.database import get_db
 from app.database.models import Employee, EmployeeDepartment
+from app.services.sso_session_service import SESSION_VERSION, session_binding, validate_session_claims
 
 logger = logging.getLogger(__name__)
 
@@ -38,14 +39,19 @@ def verify_password(password: str, password_hash: str) -> bool:
         return False
 
 
-def create_access_token(employee_id: str, role: str, name: str) -> str:
+def create_access_token(employee_id: str, role: str, name: str, *, auth_source: str = "local", parent: Optional[dict] = None) -> str:
     now = datetime.now(timezone.utc)
+    binding = session_binding(auth_source, parent)
+    deadline = int((now + timedelta(hours=JWT_EXPIRE_HOURS)).timestamp())
+    if parent is not None:
+        deadline = min(deadline, binding["parent"]["exp"])
     claims = {
         "sub": str(employee_id),
         "role": role,
         "name": name,
-        "exp": now + timedelta(hours=JWT_EXPIRE_HOURS),
+        "exp": deadline,
         "iat": now,
+        **binding,
     }
     return jwt.encode(claims, settings.secret_key, algorithm=JWT_ALGORITHM)
 
@@ -59,19 +65,26 @@ def decode_access_token(token: str) -> Optional[dict]:
         return None
 
 
-def create_source_file_token(employee_id: str, source_id: str) -> str:
+def create_source_file_token(employee_id: str, source_id: str, *, session_claims: Optional[dict] = None) -> str:
     now = datetime.now(timezone.utc)
+    binding = session_binding("local", None) if session_claims is None else session_binding(session_claims.get("auth_source"), session_claims.get("parent"))
+    deadline = int((now + timedelta(minutes=SOURCE_FILE_TOKEN_MINUTES)).timestamp())
+    if session_claims is not None:
+        if session_claims.get("session_version") != SESSION_VERSION:
+            raise ValueError("Legacy session")
+        deadline = min(deadline, int(session_claims["exp"]))
     claims = {
         "sub": str(employee_id),
         "src": str(source_id),
         "aud": SOURCE_FILE_AUDIENCE,
-        "exp": now + timedelta(minutes=SOURCE_FILE_TOKEN_MINUTES),
+        "exp": deadline,
         "iat": now,
+        **binding,
     }
     return jwt.encode(claims, settings.secret_key, algorithm=JWT_ALGORITHM)
 
 
-def decode_source_file_token(token: str, source_id: str) -> Optional[str]:
+def decode_source_file_claims(token: str, source_id: str) -> Optional[dict]:
     try:
         claims = jwt.decode(
             token, settings.secret_key, algorithms=[JWT_ALGORITHM], audience=SOURCE_FILE_AUDIENCE
@@ -80,8 +93,14 @@ def decode_source_file_token(token: str, source_id: str) -> Optional[str]:
         return None
     if str(claims.get("src")) != str(source_id):
         return None
-    sub = claims.get("sub")
-    return sub or None
+    if claims.get("session_version") != SESSION_VERSION:
+        return None
+    return claims if claims.get("sub") else None
+
+
+def decode_source_file_token(token: str, source_id: str) -> Optional[str]:
+    claims = decode_source_file_claims(token, source_id)
+    return claims["sub"] if claims else None
 
 
 async def authenticate_employee(db: AsyncSession, email: str, password: str) -> Optional[Employee]:
@@ -125,6 +144,7 @@ async def employee_from_bearer(db: AsyncSession, token: str) -> Employee:
     employee = None
     claims = decode_access_token(token)
     if claims is not None:
+        await validate_session_claims(claims)
         try:
             emp_id = uuid.UUID(str(claims.get("sub")))
         except (ValueError, TypeError):
@@ -140,11 +160,16 @@ async def employee_from_bearer(db: AsyncSession, token: str) -> Employee:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, f"Keycloak token rejected ({outcome})")
         await db.commit()
         employee = await this._load_employee(db, outcome.id)
+        claims = getattr(outcome, "_wiki_session_claims", None)
     else:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or expired token")
 
     if employee is None or not employee.is_active:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Account not found or deactivated")
+    employee._wiki_session_claims = claims
+    from app.services.identity_directory import hydrate_identity
+
+    await hydrate_identity(db, employee)
     return employee
 
 

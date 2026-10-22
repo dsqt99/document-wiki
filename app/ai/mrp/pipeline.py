@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from copy import copy
 from typing import Any, Optional
 
 from loguru import logger
 from sqlalchemy import select, text
 
-from app.ai.mrp.merger import merge_page_content
+from app.ai.mrp.merger import append_fallback, merge_page_content
 from app.ai.mrp.writer import PageWriteResult
-from app.services import source_status, wiki_chunk_service, wiki_service
+from app.services import source_quality, source_status, wiki_chunk_service, wiki_service
 from app.services.wiki_service import resolve_wiki_scopes as _resolve_wiki_scopes
 from app.services.wiki_write_guard import is_failure_stub
 
@@ -46,8 +47,17 @@ async def run_commit_phase(session, source, page_results, plan, embedding_provid
     from app.database.models import Source
 
     wiki_scopes = await _resolve_wiki_scopes(session, source)
-    failed_slugs = sorted(r.slug for r in page_results if is_failure_stub(r.content_md))
-    good = [r for r in page_results if not is_failure_stub(r.content_md)]
+    # VERIFY annotates factual blockers; COMMIT also enforces them when resumed.
+    from app.ai.mrp.verifier import factual_publication_blockers
+    full_text = getattr(source, "full_text", None)
+    for r in page_results:
+        if isinstance(full_text, str) and not is_failure_stub(r.content_md):
+            r.publication_blockers = factual_publication_blockers(r.content_md, full_text)
+    failed_slugs = sorted(r.slug for r in page_results if is_failure_stub(r.content_md) or getattr(r, "publication_blockers", []))
+    good = [r for r in page_results if r.slug not in failed_slugs]
+    planned = (getattr(plan, "plan_json", None) or {}).get("pages") if plan is not None else None
+    expected = max(len(planned or []), len(page_results)) * len(wiki_scopes or [("global", None)])
+    index_failures = []
     merge_llm = await _merge_llm(session)
 
     await _progress(tracker, 95, f"Saving {len(good)} wiki page(s)...")
@@ -58,12 +68,22 @@ async def run_commit_phase(session, source, page_results, plan, embedding_provid
     for scope_type, scope_id in wiki_scopes or [("global", None)]:
         scope_created = 0
         scope_updated = 0
-        for r in good:
+        from app.services.wiki_origin_service import resolve_target_slug, remap_links
+        mapping = {r.slug: await resolve_target_slug(session, r.slug, "generated", scope_type, scope_id, source.id) for r in good}
+        scoped_results = []
+        for original in good:
+            result = copy(original)
+            result.slug = mapping[original.slug]
+            result.content_md = remap_links(original.content_md, mapping)
+            scoped_results.append(result)
+        for r in scoped_results:
             status = getattr(r, "status", None) or "seed"
             try:
                 await _lock(session, f"{r.slug}:{scope_type}:{scope_id}")
                 action = (r.action or "CREATE").upper()
                 page = None
+                write_kind = None
+                expected_content = r.content_md
                 if action == "CREATE":
                     existing = await wiki_service.get_page_by_slug(
                         session, r.slug, scope_type=scope_type, scope_id=scope_id
@@ -75,43 +95,67 @@ async def run_commit_phase(session, source, page_results, plan, embedding_provid
                             session, slug=r.slug, title=r.title, page_type=r.page_type,
                             content_md=r.content_md, summary=r.summary, knowledge_type_slugs=kt_list,
                             source_ids=[source.id], scope_type=scope_type, scope_id=scope_id, status=status,
+                            origin_tag="generated",
                         )
-                        scope_created += 1
+                        write_kind = "create"
                 if action == "UPDATE":
                     existing = await wiki_service.get_page_by_slug(
                         session, r.slug, scope_type=scope_type, scope_id=scope_id
                     )
                     content = r.content_md
                     old = getattr(existing, "content_md", None) if existing is not None else None
-                    if (
-                        old and merge_llm is not None
-                        and source.id not in list(getattr(existing, "source_ids", None) or [])
-                        and len(old.strip()) > MERGE_MIN_EXISTING_CHARS
-                    ):
-                        content = await merge_page_content(merge_llm, old, r.content_md, r.slug)
+                    if existing is not None:
+                        from app.services.wiki_origin_service import require_compatible
+                        require_compatible(existing, "generated", source.id)
+                    if old and old.strip() != content.strip():
+                        if merge_llm is not None and len(old.strip()) > MERGE_MIN_EXISTING_CHARS:
+                            content = await merge_page_content(merge_llm, old, r.content_md, r.slug)
+                        else:
+                            content = append_fallback(old, r.content_md)
+                    # Merging may introduce a broken footnote. Old pages may
+                    # cite other sources, so check only structural integrity here.
+                    broken = [b for b in factual_publication_blockers(content, full_text or "")
+                              if b in ("empty_page", "undefined_footnote", "empty_footnote")]
+                    if broken:
+                        raise ValueError(f"Broken merged evidence: {', '.join(broken)}")
+                    expected_content = content
                     page = await wiki_service.apply_update(
                         session, slug=r.slug, new_content_md=content, summary=r.summary, title=r.title,
                         add_knowledge_type_slug=kt_slug, add_source_id=source.id,
                         scope_type=scope_type, scope_id=scope_id, status=status,
+                        origin_tag="generated",
                     )
                     if page is None:
                         page = await wiki_service.apply_create(
                             session, slug=r.slug, title=r.title, page_type=r.page_type,
                             content_md=content, summary=r.summary, knowledge_type_slugs=kt_list,
                             source_ids=[source.id], scope_type=scope_type, scope_id=scope_id, status=status,
+                            origin_tag="generated",
                         )
-                        scope_created += 1
+                        write_kind = "create"
                     else:
-                        scope_updated += 1
+                        write_kind = "update"
+                if page is None or write_kind is None:
+                    raise ValueError(f"No Wiki page written for action {action}")
+                actual_content = getattr(page, "content_md", None)
+                if isinstance(actual_content, str) and actual_content != expected_content:
+                    raise ValueError("Wiki write guard declined the generated content")
                 await session.flush()
+                if write_kind == "create":
+                    scope_created += 1
+                else:
+                    scope_updated += 1
                 if embedding_spec is not None and page is not None:
                     try:
                         await wiki_chunk_service.index_wiki_page_chunks(
                             session, page, spec_id=getattr(embedding_spec, "id", None)
                         )
                     except Exception as e:
+                        index_failures.append(r.slug)
                         logger.warning(f"commit[{r.slug}]: chunk indexing failed: {e}")
             except Exception as e:
+                if r.slug not in failed_slugs:
+                    failed_slugs.append(r.slug)
                 logger.error(f"commit[{r.slug}] in {scope_type}:{scope_id} failed: {type(e).__name__}: {e}")
 
         created += scope_created
@@ -133,7 +177,24 @@ async def run_commit_phase(session, source, page_results, plan, embedding_provid
     src = await session.get(Source, source.id)
     if src is None:
         src = source
-    if failed_slugs and created + updated == 0:
+    published = created + updated
+    failed = max(0, expected - published)
+    warnings = []
+    if failed:
+        warnings.append({"code": "wiki_pages_skipped", "message": f"{failed}/{expected} planned Wiki page(s) were not published: {', '.join(failed_slugs[:SKIPPED_SLUGS_SHOWN])}"})
+    if index_failures:
+        warnings.append({"code": "wiki_index_failed", "message": f"Wiki vector indexing failed for {len(index_failures)} page(s). Keyword search remains available."})
+    saved = await source_quality.save_quality(session, source, "wiki", {
+        "status": "error" if not published else "partial" if failed or index_failures else "complete",
+        "expected": expected, "published": published, "failed": failed,
+        "skipped_slugs": failed_slugs, "index_failed_slugs": index_failures, "warnings": warnings,
+    })
+    if not saved:
+        await session.rollback()
+        return {"status": "stale"}
+    if src is not source:
+        src.metadata_ = source.metadata_
+    if not published:
         # Nothing was written (typically every page call timed out): report an error so the
         # retry/cron paths pick the source up again, resuming at REFINE.
         from app.ai.upstream import AI_UNAVAILABLE_MARKER
@@ -153,7 +214,7 @@ async def run_commit_phase(session, source, page_results, plan, embedding_provid
         await session.commit()
         return {"pages_created": 0, "pages_updated": 0, "pages_skipped": failed_slugs, "status": "error"}
     src.pipeline_phase = "commit"
-    src.wiki_status = "ready"
+    src.wiki_status = "error" if failed or index_failures else "ready"
     src.wiki_progress = 100
     if failed_slugs:
         shown = ", ".join(failed_slugs[:SKIPPED_SLUGS_SHOWN])
@@ -162,7 +223,7 @@ async def run_commit_phase(session, source, page_results, plan, embedding_provid
         )
     else:
         src.wiki_progress_message = "Done"
-    src.wiki_error_message = None
+    src.wiki_error_message = f"Wiki incomplete: {failed} page(s) skipped; {len(index_failures)} index failure(s)" if failed or index_failures else None
     src.auto_recover_count = 0
     await source_status.update_source_dual_status(session, src)
     await session.commit()

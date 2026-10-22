@@ -11,6 +11,7 @@ Each page is indexed with both page-level and chunk-level vector embeddings
 from __future__ import annotations
 
 import re
+import unicodedata
 import uuid
 from typing import Any, Optional
 
@@ -83,8 +84,21 @@ def parse_legal_metadata(text: str, file_name: str = "") -> dict[str, Any]:
     """
     from app.services.legal_hierarchy_parser import strip_markup
 
-    # Markdown/HTML from PDF extraction ('**LUẬT**', '_Căn cứ ..._') would defeat the header regexes.
-    preamble = "\n".join(strip_markup(ln) for ln in text[:4000].splitlines()) if text else ""
+    def metadata_text(value: str) -> str:
+        # Metadata is prose even when the extractor represents a title as a
+        # one-column Markdown table. Keep source words, discard table syntax.
+        lines = []
+        for line in re.sub(r"<br\s*/?>", "\n", value, flags=re.I).splitlines():
+            if re.fullmatch(r"\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)*\|?\s*", line):
+                continue
+            if line.lstrip().startswith("|"):
+                line = re.sub(r"(?<!\\)\|", " ", line)
+            lines.append(strip_markup(line))
+        return "\n".join(lines)
+
+    preamble = metadata_text(text[:4000]) if text else ""
+    # The publisher's certification/code can be on the final consolidated page.
+    consolidation_tail = metadata_text(text[-12000:]) if text else ""
     meta: dict[str, Any] = {
         "doc_type": None,
         "doc_number": None,
@@ -97,6 +111,7 @@ def parse_legal_metadata(text: str, file_name: str = "") -> dict[str, Any]:
 
     is_vbhn = bool(
         re.search(r'vbhn|văn[\s\._\-]*bản[\s\._\-]*hợp[\s\._\-]*nhất', file_name + " " + preamble[:500], re.I)
+        or re.search(r'(?:XÁC THỰC VĂN BẢN HỢP NHẤT|(?:^|\n)\s*Số\s*:\s*\d*\s*/VBHN[-_])', consolidation_tail, re.I)
     )
     vbhn_fn_num_m = re.search(
         r'(?:hợp\s*nhất\s*(?:Luật\s+[^\n\d]+)?số|VBHN[_\s\-]*)\s*[:\s]*([0-9]+(?:\.[0-9]+)?)',
@@ -223,11 +238,25 @@ def parse_legal_metadata(text: str, file_name: str = "") -> dict[str, Any]:
                 meta["doc_type"] = type_name
                 if not meta["official_title"]:
                     after_type = preamble[type_m.end():]
-                    can_cu_m = re.search(
-                        r'(?:^|\n)\s*(?:Căn cứ|Theo đề nghị|Luật\s+[A-ZÀ-Ỹ\s]+số\s+\d+|Để thi hành|Quy định này)',
+                    title_boundaries = re.finditer(
+                        r'(?:^|\n)\s*(?:Căn cứ|Theo đề nghị|(?:Luật|Nghị định|Thông tư|Quyết định)\s+(?:[^\n]{0,80}?\s+)?số\s+\d+|Để thi hành|Quy định này|Điều\s+\d+[a-z]?[.])',
                         after_type,
                         re.IGNORECASE,
                     )
+                    can_cu_m = None
+                    for candidate in title_boundaries:
+                        is_document_reference = re.match(
+                            r'(?:Luật|Nghị định|Thông tư|Quyết định)\b', candidate.group(0).strip(), re.I,
+                        )
+                        # A wrapped title can introduce its referenced decree
+                        # on the next line after "của", "tại", or "và".
+                        continues_title = re.search(
+                            r'\b(?:của|tại|theo|và|đối với)\s*$', after_type[:candidate.start()], re.I,
+                        )
+                        if is_document_reference and continues_title:
+                            continue
+                        can_cu_m = candidate
+                        break
                     if can_cu_m:
                         raw_title_block = after_type[:can_cu_m.start()].strip()
                     else:
@@ -294,32 +323,72 @@ def parse_legal_metadata(text: str, file_name: str = "") -> dict[str, Any]:
     # 8. Construct Canonical Name and Full Citation
     if is_vbhn:
         orig_doc_num = meta["doc_number"]
-        orig_doc_type = meta["doc_type"] or "Luật"
+        orig_doc_type = meta["doc_type"]
         meta["doc_type"] = "Văn bản hợp nhất"
-        meta["issuing_authority"] = "Văn phòng Quốc hội"
 
-        vbhn_num_str = ""
-        if orig_doc_num and "VBHN" in orig_doc_num:
-            vbhn_num_str = orig_doc_num
-        elif vbhn_fn_num_m:
-            num_clean = vbhn_fn_num_m.group(1).split(".")[0]
-            vbhn_num_str = f"{num_clean}/VBHN-VPQH"
-            meta["doc_number"] = vbhn_num_str
+        publisher_names = {
+            "VPQH": "Văn phòng Quốc hội",
+            "BCA": "Bộ Công an",
+            "BXD": "Bộ Xây dựng",
+            "BTC": "Bộ Tài chính",
+            "BTP": "Bộ Tư pháp",
+            "BGTVT": "Bộ Giao thông vận tải",
+        }
+        # Prefer a formal consolidated document code over authority mentions
+        # in the underlying law/decree or its amendment history.
+        filename_code = re.search(r'(?<!\w)(\d+)[/\-_]VBHN[-_]([A-Z][A-Z0-9]*)\b', file_name, re.I)
+        filename_code_text = f"{filename_code.group(1)}/VBHN-{filename_code.group(2)}" if filename_code else clean_fn
+        code_source = preamble + "\n" + consolidation_tail + "\n" + filename_code_text
+        code_match = re.search(
+            r'(?:^|\n)[ \t]*(?:Số[ \t]*:[ \t]*)?(?P<number>\d+)?[ \t]*/?[ \t]*VBHN[ \t]*[-_][ \t]*(?P<publisher>[A-Z][A-Z0-9]*)\b',
+            code_source, re.I,
+        )
+        publisher = code_match.group("publisher").upper() if code_match else None
+        if not publisher:
+            for suffix, authority in publisher_names.items():
+                if re.search(r'(?:^|\n)\s*' + re.escape(authority) + r'(?:\s*\n|\s+XÁC THỰC VĂN BẢN HỢP NHẤT)', preamble[:700] + "\n" + consolidation_tail, re.I):
+                    publisher = suffix
+                    break
+        meta["issuing_authority"] = publisher_names.get(publisher)
+
+        vbhn_number = code_match.group("number") if code_match else None
+        if not vbhn_number and orig_doc_num and "VBHN" in orig_doc_num.upper():
+            number_match = re.match(r'(\d+)', orig_doc_num)
+            vbhn_number = number_match.group(1) if number_match else None
+        if not vbhn_number and vbhn_fn_num_m:
+            vbhn_number = vbhn_fn_num_m.group(1).split(".")[0]
+        vbhn_num_str = f"{vbhn_number}/VBHN" if vbhn_number else ""
+        if vbhn_num_str and publisher:
+            vbhn_num_str += f"-{publisher}"
+        meta["doc_number"] = vbhn_num_str or None
+        # A date on the underlying law/decree is not the consolidation date.
+        # Only retain a complete date in the formal consolidated code's context.
+        vbhn_date = re.search(
+            r'ngày\s+(\d{1,2})\s+tháng\s+(\d{1,2})\s+năm\s+(\d{4})',
+            code_source[code_match.end():code_match.end() + 120] if code_match else "",
+            re.I,
+        )
+        meta["issued_date"] = None
+        if vbhn_date:
+            day, month, year = vbhn_date.groups()
+            meta["issued_date"] = f"{int(day):02d}/{int(month):02d}/{year}"
 
         c_parts = ["Văn bản hợp nhất"]
         if vbhn_num_str:
             c_parts.append(f"số {vbhn_num_str}")
-        if meta["issued_date"] and "VBHN" in (orig_doc_num or ""):
+        if meta["issued_date"]:
             c_parts.append(f"ngày {meta['issued_date']}")
-        c_parts.append(f"của Văn phòng Quốc hội")
+        if meta["issuing_authority"]:
+            c_parts.append(f"của {meta['issuing_authority']}")
 
         # Vietnamese sentence case: "XỬ LÝ VI PHẠM HÀNH CHÍNH" -> "Xử lý vi phạm hành chính".
         title_display = meta["official_title"].capitalize() if meta.get("official_title") else ""
         if title_display:
-            c_parts.append(f"— {orig_doc_type} {title_display}")
+            title_type = orig_doc_type if orig_doc_type != "Văn bản hợp nhất" else None
+            c_parts.append("— " + " ".join(part for part in (title_type, title_display) if part))
 
-        if orig_doc_num and "VBHN" not in orig_doc_num:
-            c_parts.append(f"({orig_doc_type} số {orig_doc_num})")
+        if orig_doc_num and "VBHN" not in orig_doc_num.upper():
+            c_parts.append(f"({orig_doc_type or 'văn bản'} số {orig_doc_num})")
 
         meta["canonical_name"] = " ".join(c_parts)
     else:
@@ -369,7 +438,6 @@ def build_legal_doc_slug(
     return f"{base}-{h}"
 
 
-ARTICLE_SUMMARY_MAX = 400
 ARTICLE_TITLE_MAX = 500  # LegalUnit.title column; long OCR titles exist, the shape rules below decide
 # A full stop after a word ("ký. Quyết định ..."), not after a number ("7 . Đấu giá biển số xe").
 _SENTENCE_BREAK = re.compile(r"[^\d\s]\.\s+[A-ZÀ-Ỹ]")
@@ -395,28 +463,66 @@ def is_body_sentence(title: Optional[str]) -> bool:
 
 
 def article_summary(art_num: str, title: Optional[str], lead: Optional[str], content_md: str,
-                    limit: int = ARTICLE_SUMMARY_MAX) -> str:
-    """'Điều N: <tên> — <đoạn đầu>' from the verbatim text, cut at a sentence/word boundary."""
+                    limit: Optional[int] = None) -> str:
+    """'Điều N: <tên> — <đoạn đầu>', keeping the complete opening paragraph by default."""
     from app.services.legal_hierarchy_parser import strip_markup
 
     head = f"Điều {art_num}" + (f": {title}" if title else "")
     parts = [lead] if lead else []
     total = len(lead or "")
+    in_body = False
     for line in (content_md or "").splitlines():
-        if total > limit:
+        if limit is not None and total > limit:
             break
         raw = line.strip()
-        if not raw or raw.startswith(">"):
+        if not raw:
+            if in_body and parts and limit is None:
+                break
+            continue
+        if raw.startswith(">"):
             continue
         s = strip_markup(raw)
-        if not s or re.match(r"(?i)^điều\s+\d", s):
+        if not s:
             continue
+        if re.match(r"(?i)^điều\s+\d", s):
+            in_body = True
+            continue
+        if parts and limit is None and re.match(r"^(?:\d+\.|[a-zđ]\)|[-+•–])\s+", s):
+            break
         s = re.sub(r"^[-+•–]\s*", "", s)
         if s:
+            in_body = True
             parts.append(s)
             total += len(s)
     body = " ".join(parts)
-    return clip_text(f"{head} — {body}" if body else head, limit)
+    summary = " ".join((f"{head} — {body}" if body else head).split())
+    return clip_text(summary, limit) if limit is not None else summary
+
+
+def refresh_article_summary(page: WikiPage) -> None:
+    """Rebuild a generated article page's summary after a human content change."""
+    from app.services.legal_hierarchy_parser import strip_markup
+
+    match = re.match(r"^dieu-(\d+[a-z]?)-", page.slug or "", re.IGNORECASE)
+    if not match:
+        return
+    num = match.group(1)
+    heading_re = re.compile(rf"^Điều\s+{re.escape(num)}\b[.:]?\s*(.*)$", re.IGNORECASE)
+    # The editor may remove the body heading; the page title is then the fallback.
+    title_match = heading_re.match((page.title or "").split(" - ", 1)[0])
+    raw_title = title_match.group(1) if title_match else None
+    has_heading = False
+    for line in (page.content_md or "").splitlines():
+        if not line.strip() or line.lstrip().startswith(">"):
+            continue
+        heading_match = heading_re.match(strip_markup(line))
+        if heading_match:
+            raw_title = heading_match.group(1)
+            has_heading = True
+        break
+    body_sentence = is_body_sentence(raw_title)
+    lead = raw_title if has_heading and body_sentence else None
+    page.summary = article_summary(num, None if body_sentence else raw_title, lead, page.content_md)
 
 
 def split_legal_text_by_articles(
@@ -445,9 +551,11 @@ def split_legal_text_by_articles(
                 - 'chapter_title': optional chapter title
                 - 'section_num': optional section number (Mục)
                 - 'clauses': list of parsed clauses and points
+            - 'end_sections': opaque terminal notes/appendices with kind, title,
+              number, content_md and stable unique Wiki slug
     """
     if not full_text:
-        return {"preamble": "", "articles": []}
+        return {"preamble": "", "articles": [], "end_sections": []}
 
     if not doc_slug:
         doc_slug = build_legal_doc_slug(doc_title)
@@ -457,13 +565,9 @@ def split_legal_text_by_articles(
     parser = LegalHierarchyParser()
     doc_tree = parser.parse(full_text)
     all_articles = doc_tree.get_all_articles()
-    if not all_articles:
-        return {
-            "preamble": full_text.strip(),
-            "articles": [],
-        }
-
     preamble = doc_tree.preamble
+    if not all_articles and not doc_tree.end_sections:
+        preamble = full_text.strip()
     articles: list[dict[str, Any]] = []
     seen_slugs: set[str] = {doc_slug}
 
@@ -508,15 +612,32 @@ def split_legal_text_by_articles(
             ],
         })
 
+    end_sections: list[dict[str, Any]] = []
+    kind_counts: dict[str, int] = {}
+    for section in doc_tree.end_sections:
+        kind = section["kind"]
+        kind_counts[kind] = kind_counts.get(kind, 0) + 1
+        prefix = "phu-luc" if kind == "appendix" else "chu-thich"
+        identity = slugify(str(section.get("number") or kind_counts[kind]))
+        base_slug = f"{prefix}-{identity}-{doc_slug}"
+        section_slug = base_slug
+        counter = 2
+        while section_slug in seen_slugs:
+            section_slug = f"{base_slug}-{counter}"
+            counter += 1
+        seen_slugs.add(section_slug)
+        end_sections.append({**section, "slug": section_slug})
+
     return {
         "preamble": preamble,
         "articles": articles,
+        "end_sections": end_sections,
     }
 
 
 async def is_legal_source(session: AsyncSession, source: Source) -> bool:
     """Check if the source is associated with KnowledgeType 'Luật' / 'Legal'."""
-    if not source.knowledge_type_id:
+    if not getattr(source, "knowledge_type_id", None):
         return False
 
     kt = await session.get(KnowledgeType, source.knowledge_type_id)
@@ -534,6 +655,57 @@ async def is_legal_source(session: AsyncSession, source: Source) -> bool:
     )
 
 
+def _can_move_legacy_endmatter(
+    article_page: WikiPage, article: dict[str, Any], end_sections: list[dict[str, Any]],
+    tail_pages: list[WikiPage], source_id: uuid.UUID, edited_ids: set,
+    scope_type: str, scope_id,
+) -> bool:
+    """Prove that removing an old article's tail only moves unchanged text to saved pages."""
+    from app.services.wiki_origin_service import compatible
+
+    def same_scope(page) -> bool:
+        return (
+            (getattr(page, "scope_type", None) or "global") == (scope_type or "global")
+            and str(getattr(page, "scope_id", None)) == str(scope_id)
+        )
+
+    if not end_sections or len(end_sections) != len(tail_pages):
+        return False
+    if not compatible(article_page, "extracted", source_id) or not same_scope(article_page):
+        return False
+    if article_page.id in edited_ids:
+        return False
+    content = (article_page.content_md or "").replace("\r\n", "\n")
+    header, separator, old_body = content.partition("\n\n")
+    lines = header.splitlines()
+    if (
+        not separator or len(lines) < 2
+        or not lines[0].startswith(f"> **Căn cứ pháp lý**: Điều {article['num']} — ")
+        or not lines[-1].startswith("> **Toàn văn văn bản**: [[")
+        or not lines[-1].endswith("]]")
+        or any(not line.startswith("> **Trích yếu**: ") for line in lines[1:-1])
+    ):
+        return False
+
+    def folded(text: str) -> str:
+        # Only whitespace and canonical Unicode composition may differ, never markup or words.
+        return " ".join(unicodedata.normalize("NFC", text).split())
+
+    expected_body = "\n\n".join([article["content_md"], *(s["content_md"] for s in end_sections)])
+    if folded(old_body) != folded(expected_body):
+        return False
+    for section, page in zip(end_sections, tail_pages):
+        if (
+            not compatible(page, "extracted", source_id) or not same_scope(page)
+            or page.id in edited_ids or page.slug != section["slug"]
+        ):
+            return False
+        original = folded(section["content_md"])
+        if not original or not folded(page.content_md or "").endswith(original):
+            return False
+    return True
+
+
 async def finalize_legal_source(
     session: AsyncSession, source: Source, tracker: Any, final: bool = True, refresh_metadata: bool = True
 ) -> dict:
@@ -543,6 +715,7 @@ async def finalize_legal_source(
     - Extracts preamble and all articles verbatim.
     - Creates/updates an Overview WikiPage with metadata and Table of Contents wikilinks.
     - Creates/updates an individual WikiPage for each Điều with legal citation header.
+    - Creates separate opaque pages for terminal notes and appendices.
     - Computes page-level embeddings and section chunk embeddings (synced to Milvus).
     - Updates the scope's Wiki Index and Log.
     - Marks source status as 'ready'.
@@ -586,10 +759,20 @@ async def finalize_legal_source(
         # from doc_number would collide with other files of the same decision (e.g. its appendix).
         doc_slug = (get_doc_meta(source) or {}).get("doc_slug") or f"doc-{source.id.hex[:8]}"
 
+    # Keep extraction identity separate from generated pages or another source.
+    from app.services.wiki_origin_service import resolve_target_slug
+    wiki_scopes = await wiki_service.resolve_wiki_scopes(session, source)
+    for target_scope, target_id in wiki_scopes:
+        doc_slug = await resolve_target_slug(session, doc_slug, "extracted", target_scope, target_id, source.id)
+
     # Extract articles
     parsed = split_legal_text_by_articles(full_text, doc_title, doc_slug=doc_slug)
     preamble = parsed["preamble"]
     articles = parsed["articles"]
+    end_sections = parsed["end_sections"]
+    for article in [*articles, *end_sections]:
+        for target_scope, target_id in wiki_scopes:
+            article["slug"] = await resolve_target_slug(session, article["slug"], "extracted", target_scope, target_id, source.id)
 
     # Persist document metadata (thông tin văn bản) for the legal wiki UI.
     if refresh_metadata:
@@ -615,6 +798,9 @@ async def finalize_legal_source(
     async def _human_edited(slug: str, scope_type, scope_id) -> Optional[WikiPage]:
         """A page someone corrected by hand (e.g. OCR fixes) is kept instead of being re-split."""
         page = await wiki_service.get_page_by_slug(session, slug, scope_type=scope_type, scope_id=scope_id)
+        if page is not None:
+            from app.services.wiki_origin_service import require_compatible
+            require_compatible(page, "extracted", source.id)
         if page is not None and await wiki_service.human_edited_page_ids(session, [page.id]):
             logger.info(f"finalize_legal_source: keeping hand-edited page {slug}")
             return page
@@ -650,6 +836,9 @@ async def finalize_legal_source(
         overview_content_parts.append(f"## Căn cứ ban hành & Phần mở đầu\n\n{preamble}")
     if toc_md:
         overview_content_parts.append(f"\n## Danh mục các Điều ({total_articles} Điều)\n\n{toc_md}\n")
+    if end_sections:
+        end_toc = "\n".join(f"- [[{section['slug']}|{section['title']}]]" for section in end_sections)
+        overview_content_parts.append(f"\n## Phụ lục & Chú thích\n\n{end_toc}\n")
     overview_content = "\n\n".join(overview_content_parts).strip() + "\n"
 
     overview_summary = (
@@ -670,10 +859,12 @@ async def finalize_legal_source(
             scope_type=scope_type,
             scope_id=scope_id,
             status="mature",
+            origin_tag="extracted",
         )
         pages_to_index.append(overview_page)
 
         art_page_map: dict[str, uuid.UUID] = {}
+        legacy_move = None
         # 2. Create/update each Điều as a separate WikiPage (Verbatim content with citation)
         for idx, art in enumerate(articles):
             art_slug = art["slug"]
@@ -711,9 +902,57 @@ async def finalize_legal_source(
                 scope_type=scope_type,
                 scope_id=scope_id,
                 status="mature",
+                origin_tag="extracted",
             )
             art_page_map[art_slug] = art_page.id
             pages_to_index.append(art_page)
+            if idx == len(articles) - 1 and end_sections:
+                legacy_move = (art_page, art, page_content, page_summary, page_title)
+
+        # Terminal material stays verbatim on separate pages, outside the legal-unit graph.
+        saved_tail_pages: list[WikiPage] = []
+        for section in end_sections:
+            section_content = (
+                f"<!-- cahy:legal-endmatter kind={section['kind']} -->\n"
+                f"> **Toàn văn văn bản**: [[{doc_slug}|{display_doc_name}]]\n\n"
+                f"{section['content_md']}\n"
+            )
+            section_page = await _human_edited(section["slug"], scope_type, scope_id) or await wiki_service.upsert_page(
+                session,
+                slug=section["slug"],
+                title=f"{section['title']} - {display_doc_name}",
+                page_type="concept",
+                content_md=section_content,
+                summary=f"{section['title']} — {display_doc_name}",
+                knowledge_type_slugs=[kt_slug],
+                source_ids=[source.id],
+                scope_type=scope_type,
+                scope_id=scope_id,
+                status="mature",
+                origin_tag="extracted",
+            )
+            pages_to_index.append(section_page)
+            saved_tail_pages.append(section_page)
+
+        if legacy_move:
+            # A normal upsert may correctly refuse table loss while the same rows are being
+            # moved. Bypass that guard only after the full original tail is saved in scope.
+            await session.flush()
+            article_page, article, new_content, summary, title = legacy_move
+            edited_ids = await wiki_service.human_edited_page_ids(
+                session, [article_page.id, *(page.id for page in saved_tail_pages)],
+            )
+            if _can_move_legacy_endmatter(
+                article_page, article, end_sections, saved_tail_pages, source.id, edited_ids,
+                scope_type, scope_id,
+            ):
+                await wiki_service.apply_update(
+                    session, slug=article_page.slug, new_content_md=new_content,
+                    summary=summary, title=title, add_knowledge_type_slug=kt_slug,
+                    add_source_id=source.id, scope_type=scope_type, scope_id=scope_id,
+                    status="mature", guard=False, origin_tag="extracted",
+                )
+                logger.info(f"finalize_legal_source: moved verified unchanged endmatter out of {article_page.slug}")
 
     await session.commit()
 
@@ -752,7 +991,8 @@ async def finalize_legal_source(
             await wiki_service.regenerate_index(session, scope_type=scope_type, scope_id=scope_id)
             log_msg = (
                 f"Văn bản luật: Đã nhập '{display_doc_name}' "
-                f"— tạo {len(articles) + 1} trang Wiki (1 Tổng quan + {total_articles} Điều)"
+                f"— tạo {len(articles) + len(end_sections) + 1} trang Wiki "
+                f"(1 Tổng quan + {total_articles} Điều + {len(end_sections)} Phụ lục/Chú thích)"
             )
             await wiki_service.append_log(session, log_msg, scope_type=scope_type, scope_id=scope_id)
         except Exception as e:
@@ -760,13 +1000,18 @@ async def finalize_legal_source(
 
     from app.services.processing_mode import mark_articles_done
     mark_articles_done(source)
+    page_slugs = {
+        "overview_slug": doc_slug,
+        "article_slugs": [article["slug"] for article in articles],
+        "end_section_slugs": [section["slug"] for section in end_sections],
+    }
     if not final:
         # The LLM leg of the same wiki attempt continues and marks the branch ready.
         await tracker.update(
             50, f"Đã bóc tách {total_articles} điều — đang biên soạn trang tri thức bằng LLM..."
         )
         await session.commit()
-        return {"status": "articles_ready", "total_pages": total_pages, "articles": total_articles}
+        return {"status": "articles_ready", "total_pages": total_pages, "articles": total_articles, **page_slugs}
 
     # 5. Mark wiki branch as ready and update dual status
     source.wiki_status = "ready"
@@ -789,6 +1034,7 @@ async def finalize_legal_source(
         "status": "ready",
         "total_pages": total_pages,
         "articles": total_articles,
+        **page_slugs,
     }
 
 

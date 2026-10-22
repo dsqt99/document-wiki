@@ -19,10 +19,10 @@ from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 
 CUSTOM_PREFIX = "custom/"
-KINDS = ("llm", "vision", "embedding", "ocr")
+KINDS = ("llm", "vision", "embedding", "ocr", "rerank")
 # Wire protocol of the endpoint: "openai" = any OpenAI-compatible API
 # (vLLM, Ollama, LiteLLM, Azure, ...); "anthropic" = Anthropic Messages API.
-PROTOCOLS = ("openai", "anthropic")
+PROTOCOLS = ("openai", "anthropic", "rerank")
 EMBEDDING_DIMENSIONS = (768, 1024, 1536, 3072)  # tables that exist (migration 015)
 MAX_MODEL_ID_LEN = 100  # spec ids land in String(128) columns
 
@@ -59,7 +59,7 @@ def provider_endpoint(kind: str, provider: str) -> tuple[str, str]:
     Claude LLMs use the native Messages API; everything else (and every
     vision/embedding/OCR call) goes through an OpenAI-compatible endpoint.
     """
-    if provider == "anthropic" and kind == "llm":
+    if provider == "anthropic" and kind in ("llm", "rerank"):
         return _ANTHROPIC_NATIVE_URL, "anthropic"
     return _OPENAI_COMPAT_URLS[provider], "openai"
 

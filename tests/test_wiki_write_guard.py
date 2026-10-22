@@ -7,6 +7,142 @@ import uuid
 
 import pytest
 
+
+@pytest.mark.asyncio
+async def test_machine_update_rejects_different_origin_even_with_guard_disabled():
+    from unittest.mock import AsyncMock, patch
+    from app.services import wiki_service as svc
+    page = types.SimpleNamespace(origin_tag="extracted", source_ids=[uuid.uuid4()], content_md="Nội dung gốc.")
+    with patch.object(svc, "get_page_by_slug", AsyncMock(return_value=page)):
+        with pytest.raises(ValueError, match="tag"):
+            await svc.apply_update(AsyncMock(), "dieu-1", "Nội dung AI.", origin_tag="generated", guard=False)
+    assert page.content_md == "Nội dung gốc."
+
+
+@pytest.mark.asyncio
+async def test_extracted_update_rejects_another_document():
+    from unittest.mock import AsyncMock, patch
+    from app.services import wiki_service as svc
+    page = types.SimpleNamespace(origin_tag="extracted", source_ids=[uuid.uuid4()], content_md="Bản gốc.")
+    with patch.object(svc, "get_page_by_slug", AsyncMock(return_value=page)):
+        with pytest.raises(ValueError, match="nguồn"):
+            await svc.apply_update(AsyncMock(), "dieu-1", "Khác.", origin_tag="extracted", add_source_id=uuid.uuid4())
+
+
+@pytest.mark.asyncio
+async def test_origin_collision_uses_stable_suffix_without_touching_other_tag():
+    from unittest.mock import AsyncMock, patch
+    from app.services import wiki_origin_service as svc
+    old = types.SimpleNamespace(origin_tag="extracted", source_ids=[uuid.uuid4()])
+    lookup = AsyncMock(side_effect=[old, None])
+    with patch("app.services.wiki_service.get_page_by_slug", lookup):
+        slug = await svc.resolve_target_slug(AsyncMock(), "nguyen-tac", "generated", "department", uuid.uuid4(), uuid.uuid4())
+    assert slug == "nguyen-tac-generated"
+    assert lookup.await_args_list[0].kwargs["scope_type"] == "department"
+
+
+@pytest.mark.asyncio
+async def test_origin_collision_reuses_only_matching_tag_and_source():
+    from unittest.mock import AsyncMock, patch
+    from app.services import wiki_origin_service as svc
+    sid = uuid.uuid4()
+    page = types.SimpleNamespace(origin_tag="extracted", source_ids=[sid])
+    with patch("app.services.wiki_service.get_page_by_slug", AsyncMock(return_value=page)):
+        assert await svc.resolve_target_slug(AsyncMock(), "dieu-1", "extracted", "global", None, sid) == "dieu-1"
+    with patch("app.services.wiki_service.get_page_by_slug", AsyncMock(side_effect=[page, None])):
+        assert await svc.resolve_target_slug(AsyncMock(), "dieu-1", "extracted", "global", None, uuid.uuid4()) == "dieu-1-extracted"
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_filters_generated_pages_in_each_source_scope():
+    from unittest.mock import AsyncMock, patch, MagicMock
+    from sqlalchemy.dialects import postgresql
+    from app.ai.mrp import reducer, pipeline
+    from app.services import wiki_service
+    dept = uuid.uuid4()
+    extracted = types.SimpleNamespace(slug="dieu-1", origin_tag="extracted", scope_type="department", scope_id=dept)
+    generated = types.SimpleNamespace(slug="huong-dan", origin_tag="generated", scope_type="department", scope_id=dept)
+    other_scope = types.SimpleNamespace(slug="phong-khac", origin_tag="generated", scope_type="department", scope_id=uuid.uuid4())
+    search = AsyncMock(return_value=[(extracted, 0.99), (other_scope, 0.98), (generated, 0.9)])
+    with patch.object(pipeline, "_resolve_wiki_scopes", AsyncMock(return_value=[("department", dept)])), \
+         patch.object(reducer, "_embed_many", AsyncMock(return_value=[[0.1]])), \
+         patch.object(wiki_service, "search_pages_semantic", search):
+        result = await reducer.reconcile_with_kb(AsyncMock(), MagicMock(), [{"term":"Quy định"}], None, MagicMock())
+    assert result[0]["kb_slug"] == "huong-dan"
+    call = search.await_args.kwargs
+    assert call["scope_id"] == dept
+    assert "generated" in str(call["page_filter"].compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds":True}))
+
+
+@pytest.mark.asyncio
+async def test_private_source_keeps_personal_scope_instead_of_global_merge_pool():
+    from unittest.mock import AsyncMock
+    from app.services.wiki_service import resolve_wiki_scopes
+    owner = uuid.uuid4()
+    source = types.SimpleNamespace(id=uuid.uuid4(), scope_type="personal", scope_id=None, contributed_by_employee_id=owner)
+    db = AsyncMock()
+    db.get.return_value = source
+    assert await resolve_wiki_scopes(db, source) == [("personal", owner)]
+
+
+def test_origin_collision_remaps_sibling_links_without_changing_labels():
+    from app.services.wiki_origin_service import remap_links
+    assert remap_links("[[a|Nhãn A]] và [[a]] cùng [[khac]].", {"a":"a-generated"}) == "[[a-generated|Nhãn A]] và [[a-generated]] cùng [[khac]]."
+
+
+@pytest.mark.asyncio
+async def test_generated_update_preserves_origin_and_adds_new_source(monkeypatch):
+    page = _page("Nội dung cũ.")
+    page.origin_tag = "generated"
+    sid = uuid.uuid4()
+    svc = _patch_service(monkeypatch, page)
+    await svc.apply_update(_FakeSession(), "t", "Nội dung cũ và thông tin mới.", origin_tag="generated", add_source_id=sid)
+    assert page.origin_tag == "generated" and page.source_ids == [sid]
+
+
+@pytest.mark.asyncio
+async def test_library_origin_filter_applies_to_count_and_items():
+    from unittest.mock import AsyncMock, MagicMock, patch
+    from sqlalchemy.dialects import postgresql
+    from app.routers import wiki
+    count, rows = MagicMock(), MagicMock()
+    count.scalar.return_value = 1
+    rows.scalars.return_value.all.return_value = []
+    db = AsyncMock(execute=AsyncMock(side_effect=[count, rows]))
+    with patch.object(wiki, "_page_read_filter", return_value=None), patch.object(wiki, "_scope_names", AsyncMock(return_value={})):
+        await wiki.wiki_library(q="",source_id=None,page_type=None,status=None,origin_tag="generated",limit=30,offset=0,db=db,user=MagicMock())
+    for call in db.execute.await_args_list:
+        assert "origin_tag = 'generated'" in str(call.args[0].compile(dialect=postgresql.dialect(),compile_kwargs={"literal_binds":True}))
+
+
+@pytest.mark.asyncio
+async def test_commit_rechecks_tag_before_asking_llm_to_merge():
+    from unittest.mock import AsyncMock, MagicMock, patch
+    from app.ai.mrp import pipeline
+    from app.ai.mrp.writer import PageWriteResult
+    from app.services import wiki_service, source_status
+    source = types.SimpleNamespace(id=uuid.uuid4(), title="Nguồn mới")
+    old = types.SimpleNamespace(origin_tag="extracted", source_ids=[uuid.uuid4()], content_md="Bản gốc quan trọng. " * 20)
+    db = AsyncMock()
+    db.get.return_value = source
+    db.execute.return_value = MagicMock()
+    db.execute.return_value.one_or_none.return_value = source
+    row = PageWriteResult(slug="same",title="Same",page_type="concept",action="UPDATE",content_md="Nội dung AI.",summary="AI")
+    with patch.object(pipeline,"_resolve_wiki_scopes",AsyncMock(return_value=[("global",None)])), \
+         patch.object(pipeline,"_merge_llm",AsyncMock(return_value=object())), \
+         patch("app.services.wiki_origin_service.resolve_target_slug",AsyncMock(return_value="same")), \
+         patch.object(wiki_service,"get_page_by_slug",AsyncMock(return_value=old)), \
+         patch.object(wiki_service,"apply_update",AsyncMock()) as write, \
+         patch.object(pipeline,"merge_page_content",AsyncMock()) as merge, \
+         patch.object(wiki_service,"regenerate_index",AsyncMock()), \
+         patch.object(wiki_service,"append_log",AsyncMock()), \
+         patch.object(source_status,"update_source_dual_status",AsyncMock()):
+        result = await pipeline.run_commit_phase(db,source,[row],None,None,None,None,AsyncMock())
+    write.assert_not_awaited()
+    merge.assert_not_awaited()
+    assert result["status"] == "error" and result["pages_skipped"] == ["same"]
+    assert old.content_md.startswith("Bản gốc quan trọng.")
+
 from app.services.wiki_write_guard import (
     FAILURE_STUB_MARKER,
     check_agent_write,
@@ -304,7 +440,7 @@ def test_commit_phase_skips_failure_stub(monkeypatch):
 
     class _Sess:
         async def execute(self, *a, **k):
-            return None
+            return types.SimpleNamespace(one_or_none=lambda: source)
 
         async def flush(self):
             pass

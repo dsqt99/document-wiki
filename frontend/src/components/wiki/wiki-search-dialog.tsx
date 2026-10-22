@@ -9,11 +9,14 @@ import { useI18n } from "@/lib/i18n";
 import { getCachedPages } from "@/lib/wiki-store";
 import { cn } from "@/lib/utils";
 import type { WikiPageSummary } from "@/types/wiki";
+import { api } from "@/lib/api";
+import { wikiPageQuery } from "@/lib/wiki-navigation";
+import type { WikiLibraryResponse } from "@/lib/wiki-search";
 
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSelectPage?: (slug: string) => void;
+  onSelectPage?: (slug: string, page: WikiPageSummary) => void;
 };
 
 const MAX_RESULTS = 60;
@@ -39,6 +42,11 @@ function SearchBody({ onOpenChange, onSelectPage }: Omit<Props, "open">) {
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
   const [activeState, setActive] = useState<{ q: string; i: number }>({ q: "", i: 0 });
+  const [result, setResult] = useState<{ q: string; data?: WikiLibraryResponse; error?: string } | null>(null);
+  const [retry, setRetry] = useState(0);
+  const searchQuery = debounced.trim();
+  const loading = query.trim() !== searchQuery || (!!searchQuery && result?.q !== searchQuery);
+  const searchError = result?.q === searchQuery ? result.error : undefined;
 
   useEffect(() => {
     let cancelled = false;
@@ -57,11 +65,25 @@ function SearchBody({ onOpenChange, onSelectPage }: Omit<Props, "open">) {
   }, []);
 
   useEffect(() => {
-    const id = setTimeout(() => setDebounced(query), 120);
+    const id = setTimeout(() => setDebounced(query), 300);
     return () => clearTimeout(id);
   }, [query]);
 
+  useEffect(() => {
+    if (!searchQuery) return;
+    let cancelled = false;
+    api<WikiLibraryResponse>(`/api/wiki/library?${new URLSearchParams({ q: searchQuery, limit: String(MAX_RESULTS) })}`)
+      .then((data) => { if (!cancelled) setResult({ q: searchQuery, data }); })
+      .catch((e: unknown) => { if (!cancelled) setResult({ q: searchQuery, error: e instanceof Error ? e.message : "Không tìm được trang Wiki" }); });
+    return () => { cancelled = true; };
+  }, [searchQuery, retry]);
+
   const { flat, groups } = useMemo(() => {
+    if (loading) return { flat: [], groups: [] as [string, WikiPageSummary[]][] };
+    if (searchQuery) {
+      const matched = !loading && result?.q === searchQuery ? result.data?.items ?? [] : [];
+      return { flat: matched, groups: [["search", matched]] as [string, WikiPageSummary[]][] };
+    }
     const q = debounced.trim().toLowerCase();
     const matched = pages
       .filter((p) => p.page_type !== "index" && p.page_type !== "log")
@@ -85,7 +107,7 @@ function SearchBody({ onOpenChange, onSelectPage }: Omit<Props, "open">) {
     }
     const ordered = [...byType.entries()].sort((a, b) => rank(a[0]) - rank(b[0]));
     return { groups: ordered, flat: ordered.flatMap(([, list]) => list) };
-  }, [pages, debounced]);
+  }, [pages, debounced, searchQuery, loading, result]);
 
   const active = activeState.q === debounced ? Math.min(activeState.i, Math.max(0, flat.length - 1)) : 0;
 
@@ -94,12 +116,16 @@ function SearchBody({ onOpenChange, onSelectPage }: Omit<Props, "open">) {
   }, [active]);
 
   const choose = (page: WikiPageSummary) => {
-    if (onSelectPage) onSelectPage(page.slug);
-    else router.push(`/wiki/${encodeSlugPath(page.slug)}`);
+    if (onSelectPage) onSelectPage(page.slug, page);
+    else router.push(`/wiki/${encodeSlugPath(page.slug)}${wikiPageQuery(page.scope_type, page.scope_id, null)}`);
     onOpenChange(false);
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (loading && ["ArrowDown", "ArrowUp", "Enter"].includes(e.key)) {
+      e.preventDefault();
+      return;
+    }
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
       if (flat.length === 0) return;
@@ -131,8 +157,9 @@ function SearchBody({ onOpenChange, onSelectPage }: Omit<Props, "open">) {
         />
       </div>
 
-      <div ref={listRef} className="max-h-[60vh] overflow-y-auto py-2">
-        {flat.length === 0 ? (
+      {!loading && result?.q === searchQuery && result.data?.search?.warning && <p role="status" className="border-b bg-amber-50 px-4 py-2 text-xs text-amber-900 dark:bg-amber-900/15 dark:text-amber-200">{result.data.search.warning}</p>}
+      <div ref={listRef} aria-busy={loading} className="max-h-[60vh] overflow-y-auto py-2">
+        {loading ? <p role="status" className="px-4 py-8 text-center text-sm text-muted-foreground">Đang tìm và xếp hạng trang Wiki…</p> : searchError && searchQuery ? <div role="alert" className="space-y-3 px-4 py-8 text-center text-sm text-destructive"><p>{searchError}</p><button type="button" className="rounded-md border px-3 py-1.5 text-foreground hover:bg-muted" onClick={() => { setResult(null); setRetry((r) => r + 1); }}>Thử lại</button></div> : flat.length === 0 ? (
           <p className="px-4 py-8 text-center text-sm text-muted-foreground">
             {debounced.trim() ? t("wiki.noSearchMatch") : t("wiki.noSearchYet")}
           </p>
@@ -143,7 +170,7 @@ function SearchBody({ onOpenChange, onSelectPage }: Omit<Props, "open">) {
                 <span className="material-symbols-outlined" style={{ fontSize: 14, color: wikiTypeColor(type) }}>
                   {wikiTypeIcon(type)}
                 </span>
-                {wikiTypeGroupLabel(type)}
+                {type === "search" ? "Kết quả theo độ liên quan" : wikiTypeGroupLabel(type)}
               </div>
               {list.map((p) => {
                 rowIndex += 1;
@@ -167,7 +194,7 @@ function SearchBody({ onOpenChange, onSelectPage }: Omit<Props, "open">) {
                       )}
                     </span>
                     <span className="max-w-[40%] shrink-0 truncate font-mono text-[11px] text-muted-foreground">
-                      {p.slug}
+                      {p.rerank_score != null ? p.rerank_score.toFixed(3) : p.slug}
                     </span>
                   </button>
                 );

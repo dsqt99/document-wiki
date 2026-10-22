@@ -10,7 +10,7 @@ import { Sidebar } from "@/components/layout/sidebar";
 const IDENTITY_RESET_KEY = "dw-embed-identity-reset";
 
 export default function PortalLayout({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, loading, error, refresh } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   const embedded = useIsEmbedded();
@@ -18,12 +18,12 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
 
   // Unauthenticated: send to /login, remembering where we were.
   useEffect(() => {
-    if (loading || user) return;
+    if (loading || error || user) return;
     const here = window.location.pathname + window.location.search;
     const target = here === "/" || here === "" ? "/login" : `/login?next=${encodeURIComponent(here)}`;
     if (embedded) router.replace(target);
     else router.push(target);
-  }, [loading, user, embedded, router]);
+  }, [loading, error, user, embedded, router]);
 
   // Embedded: drop a session left by whoever used this browser before the chatbot user
   // now signed in, then sign in again through the chatbot. Once per expected user, no loops.
@@ -59,6 +59,17 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       postToHost({ type: "navigate", path });
     }
   }, [embedded, loading, user, pathname]);
+
+  if (error && !user) {
+    return (
+      <div role="alert" className="flex h-screen flex-col items-center justify-center gap-3 bg-background px-6 text-center">
+        <p className="text-sm text-muted-foreground">{error}</p>
+        <button type="button" className="rounded-md border px-4 py-2 text-sm font-medium hover:bg-muted" onClick={() => void refresh()}>
+          Thử lại
+        </button>
+      </div>
+    );
+  }
 
   if (loading) {
     return (

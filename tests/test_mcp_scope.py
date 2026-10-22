@@ -37,6 +37,16 @@ def _tools_mcp() -> FastMCP:
     return mcp
 
 
+def test_wiki_search_personal_scope_includes_only_the_authenticated_owner():
+    from app.services._wiki_search import _page_conditions
+    owner, dept = uuid.uuid4(), uuid.uuid4()
+    conditions = _page_conditions(department_ids=[dept],personal_owner_id=owner)
+    sql = " ".join(str(clause.compile(dialect=postgresql.dialect(),compile_kwargs={"literal_binds":True})) for clause in conditions)
+    assert "personal" in sql and str(owner) in sql and str(dept) in sql
+    without_owner = " ".join(str(clause.compile(dialect=postgresql.dialect(),compile_kwargs={"literal_binds":True})) for clause in _page_conditions(department_ids=[dept]))
+    assert "personal" not in without_owner
+
+
 # ---------------------------------------------------------------------------
 # query_table: UUID primary key vs string allow-list
 # ---------------------------------------------------------------------------

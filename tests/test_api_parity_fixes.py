@@ -5,15 +5,19 @@ admin wiki scopes, stats overview/section shapes, legal-docs knowledge types
 and the vision catalog ``protocol`` field.
 """
 
+import re
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import create_engine, select
 
 from app.database import get_db
+from app.database.models import WikiPage
 from app.main import app
+from app.routers import wiki
 from app.services.auth_service import get_current_user
 
 
@@ -93,6 +97,7 @@ async def test_departments_ordered_by_created_at_ascending():
     from app.routers.rbac import list_departments
 
     db = AsyncMock()
+    db.get.return_value = None  # standalone deployment, no shared directory yet
     db.execute.return_value = _result(rows=[])
     await list_departments(include_inactive=False, user=_admin(), db=db)
     sql = str(db.execute.call_args.args[0]).lower()
@@ -218,3 +223,52 @@ async def test_vision_catalog_specs_include_protocol():
     assert dumped and all("protocol" in s for s in dumped)
     assert all(s["protocol"] is None for s in dumped if not s["custom"])
     assert dumped[-1]["protocol"] == "openai"
+
+
+# ---------------------------------------------------------------- 8. document order
+
+@pytest.fixture
+def source_page_database():
+    engine = create_engine("sqlite://")
+    with engine.connect() as db:
+        # PostgreSQL substring(text, pattern) returns the first captured group.
+        # Execute the production ordering expression with that function supplied.
+        db.connection.create_function("substring", 2, lambda text, pattern: (
+            match.group(1) if (match := re.search(pattern, text or "")) else None
+        ))
+        db.exec_driver_sql("CREATE TABLE wiki_pages (id TEXT, title TEXT, slug TEXT, updated_at TEXT)")
+        rows = [
+            ("23", "Điều 23: Đăng ký tạm thời - Thông tư 79/2024", "dieu-23-79", "2026-10-20"),
+            ("16", "Điều 16: Sang tên xe - Thông tư 79/2024", "dieu-16-79", "2026-10-19"),
+            ("19", "Điều 19: Đổi chứng nhận - Thông tư 79/2024", "dieu-19-79", "2026-10-18"),
+            ("39", "Điều 39: Chuyển tiếp - Thông tư 79/2024", "dieu-39-79", "2026-10-17"),
+            ("10", "Điều 10. Hồ sơ đăng ký", "dieu-10-79", "2026-10-16"),
+            ("2b", "Điều 2b: Bổ sung", "dieu-2b-79", "2026-10-15"),
+            ("2a", "Điều 2a: Bổ sung", "dieu-2a-79", "2026-10-14"),
+            ("2", "Điều 2: Nguyên tắc", "dieu-2-79", "2026-10-13"),
+            ("1", "Điều 1. Phạm vi", "dieu-1-79", "2026-10-12"),
+            ("overview", "Thông tư 79/2024 - Tổng quan & Căn cứ ban hành", "79-2024", "2026-10-01"),
+            ("other", "Đăng ký xe - hướng dẫn chung", "huong-dan", "2026-10-21"),
+            ("source", "Tài liệu nguồn", "source/79-2024", "2026-09-01"),
+        ]
+        db.exec_driver_sql("INSERT INTO wiki_pages VALUES (?, ?, ?, ?)", rows)
+        yield db
+    engine.dispose()
+
+
+def test_source_articles_follow_numeric_order_with_overview_first(source_page_database):
+    slugs = source_page_database.execute(select(WikiPage.slug).order_by(*wiki._source_page_order())).scalars().all()
+    assert slugs == ["79-2024", "source/79-2024", "dieu-1-79", "dieu-2-79", "dieu-2a-79", "dieu-2b-79",
+                     "dieu-10-79", "dieu-16-79", "dieu-19-79", "dieu-23-79", "dieu-39-79", "huong-dan"]
+
+
+def test_source_article_order_applies_before_pagination(source_page_database):
+    query = select(WikiPage.slug).order_by(*wiki._source_page_order()).offset(4).limit(3)
+    assert source_page_database.execute(query).scalars().all() == ["dieu-2a-79", "dieu-2b-79", "dieu-10-79"]
+
+
+def test_editing_an_article_does_not_move_it_ahead_of_earlier_articles(source_page_database):
+    query = select(WikiPage.slug).order_by(*wiki._source_page_order())
+    original = source_page_database.execute(query).scalars().all()
+    source_page_database.exec_driver_sql("UPDATE wiki_pages SET updated_at = '2099-01-01' WHERE id = '39'")
+    assert source_page_database.execute(query).scalars().all() == original

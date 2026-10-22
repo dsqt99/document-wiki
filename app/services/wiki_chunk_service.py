@@ -37,6 +37,7 @@ MIN_CHUNK_CHARS = 50
 
 # ATX markdown headings, H1–H3 (deeper headings stay inside their parent section).
 _HEADING_RE = re.compile(r"^(#{1,3})\s+(.*)$")
+_ENDMATTER_MARKER_RE = re.compile(r"\A<!-- cahy:legal-endmatter kind=(appendix|notes) -->\r?\n")
 
 
 @dataclass
@@ -105,12 +106,25 @@ def _window(text: str) -> list[str]:
     return out
 
 
-def build_wiki_chunks(content_md: str) -> list[WikiChunk]:
+def build_wiki_chunks(content_md: str, *, page: Optional[WikiPage] = None) -> list[WikiChunk]:
     """Split a wiki page's markdown into section-aligned, retrieval-sized chunks.
 
     Each chunk belongs to one heading section and carries its heading breadcrumb.
     Sections longer than CHUNK_TARGET_TOKENS are sub-split into overlapping windows.
     """
+    marker = _ENDMATTER_MARKER_RE.match(content_md or "")
+    if (
+        marker and page is not None
+        and getattr(page, "origin_tag", None) == "extracted"
+        and getattr(page, "source_ids", None)
+        and (page.slug or "").startswith("phu-luc-" if marker.group(1) == "appendix" else "chu-thich-")
+    ):
+        # Retain headings and even very short tails: they belong to one opaque unit.
+        body = content_md[marker.end():]
+        return [
+            WikiChunk(index=index, heading_path=page.title or "", text=window)
+            for index, window in enumerate(_window(body)) if window.strip()
+        ]
     chunks: list[WikiChunk] = []
     idx = 0
     for section in _split_sections(content_md):
@@ -168,7 +182,7 @@ async def index_wiki_page_chunks(
         return 0
 
     spec = get_spec(spec_id)
-    chunks = build_wiki_chunks(page.content_md or "")
+    chunks = build_wiki_chunks(page.content_md or "", page=page)
 
     # Clear prior chunk rows for THIS page in THIS spec only, so a shorter re-edit
     # doesn't leave orphaned high-index chunks. Other specs stay intact until the
@@ -183,11 +197,13 @@ async def index_wiki_page_chunks(
     chunk_inputs = [_embed_input(page, c) for c in chunks]
     all_texts = [page_text] + chunk_inputs
     vectors = await provider.embed_batch(all_texts)
+    if len(vectors) != len(all_texts):
+        raise RuntimeError(f"Wiki index embedding batch incomplete: {len(vectors)}/{len(all_texts)}")
 
     # 1. Upsert page-level embedding (PostgreSQL + Milvus)
     page_vector = list(vectors[0])
     chash = wiki_chunk_content_hash("", page.content_md or "")
-    await upsert_page_embedding(
+    page_indexed = await upsert_page_embedding(
         session,
         page_id=page.id,
         spec=spec,
@@ -197,11 +213,13 @@ async def index_wiki_page_chunks(
         summary=page.summary,
         content_md=page.content_md,
     )
+    if page_indexed is False:
+        raise RuntimeError("Wiki page vector index write failed")
 
     # 2. Upsert chunk-level embeddings (PostgreSQL + Milvus)
     chunk_vectors = vectors[1:]
     for chunk, vector in zip(chunks, chunk_vectors):
-        await upsert_wiki_chunk_embedding(
+        chunk_indexed = await upsert_wiki_chunk_embedding(
             session,
             page_id=page.id,
             chunk_index=chunk.index,
@@ -211,4 +229,6 @@ async def index_wiki_page_chunks(
             heading_path=chunk.heading_path,
             content_hash=wiki_chunk_content_hash(chunk.heading_path, chunk.text),
         )
+        if chunk_indexed is False:
+            raise RuntimeError(f"Wiki chunk vector index write failed at chunk {chunk.index}")
     return len(chunks)

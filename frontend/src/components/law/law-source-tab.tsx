@@ -17,7 +17,6 @@ type SourceInfo = {
   download_url?: string | null;
   source_type?: string | null;
   url?: string | null;
-  preserve_verbatim?: boolean | null;
 };
 
 const hoverPop = "transition-transform hover:scale-[1.03] active:scale-[0.97]";
@@ -80,7 +79,6 @@ export function LawSourceTab({ doc }: { doc: LegalDocDetail }) {
   const downloadUrl = src.download_url || doc.download_url || null;
   const fileSize = src.file_size ?? doc.file_size ?? null;
   const contributor = src.contributed_by_name || doc.contributed_by_name || null;
-  const verbatim = !!src.preserve_verbatim;
   const hasFile = doc.has_file || !!previewUrl;
   const kind = fileKindOf(fileName);
 
@@ -176,11 +174,6 @@ export function LawSourceTab({ doc }: { doc: LegalDocDetail }) {
               <span className="max-w-[500px] truncate font-semibold" title={rawTitle}>
                 {title}
               </span>
-              {verbatim && (
-                <span className="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-secondary-foreground">
-                  Verbatim
-                </span>
-              )}
             </div>
             <p className="text-xs text-muted-foreground">
               {subline}

@@ -243,6 +243,10 @@ async def store_document_metadata(
 ) -> dict[str, Any]:
     """Extract and write `Source.metadata_["doc"]`. Caller commits."""
     meta = await extract_document_metadata(session, source, use_llm=use_llm, regex_meta=regex_meta)
+    # Extraction may await an LLM while indexing or a human edit commits newer
+    # metadata. Read the current JSON only after extraction, with no stale
+    # pending metadata autoflush, and hold its lock until the caller commits.
+    await _load_metadata_for_write(session, source)
     prev = (source.metadata_ or {}).get(METADATA_KEY) or {}
     if article_count is not None:
         meta["article_count"] = article_count
@@ -274,7 +278,7 @@ _META_DATE_KEYS = ("issued_date", "effective_date", "expiry_date")
 
 
 def apply_manual_doc_meta(source: Source, updates: dict[str, Any]) -> dict[str, Any]:
-    """Merge user-edited metadata into `Source.metadata_["doc"]`. Caller commits.
+    """Pure in-memory merge; use store_manual_doc_meta for a persisted edit.
 
     Empty strings clear a value; dates accept dd/mm/yyyy or ISO. Edited keys are
     remembered in `manual_fields` so a later re-extraction keeps them.
@@ -295,6 +299,23 @@ def apply_manual_doc_meta(source: Source, updates: dict[str, Any]) -> dict[str, 
     meta["manual_fields"] = sorted(manual)
     source.metadata_ = {**(source.metadata_ or {}), METADATA_KEY: meta}
     return meta
+
+
+async def _load_metadata_for_write(session: AsyncSession, source: Source) -> None:
+    from copy import deepcopy
+
+    result = await session.execute(
+        select(Source.metadata_).where(Source.id == source.id)
+        .with_for_update().execution_options(autoflush=False)
+    )
+    latest = result.scalar_one_or_none()
+    source.metadata_ = deepcopy(latest) if isinstance(latest, dict) else {}
+
+
+async def store_manual_doc_meta(session: AsyncSession, source: Source, updates: dict[str, Any]) -> dict[str, Any]:
+    """Apply manual edits to the latest locked metadata. Caller commits."""
+    await _load_metadata_for_write(session, source)
+    return apply_manual_doc_meta(source, updates)
 
 
 # ---------------------------------------------------------------------------

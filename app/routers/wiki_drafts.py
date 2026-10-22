@@ -419,6 +419,7 @@ async def propose_draft(slug: str, body: ProposeDraftRequest, db: _Session, user
     page = await _find_page_for_user(db, user, slug, body.scope_type, body.scope_id)
     if not wiki_router._can_propose(user, page):
         raise HTTPException(403, "Insufficient permission to propose a draft for this page")
+    await _validate_shared_branch_attachment(db, user, body.branch_id, page.scope_type, page.scope_id)
 
     live_version = page.version or 1
     base_version = live_version if body.base_version is None else body.base_version
@@ -463,6 +464,19 @@ async def list_drafts(
         readable = wiki_router.page_source_read_clause(user)
         if readable is not None:
             conditions.append(or_(WikiPageDraft.page_id.is_(None), readable))
+        if getattr(user, '_central_permissions', None) is not None and not wiki_router._is_admin(user):
+            metadata = WikiPageDraft.suggested_metadata
+            create_scope = or_(
+                metadata['scope_type'].as_string() == 'global',
+                and_(metadata['scope_type'].as_string() == 'department',
+                     metadata['scope_id'].as_string().in_(wiki_router._dept_str_set(user))),
+                and_(metadata['scope_type'].as_string() == 'personal',
+                     metadata['scope_id'].as_string() == str(user.id)),
+            )
+            conditions.append(or_(
+                and_(WikiPageDraft.draft_kind == 'create', create_scope),
+                and_(WikiPageDraft.draft_kind != 'create', wiki_router._build_wiki_scope_filter(user)),
+            ))
     if conditions:
         stmt = stmt.where(*conditions)
     stmt = stmt.order_by(WikiPageDraft.created_at.desc()).offset(offset).limit(limit)
@@ -506,9 +520,22 @@ def _check_create_permission(user, body: ProposeCreateRequest) -> None:
         raise HTTPException(403, "Insufficient permission to propose new pages")
 
 
+async def _validate_shared_branch_attachment(db, user, branch_id, scope_type, scope_id):
+    if branch_id is None or getattr(user, '_central_permissions', None) is None or wiki_router._is_admin(user):
+        return
+    branch = await db.get(WikiBranch, branch_id)
+    if branch is None:
+        raise HTTPException(404, 'Không tìm thấy nhánh đóng góp')
+    if branch.author_id != user.id or branch.status in ('closed', 'merged'):
+        raise HTTPException(403, 'Không được gắn bản nháp vào nhánh này')
+    if (branch.scope_type or 'global') != (scope_type or 'global') or str(branch.scope_id or '') != str(scope_id or ''):
+        raise HTTPException(403, 'Bản nháp phải cùng phạm vi với nhánh đóng góp')
+
+
 @router.post("/wiki/drafts/create", response_model=DraftResponse, status_code=201)
 async def propose_create(body: ProposeCreateRequest, db: _Session, user: _CurrentUser):
     _check_create_permission(user, body)
+    await _validate_shared_branch_attachment(db, user, body.branch_id, body.scope_type, body.scope_id)
     clash = await wiki_service.get_page_by_slug(db, body.slug, scope_type=body.scope_type, scope_id=body.scope_id)
     if clash is not None:
         raise HTTPException(

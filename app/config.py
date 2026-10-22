@@ -45,7 +45,11 @@ class Settings(BaseSettings):
     minio_presign_expiry_hours: int = 24
 
     # HTTP
-    cors_origins: str = "*"
+    cors_origins: str = (
+        "http://localhost:3000,http://localhost:3001,http://localhost:3119,http://localhost:3219,"
+        "http://127.0.0.1:3000,http://127.0.0.1:3001,http://127.0.0.1:3119,http://127.0.0.1:3219,"
+        "https://chatbot.cahy.local,https://wiki.cahy.local"
+    )
     portal_base_url: str = ""
 
     # SSO
@@ -66,6 +70,8 @@ class Settings(BaseSettings):
     sso_group_department_map: str = ""
     sso_trust_email: bool = False
     chatbot_url: str = ""
+    # Backend verification URL; browser redirects continue using chatbot_url.
+    chatbot_internal_url: str = ""
     chatbot_wiki_sso_secret: str = ""
     sso_mcp_clients: str = "cahy-chatbot"
     mcp_trust_forwarded_identity: bool = False
@@ -96,7 +102,7 @@ class Settings(BaseSettings):
     mrp_write_parallel_pages: int = 2
     mrp_auto_approve_plan: bool = True
     mrp_multipass_writer_enabled: bool = True
-    max_upload_size_bytes: int = 52428800
+    max_upload_size_bytes: int = 209715200
     allowed_upload_extensions: str = "pdf,docx,xlsx,pptx,txt,md,csv"
     auto_approve_extraction_threshold_tokens: int = 0
     # processing_mode=verbatim_page: longer documents are split into several linked pages.
@@ -179,9 +185,22 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         raw = (self.cors_origins or "").strip()
-        if raw == "*":
-            return ["*"]
-        return [p.strip() for p in raw.split(",") if p.strip()]
+        default_origins = [
+            "http://localhost:3000",
+            "http://localhost:3001",
+            "http://localhost:3119",
+            "http://localhost:3219",
+            "http://127.0.0.1:3000",
+            "http://127.0.0.1:3001",
+            "http://127.0.0.1:3119",
+            "http://127.0.0.1:3219",
+            "https://chatbot.cahy.local",
+            "https://wiki.cahy.local",
+        ]
+        if not raw or raw == "*":
+            return default_origins
+        origins = [p.strip() for p in raw.split(",") if p.strip() and p.strip() != "*"]
+        return origins or default_origins
 
 
 settings = Settings()

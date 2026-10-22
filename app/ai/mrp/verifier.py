@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import unicodedata
 from typing import Optional
 
 from loguru import logger
@@ -21,6 +22,45 @@ COVERAGE_MIN_MENTIONS = 3
 _WIKILINK_RE = re.compile(r"\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|[^\]]*)?\]\]")
 
 _RESERVED = {"_index", "_log", "_hot"}
+
+
+def factual_publication_blockers(content_md: str, source_text: str) -> list[str]:
+    """Block objectively broken evidence; lexical similarity and maturity stay advisory."""
+    from app.services.citation_verifier import extract_footnotes
+
+    blockers = []
+    if not (source_text or "").strip():
+        blockers.append("empty_source")
+    if not (content_md or "").strip():
+        blockers.append("empty_page")
+    factual_text = re.sub(r"```.*?```", "", content_md or "", flags=re.DOTALL)
+    definitions = {fn["id"]: fn["text"] for fn in extract_footnotes(factual_text)}
+    body = re.sub(r"^\s*\[\^[\w-]+\]:.*$", "", factual_text, flags=re.MULTILINE)
+    references = set(re.findall(r"\[\^([\w-]+)\]", body))
+    if references - definitions.keys():
+        blockers.append("undefined_footnote")
+    if any(not definitions[key].strip() for key in references & definitions.keys()):
+        blockers.append("empty_footnote")
+    # Compare canonical identifiers, not fuzzy claim scores. Related-page
+    # links and advisory callouts may legitimately refer to other documents.
+    factual_text = re.sub(r"\[\[.*?\]\]", "", factual_text)
+    factual_text = re.sub(r"^\s*>.*$", "", factual_text, flags=re.MULTILINE)
+
+    def identifiers(text):
+        canonical = unicodedata.normalize("NFKC", text).casefold()
+        canonical = canonical.translate(str.maketrans({ch: "-" for ch in "‐‑‒–—−"}))
+        canonical = re.sub(r"[ \t]*([/-])[ \t]*", r"\1", canonical)
+        articles = set(re.findall(r"\bđiều\s*(\d+[a-z]?)\b", canonical))
+        # A legal instrument identifier has an alphabetic authority suffix;
+        # fractions (1/2), dates and numeric ratios are not document citations.
+        documents = set(re.findall(r"(?<!\w)\d+(?:/\d{4})?/[a-zđ][a-z0-9đ/-]*", canonical))
+        return articles, documents
+
+    claimed_articles, claimed_docs = identifiers(factual_text)
+    source_articles, source_docs = identifiers(source_text or "")
+    if claimed_articles - source_articles or claimed_docs - source_docs:
+        blockers.append("missing_source_reference")
+    return blockers
 
 
 def assess_page_status(content_md: str, slug: Optional[str] = None) -> str:
@@ -133,6 +173,7 @@ async def run_verify_phase(session, source, page_results, chunk_extracts, full_t
     for r in page_results:
         if is_failure_stub(r.content_md):
             continue
+        r.publication_blockers = factual_publication_blockers(r.content_md, full_text or "")
         try:
             report = verifier.verify_page(r.slug, r.content_md, full_text or "")
             if report.has_hallucinations:

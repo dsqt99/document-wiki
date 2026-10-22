@@ -12,6 +12,8 @@ from typing import Any, Dict, List, Optional
 from loguru import logger
 
 from app.core.text_normalizer import normalize_text
+from app.core.legal_headings import is_bare_article_continuation, legal_heading_level
+from app.services.legal_endmatter import find_end_sections
 
 
 class LegalNodeType(str, Enum):
@@ -68,6 +70,8 @@ class LegalDocumentTree:
     appendices: List[Dict[str, Any]] = field(default_factory=list)
     # Articles in document order, filled by the parser (unattached ones may precede chapters).
     ordered_articles: List[LegalArticle] = field(default_factory=list, repr=False)
+    # Terminal notes and appendices are opaque: their internal articles are not law units.
+    end_sections: List[Dict[str, Any]] = field(default_factory=list)
 
     def get_all_articles(self) -> List[LegalArticle]:
         """Return all articles across all chapters and unattached sections in order."""
@@ -82,7 +86,7 @@ class LegalDocumentTree:
 
 # Regex Patterns for structural tokens
 RE_PART = re.compile(r"^(?:#+\s*)?PHẦN\s+THỨ\s+([A-ZÀ-Ỹ0-9]+)[:\.]?\s*(.*)$", re.IGNORECASE)
-RE_CHAPTER = re.compile(r"^(?:#+\s*)?CHƯƠNG\s+([IVXLCDM0-9]+)[:\.]?\s*(.*)$", re.IGNORECASE)
+RE_CHAPTER = re.compile(r"^(?:#+\s*)?CHƯƠNG\s+([IVXLCDM0-9]+[a-z]?)(?!\w)[:\.]?\s*(.*)$", re.IGNORECASE)
 RE_SECTION = re.compile(r"^(?:#+\s*)?MỤC\s+(\d+)[:\.]?\s*(.*)$", re.IGNORECASE)
 RE_ARTICLE = re.compile(r"^(?:#+\s*)?Điều\s+(\d+[a-z]?)\.?\s*(.*)$", re.IGNORECASE)
 RE_CLAUSE = re.compile(r"^(\d+)\.\s+(.*)$")
@@ -131,7 +135,7 @@ def _split_glued_headings(text: str) -> str:
 def _match_article(trimmed: str) -> Optional["re.Match[str]"]:
     """RE_ARTICLE, minus in-text references like 'Điều 51 của Luật Đầu tư ...'."""
     m = RE_ARTICLE.match(trimmed)
-    if not m:
+    if not m or legal_heading_level(trimmed) != 3:
         return None
     after_num = trimmed[m.end(1):]
     title = m.group(2)
@@ -141,6 +145,10 @@ def _match_article(trimmed: str) -> Optional["re.Match[str]"]:
     if not after_num.lstrip().startswith(".") and title[:1].islower():
         return None
     return m
+
+
+def _match_chapter(trimmed: str) -> Optional["re.Match[str]"]:
+    return RE_CHAPTER.match(trimmed) if legal_heading_level(trimmed) == 2 else None
 
 
 def _article_seq(num: str) -> Optional[int]:
@@ -157,7 +165,20 @@ class LegalHierarchyParser:
         if not full_text or not full_text.strip():
             return tree
 
-        normalized_text = _split_glued_headings(normalize_text(full_text))
+        # Detect before normalization strips indentation used to exclude code blocks.
+        end_sections = find_end_sections(full_text)
+        for section in end_sections:
+            item = {
+                "kind": section.kind,
+                "title": section.title,
+                "number": section.number,
+                "content_md": normalize_text(full_text[section.start:section.end]),
+            }
+            tree.end_sections.append(item)
+            if section.kind == "appendix":
+                tree.appendices.append(item)
+        body = full_text[:end_sections[0].start] if end_sections else full_text
+        normalized_text = _split_glued_headings(normalize_text(body))
         lines = normalized_text.split("\n")
 
         # Parsing states
@@ -165,9 +186,18 @@ class LegalHierarchyParser:
         in_quote = False
         last_article_seq: Optional[int] = None
         # Headings outside quotes, used to tell a lost closing quote from a quoted article.
+        article_matches = []
+        previous_nonempty = ""
+        for ln in lines:
+            plain = strip_markup(ln)
+            bare_reference = is_bare_article_continuation(ln, previous_nonempty)
+            article_matches.append(None if bare_reference else _match_article(plain))
+            if plain:
+                # Preserve heading/body context even for legacy wrongly marked references.
+                previous_nonempty = f"### {plain}" if legal_heading_level(plain) and not bare_reference else plain
         heading_seqs = [
-            _article_seq(m.group(1)) if (m := _match_article(strip_markup(ln))) and not _QUOTE_CHARS.search(ln) else None
-            for ln in lines
+            _article_seq(m.group(1)) if m and not _QUOTE_CHARS.search(ln) else None
+            for ln, m in zip(lines, article_matches)
         ]
         current_chapter: Optional[LegalChapter] = None
         current_article: Optional[LegalArticle] = None
@@ -218,7 +248,7 @@ class LegalHierarchyParser:
             # consolidated text) the next expected heading is "Điều 1", or the chapter
             # heading right before it.
             seq, seq_at = heading_seqs[idx], idx
-            if in_quote and seq is None and last_article_seq is None and RE_CHAPTER.match(trimmed):
+            if in_quote and seq is None and last_article_seq is None and _match_chapter(trimmed):
                 seq_at = next((j for j in range(idx + 1, len(lines)) if heading_seqs[j] is not None), idx)
                 seq = heading_seqs[seq_at]
             if (
@@ -241,7 +271,7 @@ class LegalHierarchyParser:
                 continue
 
             # Check for Chapter transition
-            m_ch = RE_CHAPTER.match(trimmed)
+            m_ch = _match_chapter(trimmed)
             if m_ch:
                 _commit_current_article()
                 in_preamble = False
@@ -253,12 +283,12 @@ class LegalHierarchyParser:
 
             # Capture Chapter title if on subsequent line
             if current_chapter and not current_chapter.title and not current_article:
-                if not RE_SECTION.match(trimmed) and not _match_article(trimmed) and not RE_CHAPTER.match(trimmed):
+                if not RE_SECTION.match(trimmed) and not _match_article(trimmed) and not _match_chapter(trimmed):
                     current_chapter.title = trimmed
                     continue
 
             # Check for Article transition
-            m_art = _match_article(trimmed)
+            m_art = article_matches[idx]
             if m_art:
                 _commit_current_article()
                 in_preamble = False

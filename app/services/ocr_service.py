@@ -260,7 +260,7 @@ class OCRService:
             max_retries=settings.ai_client_max_retries,
         )
 
-    def _call_ocr_stream_sync(
+    def _call_ocr_sync(
         self,
         b64_image: str,
         mime_type: str,
@@ -270,7 +270,7 @@ class OCRService:
         model: Optional[str] = None,
         with_finish_reason: bool = False,
     ) -> Any:
-        """Synchronous helper executed in thread pool for streaming completion.
+        """Read a complete OCR response in the thread pool without streaming.
 
         Returns the text; with ``with_finish_reason=True`` returns
         ``(text, finish_reason)`` so callers can detect truncation ("length").
@@ -293,22 +293,12 @@ class OCRService:
                     ],
                 }
             ],
-            stream=True,
+            stream=False,
         )
 
-        chunks: list[str] = []
-        finish_reason: Optional[str] = None
-        for chunk in response:
-            if not chunk.choices:
-                continue
-            choice = chunk.choices[0]
-            if choice.delta and choice.delta.content:
-                chunks.append(choice.delta.content)
-            fr = getattr(choice, "finish_reason", None)
-            if fr:
-                finish_reason = fr
-
-        text = "".join(chunks).strip()
+        choice = response.choices[0] if response.choices else None
+        text = (choice.message.content or "").strip() if choice else ""
+        finish_reason = choice.finish_reason if choice else None
         if with_finish_reason:
             return text, finish_reason
         return text
@@ -416,7 +406,7 @@ class OCRService:
 
         try:
             result = await asyncio.to_thread(
-                self._call_ocr_stream_sync,
+                self._call_ocr_sync,
                 b64_image,
                 mime_type,
                 ocr_prompt,
@@ -436,7 +426,7 @@ class OCRService:
                 from app.ai.tracing import record_generation
 
                 record_generation(
-                    name="dedicated_ocr.stream",
+                    name="dedicated_ocr.complete",
                     model=effective_model,
                     input_data={
                         "prompt": ocr_prompt,
@@ -468,7 +458,7 @@ class OCRService:
                 from app.ai.tracing import record_generation
 
                 record_generation(
-                    name="dedicated_ocr.stream",
+                    name="dedicated_ocr.complete",
                     model=effective_model,
                     input_data={
                         "prompt": ocr_prompt,

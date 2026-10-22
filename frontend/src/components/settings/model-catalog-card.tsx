@@ -103,6 +103,7 @@ export function ModelCatalogCard({
   switchUrl,
   kind,
   renderMeta,
+  renderControls,
 }: {
   title: string;
   description: string;
@@ -111,6 +112,7 @@ export function ModelCatalogCard({
   switchUrl: string;
   kind: CustomModelKind;
   renderMeta?: (spec: ModelSpec) => ReactNode;
+  renderControls?: (selected: ModelSpec | null) => ReactNode;
 }) {
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [settings, setSettings] = useState<Record<string, unknown>>({});
@@ -211,6 +213,7 @@ export function ModelCatalogCard({
         label={selected?.label}
         onActivate={() => void activate()}
       />
+      {renderControls?.(selected)}
     </div>
   );
 }

@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 from loguru import logger
 
+from app.core.legal_headings import is_bare_article_continuation, is_legal_structure_candidate, legal_heading_level
 from app.core.text_normalizer import normalize_text
 from app.services.parsers import pdf_backend
 from app.services.parsers.base import BaseParser
@@ -63,15 +64,6 @@ def normalize_pdf_engine(engine: Optional[str]) -> str:
 # Heuristic Helpers
 # ---------------------------------------------------------------------------
 
-VIETNAMESE_HEADING_PATTERNS = [
-    (re.compile(r"^(PHẦN THỨ\s+[A-ZÀ-Ỹ0-9]+.*)$", re.IGNORECASE), "# "),
-    (re.compile(r"^(CHƯƠNG\s+[IVXLCDM0-9]+.*)$", re.IGNORECASE), "## "),
-    (re.compile(r"^(MỤC\s+\d+.*)$", re.IGNORECASE), "### "),
-    (re.compile(r"^(TIỂU MỤC\s+\d+.*)$", re.IGNORECASE), "### "),
-    (re.compile(r"^(Điều\s+\d+\.?.*)$"), "### "),
-    (re.compile(r"^(PHỤ LỤC(?:\s+[A-Z0-9IVX]+)?.*)$", re.IGNORECASE), "## "),
-]
-
 PAGE_NUMBER_PATTERN = re.compile(
     r"^(?:trang\s*)?-?\s*\d+\s*(?:/\s*\d+)?\s*-?$", re.IGNORECASE
 )
@@ -84,6 +76,7 @@ def enhance_vietnamese_headings(markdown_text: str) -> str:
 
     lines = markdown_text.split("\n")
     enhanced_lines: list[str] = []
+    previous_nonempty = ""
 
     for line in lines:
         stripped = line.strip()
@@ -91,20 +84,23 @@ def enhance_vietnamese_headings(markdown_text: str) -> str:
             enhanced_lines.append(line)
             continue
 
-        # If already a markdown heading, skip modification
+        bare_reference = is_bare_article_continuation(stripped, previous_nonempty)
+        # OCR engines can emit their own headings for wrapped inline citations.
+        # Remove only that structural markup; keep every word of the source.
         if stripped.startswith("#"):
-            enhanced_lines.append(line)
+            if bare_reference or (is_legal_structure_candidate(stripped) and legal_heading_level(stripped) is None):
+                enhanced_lines.append(re.sub(r"^#{1,6}\s+", "", stripped))
+            else:
+                enhanced_lines.append(line)
+            previous_nonempty = enhanced_lines[-1].strip()
             continue
 
-        matched = False
-        for pattern, prefix in VIETNAMESE_HEADING_PATTERNS:
-            if pattern.match(stripped):
-                enhanced_lines.append(f"{prefix}{stripped}")
-                matched = True
-                break
-
-        if not matched:
+        level = None if bare_reference else legal_heading_level(stripped)
+        if level:
+            enhanced_lines.append(f"{'#' * level} {stripped}")
+        else:
             enhanced_lines.append(line)
+        previous_nonempty = enhanced_lines[-1].strip()
 
     return "\n".join(enhanced_lines)
 
@@ -184,23 +180,23 @@ def is_scanned_page(page: Any, text: str) -> bool:
     if len(clean_text) >= 50:
         return False
 
-    if len(clean_text) < 15:
-        # Check image coverage area
-        rect = getattr(page, "rect", None)
-        if not rect:
-            return False
+    # A short native signature/header can coexist with a full scanned page.
+    # Check image coverage for all sparse text layers, including 15–49 chars.
+    rect = getattr(page, "rect", None)
+    if not rect:
+        return False
 
-        page_area = rect.width * rect.height
-        if page_area <= 0:
-            return False
+    page_area = rect.width * rect.height
+    if page_area <= 0:
+        return False
 
-        img_rects = []
-        if hasattr(page, "get_image_rects"):
-            img_rects = page.get_image_rects() or []
+    img_rects = []
+    if hasattr(page, "get_image_rects"):
+        img_rects = page.get_image_rects() or []
 
-        total_img_area = sum(r.width * r.height for r in img_rects)
-        if (total_img_area / page_area) > 0.5:
-            return True
+    total_img_area = sum(r.width * r.height for r in img_rects)
+    if (total_img_area / page_area) > 0.5:
+        return True
 
     return False
 
@@ -260,14 +256,14 @@ def _line_is_bold(line: Dict[str, Any]) -> bool:
 
 
 def _matches_vietnamese_heading(text: str) -> bool:
-    return any(pattern.match(text) for pattern, _prefix in VIETNAMESE_HEADING_PATTERNS)
+    return legal_heading_level(text) is not None
 
 
 def _heading_level(text: str, size: float, body_size: float) -> int:
     if not size or not body_size or len(text) > _HEADING_MAX_CHARS:
         return 0
     # Vietnamese legal structure lines are handled by enhance_vietnamese_headings().
-    if _matches_vietnamese_heading(text):
+    if is_legal_structure_candidate(text):
         return 0
     ratio = size / body_size
     for threshold, level in _HEADING_RATIOS:
@@ -308,27 +304,57 @@ class _RichPage:
         return "\n\n".join(b for b in blocks if b and b.strip())
 
 
-def _band_lines(
-    pl_page: Any, bbox: Tuple[float, float, float, float], sizes: Counter
-) -> List[Tuple[str, float, bool, bool]]:
-    x0, top, x1, bottom = bbox
-    if bottom - top <= 1 or x1 - x0 <= 1:
-        return []
-    try:
-        region = pl_page.crop((x0, top, x1, bottom), strict=False)
-        lines = region.extract_text_lines(strip=True, return_chars=True)
-    except Exception as e:  # noqa: BLE001 - a broken band must not lose the whole page
-        logger.debug(f"PDFParser: text band {bbox} skipped: {e}")
-        return []
+def _article_superscripts(line: Dict[str, Any]) -> str:
+    """Preserve small raised digits in native Article headings as superscripts.
+
+    PDF text strings merge footnotes with identifiers (46 + raised 33 becomes
+    4633). Only measured glyph geometry supplies the distinction; plain text,
+    ordinary small digits on the baseline, and body/math lines stay untouched.
+    """
+    text = (line.get("text") or "").strip()
+    if not re.match(r"^Điều\s+\d", text, re.IGNORECASE) or legal_heading_level(text) != 3:
+        return text
+    chars = [c for c in (line.get("chars") or []) if (c.get("text") or "").strip()]
+    body_size = _line_font_size(line)
+    normal = [c for c in chars if float(c.get("size") or 0) >= body_size * 0.9]
+    if not body_size or not normal:
+        return text
+    baseline = statistics.median(float(c["bottom"]) for c in normal)
+    normal_top = statistics.median(float(c["top"]) for c in normal)
+    spans: List[Tuple[int, int]] = []
+    cursor = 0
+    for char in chars:
+        value = char["text"]
+        start = text.find(value, cursor)
+        if start < 0:
+            # A nonliteral/ligature mapping cannot safely insert markup.
+            return text
+        end = start + len(value)
+        cursor = end
+        size = float(char.get("size") or 0)
+        if not (value.isdigit() and 0 < size <= body_size * 0.8
+                and baseline - float(char["bottom"]) >= body_size * 0.2
+                and float(char["top"]) <= normal_top + body_size * 0.15):
+            continue
+        if spans and spans[-1][1] == start:
+            spans[-1] = (spans[-1][0], end)
+        else:
+            spans.append((start, end))
+    for start, end in reversed(spans):
+        text = text[:start] + "<sup>" + text[start:end] + "</sup>" + text[end:]
+    return text
+
+
+def _format_lines(lines: List[Dict[str, Any]], sizes: Counter) -> List[Tuple[str, float, bool, bool]]:
     out: List[Tuple[str, float, bool, bool]] = []
     prev_bottom: Optional[float] = None
     for line in lines:
-        text = (line.get("text") or "").strip()
+        text = _article_superscripts(line)
         if not text:
             continue
         size = _line_font_size(line)
         if size:
-            sizes[round(size, 1)] += sum(1 for ch in text if not ch.isspace())
+            sizes[round(size, 1)] += sum(1 for ch in line["text"] if not ch.isspace())
         line_top = float(line.get("top", 0))
         line_bottom = float(line.get("bottom", 0))
         height = max(1.0, line_bottom - line_top)
@@ -338,34 +364,78 @@ def _band_lines(
     return out
 
 
+def _is_boxed_legal_prose(rows: List[List[Any]]) -> bool:
+    nonempty = [row for row in (rows or []) if row and any(str(cell or "").strip() for cell in row)]
+    if not nonempty or any(len(row) != 1 for row in nonempty):
+        return False
+    first_line = str(nonempty[0][0] or "").strip().splitlines()[0]
+    heading = re.match(r"^Điều\s+\d+[a-z]?[.:]\s*(.+)$", first_line, re.IGNORECASE)
+    if not heading or legal_heading_level(first_line) != 3 or len(heading.group(1).split()) < 2:
+        return False
+    # A titled Article followed by a substantive numbered clause is boxed
+    # legal prose. Reference lists and catalogues containing bare Article
+    # identifiers must retain their table structure.
+    return any(
+        re.match(r"^(?:\d+[.)]|[a-zđ]\))\s+", line.strip(), re.IGNORECASE)
+        and len(line.strip()) >= 40 and len(line.split()) >= 6
+        for row in nonempty[1:]
+        for line in str(row[0] or "").splitlines()
+    )
+
+
 def _rich_page(pl_page: Any, sizes: Counter) -> _RichPage:
     page = _RichPage()
-    x0, top, x1, bottom = (float(v) for v in pl_page.bbox)
     try:
         tables = pl_page.find_tables()
     except Exception as e:  # noqa: BLE001
         logger.debug(f"PDFParser: table detection failed on page {pl_page.page_number}: {e}")
         tables = []
-    cursor = top
-    for table in sorted(tables, key=lambda t: (t.bbox[1], t.bbox[0])):
-        t_top = min(max(float(table.bbox[1]), top), bottom)
-        t_bottom = min(max(float(table.bbox[3]), top), bottom)
-        if t_top > cursor:
-            lines = _band_lines(pl_page, (x0, cursor, x1, t_top), sizes)
-            if lines:
-                page.segments.append(("lines", lines))
+    rendered_tables = []
+    rendered_cells = []
+    for table in tables:
         try:
-            markdown = table_rows_to_markdown(table.extract())
+            rows = table.extract()
+            if _is_boxed_legal_prose(rows):
+                # Border/highlight rectangles can look like a one-column
+                # table around entire legal articles. Keep the native lines,
+                # including font/footnote geometry and legal heading semantics.
+                continue
+            markdown = table_rows_to_markdown(rows)
         except Exception as e:  # noqa: BLE001
             logger.debug(f"PDFParser: table extract failed on page {pl_page.page_number}: {e}")
             markdown = ""
         if markdown:
-            page.segments.append(("table", markdown))
-        cursor = max(cursor, t_bottom)
-    if bottom > cursor:
-        lines = _band_lines(pl_page, (x0, cursor, x1, bottom), sizes)
-        if lines:
-            page.segments.append(("lines", lines))
+            rendered_tables.append((table.bbox, markdown))
+            rendered_cells.extend(cell for cell in table.cells if cell is not None)
+
+    def outside_rendered_tables(obj: Dict[str, Any]) -> bool:
+        if obj.get("object_type") != "char":
+            return True
+        # Use the same character-center membership as pdfplumber's table
+        # extraction, against actual cells rather than the bounding rectangle:
+        # irregular tables can have paragraphs in unoccupied corners.
+        cx = (float(obj["x0"]) + float(obj["x1"])) / 2
+        cy = (float(obj["top"]) + float(obj["bottom"])) / 2
+        return not any(x0 <= cx < x1 and top <= cy < bottom for x0, top, x1, bottom in rendered_cells)
+
+    text_page = pl_page.filter(outside_rendered_tables) if rendered_tables else pl_page
+    lines = text_page.extract_text_lines(strip=True, return_chars=True)
+    # Merge whole text lines and converted tables by their top coordinate.
+    # Extracting lines once also avoids duplicating characters cut by a band
+    # boundary. Failed/empty table conversions stay in the native text layer.
+    events = [(float(line["top"]), float(line["x0"]), "line", line) for line in lines]
+    events.extend((float(bbox[1]), float(bbox[0]), "table", md) for bbox, md in rendered_tables)
+    pending = []
+    for _top, _x0, kind, payload in sorted(events, key=lambda event: event[:2]):
+        if kind == "line":
+            pending.append(payload)
+        else:
+            if pending:
+                page.segments.append(("lines", _format_lines(pending, sizes)))
+                pending = []
+            page.segments.append(("table", payload))
+    if pending:
+        page.segments.append(("lines", _format_lines(pending, sizes)))
     return page
 
 
@@ -680,7 +750,9 @@ class PDFParser(BaseParser):
                 {
                     "content": normalized,
                     "page_number": i + 1,
+                    "total_doc_pages": total_doc_pages,
                     "is_ocr": i in ocr_successful_pages,
+                    "ocr_required": i in scanned_indices,
                     "char_count": len(normalized),
                     "word_count": len(normalized.split()),
                 }

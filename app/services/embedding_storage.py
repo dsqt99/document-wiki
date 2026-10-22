@@ -66,12 +66,13 @@ def _rowcount(result: Any) -> int:
         return 0
 
 
-def _milvus_call(fn, *args, **kwargs) -> None:
+def _milvus_call(fn, *args, **kwargs):
     """Milvus sync is best effort: PG bookkeeping must not fail because of it."""
     try:
-        fn(*args, **kwargs)
+        return fn(*args, **kwargs)
     except Exception as exc:  # pragma: no cover - defensive
         logger.warning(f"Milvus sync failed in {getattr(fn, '__name__', fn)}: {exc}")
+        return False
 
 
 def _milvus_delete_other_specs(collection_prefix: str, keep_spec_id: str) -> None:
@@ -102,7 +103,7 @@ async def upsert_page_embedding(
     title: Optional[str] = None,
     summary: Optional[str] = None,
     content_md: Optional[str] = None,
-) -> None:
+) -> bool:
     model = get_embedding_model_for_dim(spec.dimension)
     stmt = pg_insert(model.__table__).values(
         page_id=page_id,
@@ -115,7 +116,7 @@ async def upsert_page_embedding(
         set_={"content_hash": stmt.excluded.content_hash, "embedded_at": func.now()},
     )
     await session.execute(stmt)
-    _milvus_call(
+    return _milvus_call(
         milvus_service.upsert_page_vector_to_milvus,
         page_id,
         spec.id,
@@ -194,7 +195,7 @@ async def upsert_chunk_embedding(
     end_char: Optional[int],
     page_number: Optional[int],
     content_hash: str,
-) -> None:
+) -> bool:
     model = get_source_chunk_embedding_model_for_dim(spec.dimension)
     page_no = page_number if page_number is not None else 1
     stmt = pg_insert(model.__table__).values(
@@ -220,7 +221,7 @@ async def upsert_chunk_embedding(
         },
     )
     await session.execute(stmt)
-    _milvus_call(
+    return _milvus_call(
         milvus_service.upsert_source_chunk_vector_to_milvus,
         source_id,
         chunk_index,
@@ -259,7 +260,7 @@ async def upsert_wiki_chunk_embedding(
     text: str,
     heading_path: Optional[str],
     content_hash: str,
-) -> None:
+) -> bool:
     model = get_wiki_page_chunk_embedding_model_for_dim(spec.dimension)
     stmt = pg_insert(model.__table__).values(
         page_id=page_id,
@@ -280,7 +281,7 @@ async def upsert_wiki_chunk_embedding(
         },
     )
     await session.execute(stmt)
-    _milvus_call(
+    return _milvus_call(
         milvus_service.upsert_wiki_chunk_vector_to_milvus,
         page_id,
         chunk_index,

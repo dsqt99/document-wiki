@@ -262,21 +262,16 @@ def _evidence_catalog(evidence: list[dict]) -> str:
     return "\n".join(lines)
 
 
-SUMMARY_MAX = 300
-
-
 def make_summary(content_md: str) -> str:
     parts: list[str] = []
-    total = 0
     for line in (content_md or "").splitlines():
         s = line.strip()
         if not s or s.startswith("#"):
+            if parts:
+                break
             continue
         parts.append(s)
-        total += len(s)
-        if total > 100:
-            break
-    return clip_text(" ".join(parts), SUMMARY_MAX)
+    return " ".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -401,7 +396,7 @@ async def write_with_agent(llm, session, item, linkable, existing, source_ctx, e
             args = call.arguments or {}
             if call.name == "finish":
                 content = strip_code_fence(args.get("content_md") or "").strip()
-                return content, clip_text(args.get("summary") or make_summary(content), SUMMARY_MAX)
+                return content, (args.get("summary") or make_summary(content)).strip()
             if call.name == "read_kb_page":
                 page = await wiki_service.get_page_by_slug(
                     session, str(args.get("slug") or ""), scope_type=scope[0], scope_id=scope[1]
@@ -531,7 +526,6 @@ async def run_refine_phase(session, source, plan, chunk_extracts, full_text, llm
     plan_json = dict(getattr(plan, "plan_json", None) or {})
     items = [p for p in (plan_json.get("pages") or []) if isinstance(p, dict) and p.get("slug")]
     items.sort(key=lambda p: p.get("priority") if isinstance(p.get("priority"), (int, float)) else 99)
-    linkable_all = [p["slug"] for p in items]
     claims = _claims_from_extracts(chunk_extracts, plan_json)
     sections = split_sections(full_text or "", getattr(source, "outline_json", None))
     budget = source_budget_chars(llm)
@@ -542,7 +536,15 @@ async def run_refine_phase(session, source, plan, chunk_extracts, full_text, llm
         scopes = [("global", None)]
     scope = scopes[0] if scopes else ("global", None)
 
-    items = await _drop_verbatim_targets(items, scope)
+    from app.services.wiki_origin_service import resolve_target_slug
+    # Plan collisions must be resolved before producing links or loading old content.
+    prepared = []
+    for item in items:
+        item = dict(item)
+        item["slug"] = await resolve_target_slug(session, item["slug"], "generated", scope[0], scope[1], source.id)
+        prepared.append(item)
+    items = prepared
+    linkable_all = [p["slug"] for p in items]
 
     if tracker is not None:
         await tracker.update(78, f"Writing {len(items)} wiki page(s)...")
@@ -565,7 +567,7 @@ async def run_refine_phase(session, source, plan, chunk_extracts, full_text, llm
                     existing_page = await wiki_service.get_page_by_slug(
                         page_session, slug, scope_type=scope[0], scope_id=scope[1]
                     )
-                    existing = existing_page.content_md if existing_page is not None else None
+                    existing = existing_page.content_md if existing_page is not None and getattr(existing_page, "origin_tag", None) == "generated" and len(scopes) <= 1 else None
                     evidence = assemble_evidence(item, claims, full_text or "")
                     included, skipped = select_source_context(full_text or "", sections, evidence, budget)
                     images = _image_markers_near(full_text or "", evidence)
@@ -585,7 +587,7 @@ async def run_refine_phase(session, source, plan, chunk_extracts, full_text, llm
                             ctx = f"{ctx}\n\n{marker}"
                         complex_mode = (len(evidence) > COMPLEX_EVIDENCE_COUNT
                                         or len(existing or "") > COMPLEX_EXISTING_CHARS)
-                        if complex_mode and hasattr(llm, "generate_with_tools"):
+                        if complex_mode and len(scopes) <= 1 and hasattr(llm, "generate_with_tools"):
                             try:
                                 content, summary = await write_with_agent(
                                     llm, page_session, item, linkable, existing, ctx, evidence, images,

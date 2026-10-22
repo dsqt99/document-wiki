@@ -48,7 +48,8 @@ async def test_upload_source_detects_duplicate_content_hash():
 
 
 @pytest.mark.asyncio
-async def test_upload_source_streams_file_to_minio():
+@pytest.mark.parametrize("scope",["global","personal"])
+async def test_upload_source_streams_file_to_minio(scope):
     """The upload body is streamed to MinIO from the spooled file, not buffered."""
     file_content = b"%PDF-1.4 " + b"x" * 200_000
     file_mock = UploadFile(filename="big.pdf", file=io.BytesIO(file_content))
@@ -57,6 +58,7 @@ async def test_upload_source_streams_file_to_minio():
     mock_user.id = uuid.uuid4()
     mock_user.role = "admin"
     mock_user.department_ids = []
+    manager_id = uuid.uuid4()
 
     mock_db = AsyncMock()
     mock_db.add = MagicMock()
@@ -88,9 +90,12 @@ async def test_upload_source_streams_file_to_minio():
             title=None,
             knowledge_type_id=None,
             department_ids=None,
-            scope_type="global",
+            scope_type=scope,
             scope_id=None,
-            preserve_verbatim=False,
+            managing_department_id=str(manager_id),
+            preserve_verbatim=True,
+            processing_mode="verbatim",
+            review_before_processing=True,
             db=mock_db,
             user=mock_user,
         )
@@ -100,4 +105,10 @@ async def test_upload_source_streams_file_to_minio():
     assert uploaded["key"].endswith("/original/big.pdf")
     created = repo_cls.return_value.create.await_args.args[0]
     assert created.file_size == len(file_content)
+    assert created.managing_department_id == manager_id
+    assert created.scope_type == scope and created.preserve_verbatim is False
+    assert created.metadata_["processing_mode"] == "auto"
+    assert "upload_review" not in created.metadata_
+    if scope == "personal":
+        assert created.scope_id == mock_user.id
     pool.enqueue_job.assert_awaited_once()

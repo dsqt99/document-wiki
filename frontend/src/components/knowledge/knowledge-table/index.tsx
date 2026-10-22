@@ -1,5 +1,6 @@
 "use client";
 
+import { OptionSelect } from "@/components/ui/option-select";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, useEffect, useState, type ReactNode } from "react";
@@ -24,6 +25,8 @@ import { ExtractionReviewDialog } from "./extraction-review-dialog";
 import { PlanReviewDialog } from "./plan-review-dialog";
 import { SourceArticlesDrawer } from "./source-articles-drawer";
 import { StatusDot } from "./status-dot";
+import { QualityPanel } from "./quality-panel";
+import { DeleteSourcesDialog } from "../delete-sources-dialog";
 import {
   formatCreatedDate,
   hasBranchRetry,
@@ -79,6 +82,7 @@ type Props = {
   onQueryChange: (patch: Partial<SourceQuery>) => void;
   onRefresh: () => void;
   onUpload: () => void;
+  onReviewBatch?: (sources: Source[]) => void;
 };
 
 type RetryBranch = "chunk" | "wiki" | "all" | null;
@@ -105,7 +109,7 @@ function Icon({ name, size = 16, className }: { name: string; size?: number; cla
   );
 }
 
-function NativeSelect({
+function FilterSelect({
   value,
   onChange,
   children,
@@ -119,21 +123,9 @@ function NativeSelect({
   className?: string;
 }) {
   return (
-    <div className={cn("relative", className)}>
-      <select
-        value={value}
-        aria-label={ariaLabel}
-        onChange={(e) => onChange(e.target.value)}
-        className={cn(FILTER_CONTROL, "w-full cursor-pointer appearance-none pr-7 pl-2.5")}
-      >
-        {children}
-      </select>
-      <Icon
-        name="expand_more"
-        size={16}
-        className="pointer-events-none absolute top-1/2 right-1.5 -translate-y-1/2 text-gray-400"
-      />
-    </div>
+    <OptionSelect value={value} aria-label={ariaLabel} onValueChange={onChange} className={cn(FILTER_CONTROL, "w-full sm:w-auto sm:min-w-36", className)}>
+      {children}
+    </OptionSelect>
   );
 }
 
@@ -161,6 +153,7 @@ export function KnowledgeTable({
   onQueryChange,
   onRefresh,
   onUpload,
+  onReviewBatch,
 }: Props) {
   const { t } = useI18n();
   const router = useRouter();
@@ -180,6 +173,7 @@ export function KnowledgeTable({
   const [expanded, setExpanded] = useState<string | null>(null);
   const [expandedInfo, setExpandedInfo] = useState<string | null>(null);
   const [editing, setEditing] = useState<Source | null>(null);
+  const [deleting, setDeleting] = useState<Source[] | null>(null);
   const [planFor, setPlanFor] = useState<Source | null>(null);
   const [extractionFor, setExtractionFor] = useState<Source | null>(null);
 
@@ -246,8 +240,7 @@ export function KnowledgeTable({
   };
 
   const bulkDelete = () => {
-    if (!confirm(`Xóa ${selectedRows.length} tài liệu đã chọn? Thao tác không thể hoàn tác.`)) return;
-    void runBulk(selectedRows, (s) => api(`/api/sources/${s.id}`, { method: "DELETE" }));
+    setDeleting(selectedRows);
   };
 
   const bulkRetry = () => {
@@ -272,21 +265,7 @@ export function KnowledgeTable({
     }
   };
 
-  const deleteRow = async (s: Source) => {
-    if (!confirm(t("knowledge.deleteConfirm"))) return;
-    setActionError(null);
-    try {
-      await api(`/api/sources/${s.id}`, { method: "DELETE" });
-      setSelected((prev) => {
-        const next = new Set(prev);
-        next.delete(s.id);
-        return next;
-      });
-      onRefresh();
-    } catch (err) {
-      setActionError(errorText(err, "Không xóa được tài liệu"));
-    }
-  };
+  const deleteRow = (s: Source) => setDeleting([s]);
 
   const downloadRow = async (s: Source) => {
     setActionError(null);
@@ -326,8 +305,8 @@ export function KnowledgeTable({
   return (
     <div className="flex flex-col gap-3">
       {/* Filters */}
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative w-full sm:w-64">
+      <div className="grid grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap">
+        <div className="relative col-span-2 w-full sm:flex-1 sm:min-w-56">
           <Icon
             name="search"
             size={16}
@@ -336,7 +315,8 @@ export function KnowledgeTable({
           <input
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
-            placeholder="Tìm kiếm tài liệu..."
+            aria-label="Tìm tài liệu đã tải lên"
+            placeholder="Tìm tên tài liệu..."
             className={cn(FILTER_CONTROL, "w-full pr-7 pl-8")}
           />
           {searchText && (
@@ -352,21 +332,21 @@ export function KnowledgeTable({
           )}
         </div>
 
-        <NativeSelect
-          ariaLabel="Kiểu tri thức"
+        <FilterSelect
+          ariaLabel="Phân loại văn bản"
           value={query.typeId}
           onChange={(v) => onQueryChange({ typeId: v, page: 1 })}
         >
-          <option value="">Tất cả kiểu tri thức</option>
+          <option value="">Tất cả phân loại văn bản</option>
           {types.map((ty) => (
             <option key={ty.id} value={ty.id}>
               {ty.name}
             </option>
           ))}
-        </NativeSelect>
+        </FilterSelect>
 
         {departments.length > 0 && (
-          <NativeSelect
+          <FilterSelect
             ariaLabel="Phòng ban"
             value={query.deptId}
             onChange={(v) => onQueryChange({ deptId: v, page: 1 })}
@@ -377,10 +357,10 @@ export function KnowledgeTable({
                 {d.name}
               </option>
             ))}
-          </NativeSelect>
+          </FilterSelect>
         )}
 
-        <NativeSelect
+        <FilterSelect
           ariaLabel="Trạng thái"
           value={query.status}
           onChange={(v) => onQueryChange({ status: v as StatusGroup, page: 1 })}
@@ -390,7 +370,7 @@ export function KnowledgeTable({
               {g.label}
             </option>
           ))}
-        </NativeSelect>
+        </FilterSelect>
 
         {hasFilter && (
           <button
@@ -403,10 +383,10 @@ export function KnowledgeTable({
           </button>
         )}
 
-        <NativeSelect ariaLabel="Sắp xếp tài liệu" value={query.sort} onChange={(sort) => onQueryChange({ sort, page: 1 })}>
+        <FilterSelect ariaLabel="Sắp xếp tài liệu" value={query.sort} onChange={(sort) => onQueryChange({ sort, page: 1 })}>
           <option value="created_desc">Mới tải lên</option><option value="created_asc">Cũ nhất</option>
           <option value="title_asc">Tên A → Z</option><option value="title_desc">Tên Z → A</option><option value="issued_desc">Mới ban hành</option><option value="issued_asc">Ban hành cũ nhất</option><option value="effective_desc">Mới có hiệu lực</option><option value="effective_asc">Hiệu lực cũ nhất</option>
-        </NativeSelect>
+        </FilterSelect>
       </div>
 
       {/* Bulk bar */}
@@ -421,6 +401,7 @@ export function KnowledgeTable({
             Bỏ chọn
           </button>
           <div className="ml-auto flex items-center gap-2">
+            {onReviewBatch && selectedRows.some((source) => source.upload_review_status === "awaiting") && <Button variant="outline" size="sm" onClick={() => onReviewBatch(selectedRows.filter((source) => source.upload_review_status === "awaiting"))}><Icon name="fact_check" size={15} />Kiểm tra & duyệt</Button>}
             {failedSelected.length > 0 && (
               <Button variant="outline" size="sm" disabled={bulkBusy} onClick={bulkRetry}>
                 <Icon name="refresh" size={15} />
@@ -556,7 +537,6 @@ export function KnowledgeTable({
                               )}
                               <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                                 {s.knowledge_type_name && <TypePill name={s.knowledge_type_name} color={s.knowledge_type_color} />}
-                                {s.preserve_verbatim && <span title="Giữ nguyên văn, tách theo Điều, không biên soạn lại" className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">Nguyên văn</span>}
                                 <button
                                   type="button"
                                   id={`${infoId}-toggle`}
@@ -643,7 +623,13 @@ export function KnowledgeTable({
                                   Duyệt kế hoạch biên soạn
                                 </DropdownMenuItem>
                               )}
-                              {s.status === "awaiting_approval" && (
+                              {s.upload_review_status === "awaiting" && (
+                                <DropdownMenuItem onClick={() => setEditing(s)}>
+                                  <Icon name="fact_check" />
+                                  Duyệt thông tin trích xuất
+                                </DropdownMenuItem>
+                              )}
+                              {s.status === "awaiting_approval" && s.upload_review_status !== "awaiting" && (
                                 <DropdownMenuItem onClick={() => setExtractionFor(s)}>
                                   <Icon name="scale" className="text-orange-600 dark:text-orange-400" />
                                   Duyệt dung lượng trích xuất
@@ -662,7 +648,6 @@ export function KnowledgeTable({
                                 </DropdownMenuItem>
                               )}
                               {groupA &&
-                                !s.preserve_verbatim &&
                                 ["error", "partial", "plan_ready"].includes(s.status) && (
                                   <DropdownMenuItem disabled={isRetrying} onClick={() => void retryRow(s, "wiki")}>
                                     <Icon name="auto_stories" />
@@ -687,7 +672,11 @@ export function KnowledgeTable({
                       <tr className="border-b last:border-b-0" hidden={!isInfoOpen}>
                         <td colSpan={COLUMN_COUNT} className="p-0">
                           <div id={infoId} role="region" aria-labelledby={`${infoId}-toggle`} className="bg-muted/25 px-4 py-3 sm:pr-6 sm:pl-[75px]">
-                            <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-xs leading-5 lg:grid-cols-4">
+                            <dl className="grid grid-cols-1 gap-x-6 gap-y-3 text-xs leading-5 sm:grid-cols-2 lg:grid-cols-4">
+                              <div className="min-w-0">
+                                <dt className="text-muted-foreground">Tệp nguồn</dt>
+                                <dd className="mt-0.5 break-words font-medium">{s.file_name || (s.source_type === "url" ? "Liên kết web" : "Chưa có")}</dd>
+                              </div>
                               <div className="min-w-0">
                                 <dt className="text-muted-foreground">Số trang tệp</dt>
                                 <dd className="mt-0.5 font-medium tabular-nums">{s.page_count ?? "Chưa có"}</dd>
@@ -695,6 +684,10 @@ export function KnowledgeTable({
                               <div className="min-w-0">
                                 <dt className="text-muted-foreground">Người đóng góp</dt>
                                 <dd className="mt-0.5 break-words font-medium">{s.contributed_by_name || "Chưa có"}</dd>
+                              </div>
+                              <div className="min-w-0">
+                                <dt className="text-muted-foreground">Phòng ban quản lý</dt>
+                                <dd className="mt-0.5 break-words font-medium">{s.managing_department_name || (s.managing_department_id && deptName(s.managing_department_id)) || "Chưa có"}</dd>
                               </div>
                               <div className="min-w-0">
                                 <dt className="text-muted-foreground">Ngày ban hành</dt>
@@ -707,15 +700,20 @@ export function KnowledgeTable({
                                   {meta?.effective_date && <span className="text-muted-foreground tabular-nums">· {formatViDate(meta.effective_date)}</span>}
                                 </dd>
                               </div>
-                              <div className="col-span-2 min-w-0 xl:hidden">
+                              <div className="min-w-0 sm:col-span-2 xl:hidden">
                                 <dt className="text-muted-foreground">Phạm vi</dt>
                                 <dd className="mt-0.5 flex flex-wrap items-center gap-2 break-words">
                                   <ScopeBadge scopeType={s.scope_type ?? undefined} scopeId={s.scope_id} />
                                   {deptNames.length > 0 && <span>{deptNames.join(", ")}</span>}
                                 </dd>
                               </div>
-                              {showWiki && wikiCount > 0 && <div className="col-span-2 md:hidden"><button type="button" aria-expanded={isOpen} onClick={() => setExpanded(isOpen ? null : s.id)} className="inline-flex cursor-pointer items-center gap-1 rounded-sm text-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"><Icon name="auto_stories" size={14} />{isOpen ? "Thu gọn" : "Xem"} {wikiCount} trang Wiki<Icon name={isOpen ? "expand_less" : "expand_more"} size={14} /></button></div>}
+                              <div className="min-w-0 lg:hidden">
+                                <dt className="text-muted-foreground">Ngày tải lên</dt>
+                                <dd className="mt-0.5 font-medium tabular-nums">{formatCreatedDate(s.created_at) || "Chưa có"}</dd>
+                              </div>
+                              {showWiki && wikiCount > 0 && <div className="sm:col-span-2 md:hidden"><button type="button" aria-expanded={isOpen} onClick={() => setExpanded(isOpen ? null : s.id)} className="inline-flex cursor-pointer items-center gap-1 rounded-sm text-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"><Icon name="auto_stories" size={14} />{isOpen ? "Thu gọn" : "Xem"} {wikiCount} trang Wiki<Icon name={isOpen ? "expand_less" : "expand_more"} size={14} /></button></div>}
                             </dl>
+                            <QualityPanel quality={s.processing_quality} />
                           </div>
                         </td>
                       </tr>
@@ -742,10 +740,10 @@ export function KnowledgeTable({
             <span className="tabular-nums">
               {from}–{to} / {total}
             </span>
-            <select
+            <OptionSelect
               aria-label="Số dòng mỗi trang"
               value={query.pageSize}
-              onChange={(e) => onQueryChange({ pageSize: Number(e.target.value), page: 1 })}
+              onValueChange={(value) => onQueryChange({ pageSize: Number(value), page: 1 })}
               className="h-7 cursor-pointer rounded-md border border-border bg-background px-1.5 text-xs outline-none focus:ring-2 focus:ring-primary/30"
             >
               {PAGE_SIZES.map((n) => (
@@ -753,7 +751,7 @@ export function KnowledgeTable({
                   {n} / trang
                 </option>
               ))}
-            </select>
+            </OptionSelect>
           </div>
           {totalPages > 1 && (
             <div className="flex items-center gap-2">
@@ -786,6 +784,7 @@ export function KnowledgeTable({
       {editing && (
         <EditSourceDialog
           source={editing}
+          reviewUpload={editing.upload_review_status === "awaiting"}
           types={types}
           departments={departments}
           onClose={() => setEditing(null)}
@@ -815,6 +814,7 @@ export function KnowledgeTable({
           }}
         />
       )}
+      {deleting && <DeleteSourcesDialog sources={deleting} onClose={() => setDeleting(null)} onDeleted={() => { setDeleting(null); setSelected(new Set()); onRefresh(); }} />}
     </div>
   );
 }

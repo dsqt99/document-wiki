@@ -6,6 +6,10 @@ const backend = (process.env.INTERNAL_API_URL || "http://127.0.0.1:5055").replac
 const nextConfig: NextConfig = {
   output: "standalone",
   reactCompiler: true,
+  experimental: {
+    // Allow a 200 MiB file plus multipart fields through the API rewrite.
+    proxyClientMaxBodySize: "205mb",
+  },
   async rewrites() {
     return [
       { source: "/api/:path*", destination: `${backend}/api/:path*` },

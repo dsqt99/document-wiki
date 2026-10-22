@@ -14,6 +14,7 @@ from sqlalchemy import (
     ARRAY,
     BigInteger,
     Boolean,
+    CheckConstraint,
     DateTime,
     Enum as SAEnum,
     Float,
@@ -279,6 +280,7 @@ class Source(Base):
         String(20), nullable=False, default="INTERNAL", server_default="INTERNAL"
     )
     knowledge_type_id: Mapped[Optional[uuid.UUID]] = _fk("knowledge_types.id", "SET NULL")
+    managing_department_id: Mapped[Optional[uuid.UUID]] = _fk("departments.id", "SET NULL", index=True)
     contributed_by_employee_id: Mapped[Optional[uuid.UUID]] = _fk("employees.id", "SET NULL")
     file_path: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
     url: Mapped[Optional[str]] = mapped_column(String(2000), nullable=True)
@@ -322,6 +324,7 @@ class Source(Base):
     updated_at: Mapped[datetime] = _updated()
 
     knowledge_type: Mapped[Optional["KnowledgeType"]] = relationship(lazy="selectin")
+    managing_department: Mapped[Optional["Department"]] = relationship(foreign_keys=[managing_department_id], lazy="selectin")
     contributor: Mapped[Optional["Employee"]] = relationship(foreign_keys=[contributed_by_employee_id])
     departments: Mapped[list["SourceDepartment"]] = relationship(
         back_populates="source", cascade="all, delete-orphan", passive_deletes=True
@@ -409,6 +412,7 @@ class WikiPage(Base):
     status: Mapped[str] = mapped_column(String(20), default="seed", server_default="seed")
     content_md: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default="")
     summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    origin_tag: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     scope_type: Mapped[str] = mapped_column(String(20), default="global", server_default="global")
     scope_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
     knowledge_type_slugs: Mapped[Optional[list[str]]] = mapped_column(
@@ -422,7 +426,11 @@ class WikiPage(Base):
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = _updated()
 
-    __table_args__ = (Index("ix_wiki_pages_status", "status"),)
+    __table_args__ = (
+        Index("ix_wiki_pages_status", "status"),
+        Index("ix_wiki_pages_origin_scope", "origin_tag", "scope_type", "scope_id"),
+        CheckConstraint("origin_tag IN ('extracted', 'generated')", name="ck_wiki_pages_origin_tag"),
+    )
 
     @hybrid_property
     def page_type(self) -> str:
@@ -430,12 +438,13 @@ class WikiPage(Base):
         special = _SPECIAL_PAGE_SLUGS.get(slug)
         if special is not None:
             return special
-        return "source" if slug.startswith(_SOURCE_SLUG_PREFIX) else "concept"
+        return "source" if self.origin_tag == "extracted" or slug.startswith(_SOURCE_SLUG_PREFIX) else "concept"
 
     @page_type.inplace.expression
     @classmethod
     def _page_type_expression(cls):
         whens = [(cls.slug == slug, kind) for slug, kind in _SPECIAL_PAGE_SLUGS.items()]
+        whens.append((cls.origin_tag == "extracted", "source"))
         whens.append((cls.slug.like(_SOURCE_SLUG_PREFIX + "%"), "source"))
         return case(*whens, else_="concept")
 

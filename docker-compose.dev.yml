@@ -1,0 +1,18 @@
+# Explicit opt-in for editing backend sources locally. Production uses baked code.
+services:
+  api:
+    volumes:
+      - ./app:/app/app
+      - ./alembic:/app/alembic
+  worker:
+    volumes:
+      - ./app:/app/app
+      - ./alembic:/app/alembic
+  worker_skills:
+    volumes:
+      - ./app:/app/app
+      - ./alembic:/app/alembic
+  migrator:
+    volumes:
+      - ./app:/app/app
+      - ./alembic:/app/alembic

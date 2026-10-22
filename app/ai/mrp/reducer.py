@@ -161,6 +161,7 @@ async def reconcile_with_kb(session, source, items: list[dict], llm, embedding_p
     """Attach a KB decision (CREATE / UPDATE <slug>) to each item."""
     from app.ai.mrp import pipeline
     from app.services import wiki_service
+    from app.database.models import WikiPage
 
     for it in items:
         it["kb_action"] = "CREATE"
@@ -184,12 +185,17 @@ async def reconcile_with_kb(session, source, items: list[dict], llm, embedding_p
         for scope_type, scope_id in scopes or [("global", None)]:
             try:
                 hits = await wiki_service.search_pages_semantic(
-                    session, vec, top_k=3, scope_type=scope_type, scope_id=scope_id
+                    session, vec, top_k=3, scope_type=scope_type, scope_id=scope_id,
+                    page_filter=WikiPage.origin_tag == "generated",
                 )
             except Exception as e:
                 logger.debug(f"reduce: semantic search failed: {e}")
                 hits = []
             for page, score in hits or []:
+                if (getattr(page, "origin_tag", None) != "generated"
+                    or (page.scope_type or "global") != scope_type
+                    or str(page.scope_id or "") != str(scope_id or "")):
+                    continue
                 if score > best_score:
                     best_page, best_score = page, float(score)
         it["kb_score"] = best_score

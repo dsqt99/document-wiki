@@ -12,7 +12,7 @@ import time
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -96,6 +96,20 @@ async def get_settings(db: AsyncSession = Depends(get_db), user=Depends(get_curr
 
 class SettingsUpdate(BaseModel):
     settings: dict[str, Optional[str]]
+
+    @field_validator('settings')
+    @classmethod
+    def validate_search_settings(cls, values):
+        import math
+        if 'wiki_rerank_threshold' in values:
+            if values['wiki_rerank_threshold'] is None:
+                raise ValueError('Ngưỡng rerank không được trống.')
+            threshold = float(values['wiki_rerank_threshold'])
+            if not math.isfinite(threshold):
+                raise ValueError('Ngưỡng rerank phải là số hữu hạn.')
+        if 'wiki_rerank_enabled' in values and values['wiki_rerank_enabled'] not in ('true', 'false'):
+            raise ValueError('wiki_rerank_enabled phải là true hoặc false.')
+        return values
 
 
 @router.put("/settings")

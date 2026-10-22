@@ -3,17 +3,18 @@
 import { useRef, useState, type DragEvent, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { apiUpload } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
+import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { KnowledgeTypeSelect } from "./knowledge-type-select";
+import { ManagingDepartmentSelect } from "./managing-department-select";
 import { ScopePicker, type ScopeMode } from "./scope-picker";
-import { errorText, type Department, type KnowledgeType } from "./types";
+import { errorText, type Department, type KnowledgeType, type Source } from "./types";
 
 const ACCEPTED = ["pdf", "docx", "doc", "rtf", "xlsx", "xls", "csv", "txt", "md", "pptx", "ppt"];
 const ACCEPT_ATTR = ACCEPTED.map((e) => `.${e}`).join(",");
-const MAX_BYTES = 50 * 1024 * 1024;
+const MAX_BYTES = 200 * 1024 * 1024;
 
 type FileStatus = "queued" | "uploading" | "done" | "error";
 type QueuedFile = { key: string; file: File; status: FileStatus; error?: string };
@@ -81,113 +82,12 @@ function StepSection({ n, title, children }: { n: number; title: string; childre
   );
 }
 
-type ProcessingMode = "auto" | "articles" | "verbatim_page" | "verbatim";
-
-function isLegalType(type: KnowledgeType | undefined): boolean {
-  if (!type) return false;
-  const slug = (type.slug || "").toLowerCase();
-  const name = (type.name || "").toLowerCase();
-  return (
-    ["legal", "luat", "lut"].includes(slug) ||
-    ["luật", "luat", "legal", "pháp lý"].some((k) => name.includes(k))
-  );
-}
-
-function modeOptions(legal: boolean): { value: ProcessingMode; icon: string; title: string; desc: string }[] {
-  const options: { value: ProcessingMode; icon: string; title: string; desc: string }[] = [
-    {
-      value: "auto",
-      icon: "auto_awesome",
-      title: "Tự động (khuyến nghị)",
-      desc: legal
-        ? "Tách nguyên văn theo từng Điều, đồng thời LLM biên soạn trang tri thức"
-        : "LLM đọc tài liệu và biên soạn các trang tri thức",
-    },
-  ];
-  if (legal) {
-    options.push({
-      value: "articles",
-      icon: "format_list_numbered",
-      title: "Chỉ tách theo Điều",
-      desc: "Mỗi Điều thành một trang nguyên văn, không dùng LLM",
-    });
-  }
-  options.push(
-    {
-      value: "verbatim_page",
-      icon: "article",
-      title: "Nguyên văn thành trang",
-      desc: "Giữ nguyên văn bản và hình ảnh trong 1 trang; tự chia nhiều phần nếu quá dài",
-    },
-    {
-      value: "verbatim",
-      icon: "manage_search",
-      title: "Chỉ lưu để tra cứu",
-      desc: "Không tạo trang Wiki, chỉ đánh chỉ mục để tìm kiếm và hỏi đáp",
-    }
-  );
-  return options;
-}
-
-function ProcessingModePicker({
-  value,
-  onChange,
-  legal,
-  personal,
-  disabled,
-}: {
-  value: ProcessingMode;
-  onChange: (v: ProcessingMode) => void;
-  legal: boolean;
-  personal: boolean;
-  disabled?: boolean;
-}) {
-  const options = modeOptions(legal);
-  const current = personal
-    ? { icon: "manage_search", title: "Chỉ lưu để tra cứu" }
-    : options.find((o) => o.value === value) ?? options[0];
-  const hint = personal
-    ? "Tài liệu cá nhân chỉ được lưu để tra cứu, không tạo trang Wiki. Chọn phạm vi Theo phòng ban hoặc Toàn hệ thống để chọn cơ chế khác."
-    : options.find((o) => o.value === value)?.desc;
-  return (
-    <div className="flex flex-col gap-2">
-      <Select
-        value={personal ? "verbatim" : value}
-        onValueChange={(v) => v && onChange(v as ProcessingMode)}
-        disabled={disabled || personal}
-      >
-        <SelectTrigger className="h-9 w-full text-sm">
-          <SelectValue>
-            {() => (
-              <span className="flex min-w-0 items-center gap-2">
-                <Icon name={current.icon} className="shrink-0 text-muted-foreground" />
-                <span className="truncate">{current.title}</span>
-              </span>
-            )}
-          </SelectValue>
-        </SelectTrigger>
-        <SelectContent>
-          {options.map((opt) => (
-            <SelectItem key={opt.value} value={opt.value}>
-              <span className="flex items-center gap-2">
-                <Icon name={opt.icon} className="text-muted-foreground" />
-                {opt.title}
-              </span>
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      {hint && <p className="text-[11px] text-muted-foreground">{hint}</p>}
-    </div>
-  );
-}
-
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   types: KnowledgeType[];
   departments: Department[];
-  onUploaded: () => void;
+  onUploaded: (sources: Source[]) => void;
 };
 
 export function UploadDialog({ open, onOpenChange, types, departments, onUploaded }: Props) {
@@ -230,18 +130,17 @@ function UploadBody({
   uploading: boolean;
   setUploading: (v: boolean) => void;
   onCancel: () => void;
-  onUploaded: () => void;
+  onUploaded: (sources: Source[]) => void;
   onFinished: () => void;
 }) {
   const { t } = useI18n();
+  const { user } = useAuth();
   const inputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<QueuedFile[]>([]);
   const [typeId, setTypeId] = useState(() => types.find((ty) => ty.slug === "general")?.id ?? "");
   const [mode, setMode] = useState<ScopeMode>("personal");
   const [deptIds, setDeptIds] = useState<string[]>([]);
-  const [procMode, setProcMode] = useState<ProcessingMode>("auto");
-  const legal = isLegalType(types.find((ty) => ty.id === typeId));
-  const effectiveMode: ProcessingMode = !legal && procMode === "articles" ? "auto" : procMode;
+  const [managerId, setManagerId] = useState(() => user?.department_ids?.[0] ?? "");
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
 
@@ -263,7 +162,7 @@ function UploadBody({
         continue;
       }
       if (file.size > MAX_BYTES) {
-        problems.push(`"${file.name}": vượt quá 50 MB`);
+        problems.push(`"${file.name}": vượt quá 200 MB`);
         continue;
       }
       const key = `${file.name}_${file.size}`;
@@ -301,6 +200,7 @@ function UploadBody({
     setError(null);
     setUploading(true);
     let ok = 0;
+    const uploaded: Source[] = [];
     for (const item of queue) {
       updateFile(item.key, { status: "uploading", error: undefined });
       const form = new FormData();
@@ -308,9 +208,10 @@ function UploadBody({
       if (typeId) form.append("knowledge_type_id", typeId);
       form.append("scope_type", mode);
       if (mode === "department") form.append("department_ids", deptIds.join(","));
-      if (mode !== "personal") form.append("processing_mode", effectiveMode);
+      if (managerId) form.append("managing_department_id", managerId);
       try {
-        await apiUpload("/api/sources/upload", form);
+        const created = await apiUpload<Source>("/api/sources/upload", form);
+        uploaded.push(created);
         ok += 1;
         updateFile(item.key, { status: "done" });
       } catch (err) {
@@ -318,7 +219,7 @@ function UploadBody({
       }
     }
     setUploading(false);
-    if (ok > 0) onUploaded();
+    if (ok > 0) onUploaded(uploaded);
     if (ok === queue.length) {
       onFinished();
     } else {
@@ -333,7 +234,7 @@ function UploadBody({
       <div className="border-b px-5 py-4 pr-12">
         <DialogTitle className="text-base font-semibold">{t("knowledge.upload.title")}</DialogTitle>
         <DialogDescription className="mt-1 text-xs">
-          Tài liệu được trích xuất nội dung, tách điều khoản và biên soạn vào Kho tri thức.
+          Hệ thống tự động trích xuất nội dung, lập chỉ mục nguồn gốc và biên soạn Wiki. Văn bản pháp luật được tách theo Điều trước khi biên soạn.
         </DialogDescription>
       </div>
 
@@ -376,7 +277,7 @@ function UploadBody({
                 {dragging ? "Thả tài liệu vào đây" : hasFiles ? "Thêm tệp khác" : "Kéo thả tài liệu hoặc nhấp để chọn"}
               </p>
               <p className="text-[11px] text-muted-foreground">
-                PDF, DOCX, DOC, RTF, XLSX, XLS, CSV, TXT, MD, PPTX · tối đa 50 MB/tệp
+                PDF, DOCX, DOC, RTF, XLSX, XLS, CSV, TXT, MD, PPTX · tối đa 200 MB/tệp
               </p>
             </div>
             <input
@@ -436,10 +337,12 @@ function UploadBody({
           )}
         </StepSection>
 
-        <StepSection n={2} title="Phân loại, phạm vi & xử lý">
-          <div className="grid gap-x-4 gap-y-3 sm:grid-cols-[7.5rem_1fr] sm:items-start">
-            <span className="pt-2 text-xs text-muted-foreground">Danh mục</span>
+        <StepSection n={2} title="Phân loại và quản lý">
+          <div className="grid gap-x-4 gap-y-3 sm:grid-cols-[10rem_1fr] sm:items-start">
+            <span className="pt-2 text-xs text-muted-foreground">Phân loại văn bản</span>
             <KnowledgeTypeSelect types={types} value={typeId} onChange={setTypeId} disabled={uploading} />
+            <span className="pt-2 text-xs text-muted-foreground">Phòng ban quản lý</span>
+            <ManagingDepartmentSelect departments={departments} value={managerId} onChange={setManagerId} disabled={uploading} action="create" />
             <span className="pt-2 text-xs text-muted-foreground">{t("knowledge.upload.visibility")}</span>
             <ScopePicker
               mode={mode}
@@ -450,14 +353,6 @@ function UploadBody({
               disabled={uploading}
               allowPersonal
               variant="select"
-            />
-            <span className="pt-2 text-xs text-muted-foreground">Cơ chế xử lý</span>
-            <ProcessingModePicker
-              value={effectiveMode}
-              onChange={setProcMode}
-              legal={legal}
-              personal={mode === "personal"}
-              disabled={uploading}
             />
           </div>
         </StepSection>

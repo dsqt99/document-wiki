@@ -1,12 +1,7 @@
-"""Per-source wiki processing mode, chosen at upload and kept in ``Source.metadata``.
+"""Unified processing: LLM Wiki + source embeddings, with legal article extraction.
 
-- ``auto``: legal documents are split by article (verbatim pages) and then compiled by
-  the LLM into knowledge pages; other documents are compiled by the LLM.
-- ``articles``: split by article only, no LLM.
-- ``verbatim_page``: the extracted text with its images becomes wiki page(s) as is,
-  split into parts when it is too long. No LLM.
-- ``verbatim``: no wiki at all, the document is only indexed for search
-  (``Source.preserve_verbatim``).
+Legacy request values remain parseable for older clients but never disable a
+pipeline branch. Personal visibility changes access only, not processing.
 """
 
 from __future__ import annotations
@@ -44,14 +39,12 @@ def _meta(source) -> dict:
 
 
 def mode_of(source) -> str:
-    if getattr(source, "preserve_verbatim", False) is True:
-        return "verbatim"
-    value = _meta(source).get(KEY)
-    return value if value in MODES else "auto"
+    return "auto"
 
 
 def set_mode(source, mode: str) -> None:
-    source.metadata_ = {**_meta(source), KEY: mode}
+    source.metadata_ = {**_meta(source), KEY: "auto"}
+    source.preserve_verbatim = False
 
 
 def mark_articles_done(source) -> None:
@@ -67,12 +60,5 @@ def articles_done(source, attempt_id_str: Optional[str]) -> bool:
 async def plan_for(session, source) -> Plan:
     from app.services import legal_service
 
-    mode = mode_of(source)
-    if mode == "verbatim":
-        return Plan(False, False, False)
-    if mode == "verbatim_page":
-        return Plan(False, False, True)
-    if mode == "articles":
-        return Plan(True, False, False)
     is_legal = await legal_service.is_legal_source(session, source)
     return Plan(bool(is_legal), True, False)

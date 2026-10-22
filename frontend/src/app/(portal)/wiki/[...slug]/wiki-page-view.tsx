@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { WikiPageSummaryAI } from "@/components/knowledge/summary-maintenance";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -9,6 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ScopeBadge } from "@/components/shared/scope-badge";
 import { WikiSidebarRight } from "@/components/wiki/wiki-backlinks";
@@ -20,19 +22,22 @@ import { WikiPageTree } from "@/components/wiki/wiki-page-tree";
 import { encodeSlugPath } from "@/components/wiki/wiki-pages-loader";
 import { WikiSearchDialog } from "@/components/wiki/wiki-search-dialog";
 import { WikiStatusBadge } from "@/components/wiki/wiki-status-badge";
+import { WikiOriginBadge } from "@/components/wiki/wiki-origin-badge";
 import { WikiTypeBadge, wikiTypeGroupLabel } from "@/components/wiki/wiki-type-badge";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useIsEmbedded } from "@/lib/embed";
 import { cn } from "@/lib/utils";
+import { sanitizeWikiLibraryReturnTo, wikiPageQuery } from "@/lib/wiki-navigation";
 import {
   getCachedPageDetail,
   getCachedSourceData,
+  enterWikiCatalogueContext,
   setCachedPageDetail,
   setCachedSourceData,
   useWikiStore,
 } from "@/lib/wiki-store";
-import type { DraftResponse, WikiPageDetail, WikiScope } from "@/types/wiki";
+import type { DraftResponse, WikiPageDetail, WikiPageSummary, WikiScope } from "@/types/wiki";
 import { BranchModal, type WikiBranch } from "./branch-modal";
 import { formatMb, SourceView, sourceTitle, type SourceDetail } from "./source-view";
 
@@ -43,6 +48,7 @@ type Props = {
   scopeType: string | null;
   scopeId: string | null;
   scopeSuffix: string;
+  returnTo?: string;
   navigate: (slug: string) => void;
   goTo: (href: string) => void;
   /** Open the editor once the page has loaded (`?edit=1`, e.g. from the law "Toàn văn" tab). */
@@ -93,10 +99,11 @@ function sourcePseudoPage(id: string, s: SourceDetail): WikiPageDetail {
 
 const escapeLinkText = (s: string) => s.replace(/[[\]]/g, (c) => `\\${c}`);
 
-export function WikiPageView({ slug, scopeType, scopeId, scopeSuffix, navigate, goTo, autoEdit = false }: Props) {
+export function WikiPageView({ slug, scopeType, scopeId, scopeSuffix, returnTo, navigate, goTo, autoEdit = false }: Props) {
+  const libraryReturnTo = sanitizeWikiLibraryReturnTo(returnTo);
   const { user, hasPermission } = useAuth();
   const embedded = useIsEmbedded();
-  const { treeCollapsed, infoCollapsed, setTreeCollapsed, setInfoCollapsed } = useWikiStore();
+  const { infoCollapsed, setInfoCollapsed } = useWikiStore();
 
   const parts = slug.split("/").filter(Boolean);
   const sourceMode = parts.length === 2 && parts[0] === "source";
@@ -137,7 +144,7 @@ export function WikiPageView({ slug, scopeType, scopeId, scopeSuffix, navigate, 
   const isAdmin = user?.role === "admin";
   const writeAll = hasPermission("wiki:write:all");
   const writeOwnDept = hasPermission("wiki:write:own_dept");
-  const deptIds = useMemo(() => user?.department_ids ?? [], [user]);
+  const deptIds = useMemo(() => user?.scope_department_ids ?? user?.department_ids ?? [], [user]);
   const canEdit = isAdmin || writeAll;
   const canPropose =
     canEdit ||
@@ -274,6 +281,13 @@ export function WikiPageView({ slug, scopeType, scopeId, scopeSuffix, navigate, 
       : getCachedPageDetail(cacheKey);
   const notFound = sourceMode ? sourceSettled && !sourceData : pageState.key === cacheKey && pageState.notFound;
   const loading = !page && !notFound && (sourceMode ? !sourceSettled : pageState.key !== cacheKey);
+  const catalogueDocumentId = sourceId ?? page?.source_ids?.[0] ?? "other";
+  const catalogueContext = `${scopeType || "global"}:${scopeId || "none"}:${catalogueDocumentId}`;
+  useEffect(() => {
+    // Wait for this page's detail before leaving the previous reading context.
+    if (!sourceId && !page) return;
+    enterWikiCatalogueContext(catalogueContext, catalogueDocumentId);
+  }, [catalogueContext, catalogueDocumentId, sourceId, page]);
 
   const updatePageLocally = (next: WikiPageDetail) => {
     setCachedPageDetail(cacheKey, next);
@@ -406,6 +420,7 @@ export function WikiPageView({ slug, scopeType, scopeId, scopeSuffix, navigate, 
 
   // ---------------------------------------------------------------- dialogs & shortcuts
   const [searchOpen, setSearchOpen] = useState(false);
+  const [catalogueOpen, setCatalogueOpen] = useState(false);
   const [createState, setCreateState] = useState<{ open: boolean; scope: WikiScope; mode: CreateMode | null }>({
     open: false,
     scope: GLOBAL_SCOPE,
@@ -416,6 +431,7 @@ export function WikiPageView({ slug, scopeType, scopeId, scopeSuffix, navigate, 
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "k") {
         e.preventDefault();
+        setCatalogueOpen(false);
         setSearchOpen(true);
       }
     };
@@ -424,17 +440,23 @@ export function WikiPageView({ slug, scopeType, scopeId, scopeSuffix, navigate, 
   }, []);
 
   const openCreate = (type: string, id: string | null) => {
+    setCatalogueOpen(false);
     const scope =
       myScopes.find((s) => s.scope_type === type && (s.scope_id ?? null) === (id ?? null)) ??
       (type === "global" ? GLOBAL_SCOPE : { scope_type: type, scope_id: id, name: type });
     setCreateState({ open: true, scope, mode: getCreateModeForScope(type, id) });
   };
 
-  const readerMode = treeCollapsed && infoCollapsed;
-  const toggleReader = () => {
-    const next = !readerMode;
-    setTreeCollapsed(next);
-    setInfoCollapsed(next);
+  const selectCataloguePage = (nextSlug: string, selected?: WikiPageSummary) => {
+    setCatalogueOpen(false);
+    if (selected?.scope_type && (
+      selected.scope_type !== (scopeType || "global") ||
+      (selected.scope_id ?? null) !== (scopeId ?? null)
+    )) {
+      goTo(`/wiki/${encodeSlugPath(nextSlug)}${wikiPageQuery(selected.scope_type, selected.scope_id, libraryReturnTo)}`);
+      return;
+    }
+    navigate(nextSlug);
   };
 
   const fill = embedded
@@ -446,22 +468,48 @@ export function WikiPageView({ slug, scopeType, scopeId, scopeSuffix, navigate, 
 
   return (
     <div className={cn("flex h-screen min-h-0 overflow-hidden", fill)}>
-      <WikiPageTree
-        activeSlug={slug}
-        groupByScope
-        activeScope={currentScope}
-        getCreateModeForScope={getCreateModeForScope}
-        onPageSelect={navigate}
-        linkQueryParams={scopeSuffix}
-        onSearch={() => setSearchOpen(true)}
-        onCreatePage={openCreate}
-        onDeleted={(deleted) => {
-          if (deleted === slug) goTo("/wiki/law");
-        }}
-      />
-
       <div className="min-w-0 flex-1 overflow-y-auto">
-        <div className={cn("mx-auto w-full px-6 py-6 md:px-10", sourceMode ? "max-w-[72rem]" : "max-w-[54rem]")}>
+        <div className={cn("mx-auto w-full px-4 py-4 sm:px-6 sm:py-6 md:px-10", sourceMode || editing ? "max-w-[72rem]" : "max-w-[62rem]")}>
+          <div className="mb-5 flex flex-wrap items-center gap-2 border-b pb-3">
+            <Sheet open={catalogueOpen} onOpenChange={setCatalogueOpen}>
+              <SheetTrigger render={<Button variant="outline" size="sm" />}>
+                <span aria-hidden className="material-symbols-outlined" style={{ fontSize: 18 }}>list</span>
+                Danh mục
+              </SheetTrigger>
+              <SheetContent side="left" className="gap-0 p-0 data-[side=left]:w-[min(24rem,100vw)] data-[side=left]:sm:max-w-sm">
+                <SheetHeader className="shrink-0 border-b pr-12">
+                  <SheetTitle>Danh mục Wiki</SheetTitle>
+                  <SheetDescription>Lọc theo văn bản hoặc chọn tất cả để tìm trang cần đọc.</SheetDescription>
+                </SheetHeader>
+                <div className="min-h-0 flex-1">
+                  <WikiPageTree
+                    presentation="overlay"
+                    activeSlug={slug}
+                    groupByScope
+                    activeScope={currentScope}
+                    getCreateModeForScope={getCreateModeForScope}
+                    onPageSelect={selectCataloguePage}
+                    linkQueryParams={scopeSuffix}
+                    onSearch={() => { setCatalogueOpen(false); setSearchOpen(true); }}
+                    onCreatePage={openCreate}
+                    onDeleted={(deleted) => {
+                      if (deleted === slug) {
+                        setCatalogueOpen(false);
+                        goTo(libraryReturnTo);
+                      }
+                    }}
+                  />
+                </div>
+              </SheetContent>
+            </Sheet>
+            <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => goTo(libraryReturnTo)}>
+              <span aria-hidden className="material-symbols-outlined" style={{ fontSize: 16 }}>arrow_back</span>
+              Kho tri thức
+            </Button>
+            <Button variant="ghost" size="icon-sm" className="ml-auto" aria-label="Tìm kiếm Wiki (Ctrl+K)" onClick={() => setSearchOpen(true)}>
+              <span aria-hidden className="material-symbols-outlined" style={{ fontSize: 19 }}>search</span>
+            </Button>
+          </div>
           {loading ? (
             <PageSkeleton />
           ) : notFound || !page ? (
@@ -485,30 +533,6 @@ export function WikiPageView({ slug, scopeType, scopeId, scopeSuffix, navigate, 
                   </span>
                   <span className="truncate">{wikiTypeGroupLabel(page.page_type)}</span>
                 </nav>
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <button
-                        type="button"
-                        onClick={toggleReader}
-                        className={cn(
-                          "ml-auto flex items-center gap-1 rounded-md border px-2 py-1 text-xs",
-                          readerMode
-                            ? "border-primary/30 bg-primary/10 text-primary"
-                            : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                        )}
-                      />
-                    }
-                  >
-                    <span className="material-symbols-outlined" style={{ fontSize: 15 }}>
-                      {readerMode ? "close_fullscreen" : "open_in_full"}
-                    </span>
-                    {readerMode ? "Thoát chế độ đọc" : "Chế độ đọc"}
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    {readerMode ? "Hiện lại danh mục và thông tin trang" : "Ẩn danh mục và thông tin trang để đọc rộng hơn"}
-                  </TooltipContent>
-                </Tooltip>
               </div>
 
               {/* badges */}
@@ -604,10 +628,12 @@ export function WikiPageView({ slug, scopeType, scopeId, scopeSuffix, navigate, 
 
               {page.summary?.trim() && (
                 <div className="rounded-xl border bg-muted/40 p-4">
-                  <div className="mb-1 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">Tóm tắt</div>
-                  <p className="text-sm leading-relaxed">{page.summary}</p>
+                  <div className="mb-2 flex items-center justify-between gap-2"><span className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">Tóm tắt</span><WikiOriginBadge tag={page.origin_tag} /></div>
+                  <p className="whitespace-pre-line text-sm leading-relaxed">{page.summary}</p>
                 </div>
               )}
+
+              {!sourceMode && page.id && hasPermission("org:settings:manage") && !["index", "log", "hot"].includes(page.page_type) && <WikiPageSummaryAI key={page.id} pageId={page.id} onComplete={reloadPage} />}
 
               {!editing && !sourceMode && drafts.length > 0 && (
                 <WikiDraftBanner
@@ -777,7 +803,8 @@ export function WikiPageView({ slug, scopeType, scopeId, scopeSuffix, navigate, 
         </div>
       )}
 
-      <WikiSearchDialog open={searchOpen} onOpenChange={setSearchOpen} onSelectPage={navigate} />
+      <WikiSearchDialog open={searchOpen} onOpenChange={setSearchOpen} onSelectPage={(next, selected) =>
+        goTo(`/wiki/${encodeSlugPath(next)}${wikiPageQuery(selected.scope_type, selected.scope_id, returnTo)}`)} />
 
       {createState.mode && (
         <WikiCreatePageDialog

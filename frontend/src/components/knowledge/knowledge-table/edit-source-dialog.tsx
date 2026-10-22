@@ -9,6 +9,7 @@ import { api } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { KnowledgeTypeSelect } from "../knowledge-type-select";
+import { ManagingDepartmentSelect } from "../managing-department-select";
 import { ScopePicker, type ScopeMode } from "../scope-picker";
 import { errorText, type Department, type KnowledgeType, type Source } from "../types";
 
@@ -55,6 +56,7 @@ type Props = {
   departments: Department[];
   onClose: () => void;
   onSaved: () => void;
+  reviewUpload?: boolean;
 };
 
 function initialMeta(source: Source): Record<MetaKey, string> {
@@ -96,7 +98,7 @@ function Section({ icon, title, hint, children }: { icon: string; title: string;
   );
 }
 
-export function EditSourceDialog({ source, types, departments, onClose, onSaved }: Props) {
+export function EditSourceDialog({ source, types, departments, onClose, onSaved, reviewUpload = false }: Props) {
   const { t } = useI18n();
   const manual = new Set(source.doc_meta?.manual_fields ?? []);
 
@@ -108,6 +110,7 @@ export function EditSourceDialog({ source, types, departments, onClose, onSaved 
   const [originalDepts] = useState<string[]>(() => source.department_ids ?? []);
   const [mode, setMode] = useState<ScopeMode>(originalMode);
   const [deptIds, setDeptIds] = useState<string[]>(originalDepts);
+  const [managerId, setManagerId] = useState(source.managing_department_id || "");
   const [fields, setFields] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -143,6 +146,7 @@ export function EditSourceDialog({ source, types, departments, onClose, onSaved 
         department_ids: mode === "department" ? deptIds : [],
       };
       const trimmedTitle = title.trim();
+      if (managerId !== (source.managing_department_id || "")) body.managing_department_id = managerId || null;
       if (trimmedTitle) body.title = trimmedTitle;
 
       const changed: Record<string, string | null> = {};
@@ -153,6 +157,7 @@ export function EditSourceDialog({ source, types, departments, onClose, onSaved 
       if (Object.keys(changed).length > 0) body.doc_meta = changed;
 
       await api(`/api/sources/${source.id}`, { method: "PATCH", body });
+      if (reviewUpload) await api(`/api/sources/${source.id}/approve-upload`, { method: "POST" });
       onSaved();
     } catch (err) {
       setError(errorText(err, "Không lưu được thay đổi"));
@@ -206,13 +211,21 @@ export function EditSourceDialog({ source, types, departments, onClose, onSaved 
     >
       <DialogContent className="flex max-h-[90vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
         <div className="border-b px-5 py-4 pr-12">
-          <DialogTitle className="text-base font-semibold">{t("knowledge.edit.title")}</DialogTitle>
+          <DialogTitle className="text-base font-semibold">{reviewUpload ? "Duyệt thông tin trích xuất" : "Chỉnh sửa thông tin tài liệu"}</DialogTitle>
           <DialogDescription className="mt-1 truncate text-xs" title={source.file_name || source.title}>
             {source.file_name || source.title}
           </DialogDescription>
         </div>
 
         <div className="flex-1 space-y-6 overflow-y-auto px-5 py-5">
+          {reviewUpload && (
+            <div className="space-y-2 rounded-lg border border-blue-200 bg-blue-50/60 p-3 text-sm dark:border-blue-500/30 dark:bg-blue-500/10">
+              <p>Kiểm tra thông tin hệ thống nhận diện trước khi tạo Wiki và chỉ mục tìm kiếm. Bạn có thể sửa các trường bên dưới.</p>
+              <p className="text-xs text-muted-foreground">{source.page_count ?? 0} trang · {source.image_count ?? 0} ảnh · {(source.extracted_token_count ?? 0).toLocaleString("vi-VN")} token</p>
+              <a href={`/wiki/source/${source.id}?tab=extracted`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary underline underline-offset-4">Đối chiếu nội dung trích xuất<span className="material-symbols-outlined text-[15px]" aria-hidden>open_in_new</span></a>
+              {source.upload_review_error && <p className="text-xs text-amber-700 dark:text-amber-300">{source.upload_review_error}</p>}
+            </div>
+          )}
           <Section icon="info" title="Thông tin chung">
             <div className="grid gap-3 sm:grid-cols-[1fr_14rem]">
               <label className="flex flex-col gap-1.5">
@@ -220,10 +233,11 @@ export function EditSourceDialog({ source, types, departments, onClose, onSaved 
                 <Input className={inputCls} value={title} onChange={(e) => setTitle(e.target.value)} disabled={saving} />
               </label>
               <div className="flex flex-col gap-1.5">
-                {label(null, "Kiểu tri thức")}
+                {label(null, "Phân loại văn bản")}
                 <KnowledgeTypeSelect types={types} value={typeId} onChange={setTypeId} disabled={saving} />
               </div>
             </div>
+            <div className="space-y-1.5"><span className="text-xs text-muted-foreground">Phòng ban quản lý</span><ManagingDepartmentSelect departments={departments} value={managerId} onChange={setManagerId} disabled={saving} currentName={source.managing_department_name} /></div>
           </Section>
 
           <Section
@@ -350,7 +364,7 @@ export function EditSourceDialog({ source, types, departments, onClose, onSaved 
                 </span>
                 <p>
                   {mode === "personal"
-                    ? "Tài liệu sẽ được gỡ khỏi các trang wiki chung và chỉ người đóng góp xem được. Bạn có muốn tiếp tục?"
+                    ? "Wiki và chỉ mục của tài liệu sẽ được chuyển sang phạm vi cá nhân; chỉ chủ tài liệu xem được. Bạn có muốn tiếp tục?"
                     : t("knowledge.edit.scopeChangeConfirm")}
                 </p>
               </div>
@@ -382,7 +396,7 @@ export function EditSourceDialog({ source, types, departments, onClose, onSaved 
 
         <div className="flex justify-end gap-2 border-t bg-muted/20 px-5 py-3">
           <Button variant="outline" onClick={onClose} disabled={saving}>
-            {t("common.cancel")}
+            {reviewUpload ? "Duyệt sau" : t("common.cancel")}
           </Button>
           <Button onClick={submit} disabled={saving || confirming}>
             <span
@@ -391,7 +405,7 @@ export function EditSourceDialog({ source, types, departments, onClose, onSaved 
             >
               {saving ? "progress_activity" : "save"}
             </span>
-            {saving ? "Đang lưu..." : "Lưu thay đổi"}
+            {saving ? "Đang lưu..." : reviewUpload ? "Xác nhận & tiếp tục xử lý" : "Lưu thay đổi"}
           </Button>
         </div>
       </DialogContent>

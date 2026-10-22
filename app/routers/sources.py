@@ -23,6 +23,7 @@ from sqlalchemy.orm import selectinload
 from app.config import settings
 from app.database import get_db
 from app.database.models import (
+    Department,
     Employee,
     Source,
     SourceCompilationPlan,
@@ -30,7 +31,7 @@ from app.database.models import (
     SourceImage,
     WikiPage,
 )
-from app.services import auth_service, security_label
+from app.services import auth_service, security_label, permission_engine
 from app.services import processing_mode as _processing_mode
 from app.services.auth_service import get_current_user, require_permission
 from app.services.permission_engine import (
@@ -149,6 +150,8 @@ class SourceResponse(BaseModel):
     page_count: int = 0
     wiki_page_count: int = 0
     extracted_token_count: Optional[int] = None
+    upload_review_status: Optional[str] = None
+    upload_review_error: Optional[str] = None
     image_count: int = 0
     auto_recover_count: int = 0
     knowledge_type_id: Optional[uuid.UUID] = None
@@ -156,6 +159,8 @@ class SourceResponse(BaseModel):
     knowledge_type_color: Optional[str] = None
     department_ids: list[str] = Field(default_factory=list)
     department_names: list[str] = Field(default_factory=list)
+    managing_department_id: Optional[uuid.UUID] = None
+    managing_department_name: Optional[str] = None
     contributed_by_employee_id: Optional[uuid.UUID] = None
     contributed_by_name: Optional[str] = None
     scope_type: str = "global"
@@ -170,6 +175,7 @@ class SourceResponse(BaseModel):
     chunk_error_message: Optional[str] = None
     wiki_progress_message: Optional[str] = None
     wiki_error_message: Optional[str] = None
+    processing_quality: dict = Field(default_factory=dict)
     doc_meta: Optional[dict] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
@@ -199,10 +205,8 @@ def _checked_mode(value) -> Optional[str]:
 
 
 def _mode_metadata(mode: Optional[str], preserve: bool) -> Optional[dict]:
-    """Personal scope / preserve_verbatim win over the chosen mode (no wiki)."""
-    if preserve or mode in (None, "auto", "verbatim"):
-        return None
-    return {_processing_mode.KEY: mode}
+    """Legacy mode parameters are accepted, but every new source uses auto."""
+    return {_processing_mode.KEY: "auto"}
 
 
 class UrlSourceCreate(BaseModel):
@@ -210,6 +214,7 @@ class UrlSourceCreate(BaseModel):
     title: Optional[str] = None
     knowledge_type_id: Optional[uuid.UUID] = None
     department_ids: list[uuid.UUID] = Field(default_factory=list)
+    managing_department_id: Optional[uuid.UUID] = None
     scope_type: Optional[str] = None
     preserve_verbatim: bool = False
     processing_mode: Optional[str] = None
@@ -220,6 +225,7 @@ class SourceUpdate(BaseModel):
     title: Optional[str] = None
     knowledge_type_id: Optional[uuid.UUID] = None
     department_ids: Optional[list[uuid.UUID]] = None
+    managing_department_id: Optional[uuid.UUID] = None
     scope_type: Optional[str] = None
     scope_id: Optional[uuid.UUID] = None
     security_label: Optional[str] = None
@@ -267,6 +273,8 @@ def _to_response(source, wiki_page_count: int = 0, image_count: int = 0, lifecyc
 
 
 def _response_fields(source, wiki_page_count=0, image_count=0, lifecycle=None) -> dict:
+    from app.services.source_quality import public_source_quality
+
     kt = getattr(source, "knowledge_type", None)
     contributor = getattr(source, "contributor", None)
     dep_ids, dep_names = _department_pairs(source)
@@ -287,6 +295,8 @@ def _response_fields(source, wiki_page_count=0, image_count=0, lifecycle=None) -
         "page_count": len(offsets) if isinstance(offsets, (list, tuple)) else 0,
         "wiki_page_count": int(wiki_page_count or 0),
         "extracted_token_count": source.extracted_token_count,
+        "upload_review_status": (source.metadata_ or {}).get("upload_review"),
+        "upload_review_error": (source.metadata_ or {}).get("upload_review_error"),
         "image_count": int(image_count or 0),
         "auto_recover_count": source.auto_recover_count or 0,
         "knowledge_type_id": source.knowledge_type_id,
@@ -294,6 +304,8 @@ def _response_fields(source, wiki_page_count=0, image_count=0, lifecycle=None) -
         "knowledge_type_color": getattr(kt, "color", None) if kt is not None else None,
         "department_ids": dep_ids,
         "department_names": dep_names,
+        "managing_department_id": getattr(source, "managing_department_id", None),
+        "managing_department_name": getattr(getattr(source, "managing_department", None), "name", None),
         "contributed_by_employee_id": source.contributed_by_employee_id,
         "contributed_by_name": getattr(contributor, "name", None) if contributor is not None else None,
         "scope_type": source.scope_type or "global",
@@ -308,6 +320,7 @@ def _response_fields(source, wiki_page_count=0, image_count=0, lifecycle=None) -
         "chunk_error_message": source.chunk_error_message,
         "wiki_progress_message": source.wiki_progress_message,
         "wiki_error_message": source.wiki_error_message,
+        "processing_quality": public_source_quality(source),
         "doc_meta": _doc_meta_payload(source, lifecycle),
         "created_at": _iso(source.created_at),
         "updated_at": _iso(source.updated_at),
@@ -319,6 +332,7 @@ def _with_relations(stmt):
         selectinload(Source.knowledge_type),
         selectinload(Source.departments).selectinload(SourceDepartment.department),
         selectinload(Source.contributor),
+        selectinload(Source.managing_department),
     )
 
 
@@ -380,7 +394,7 @@ def source_read_filter(user):
         personal_visible_clause(getattr(user, "id", None)),
     )
     if level != "all":
-        dept_ids = list(getattr(user, "department_ids", None) or [])
+        dept_ids = permission_engine._user_department_ids(user)
         no_departments = ~exists().where(SourceDepartment.source_id == Source.id)
         if dept_ids:
             in_mine = exists().where(
@@ -397,16 +411,21 @@ async def _authenticate_request_user(token, credentials, db, source_id):
         return await auth_service.employee_from_bearer(db, credentials.credentials)
     if not token:
         raise HTTPException(401, "Not authenticated")
-    subject = auth_service.decode_source_file_token(token, str(source_id))
-    if subject is None:
+    claims = auth_service.decode_source_file_claims(token, str(source_id))
+    if claims is None:
         raise HTTPException(401, "Invalid or expired token")
+    await auth_service.validate_session_claims(claims)
+    subject = claims["sub"]
     try:
         emp_id = uuid.UUID(str(subject))
     except (ValueError, TypeError):
         raise HTTPException(401, "Invalid token subject")
-    employee = await db.get(Employee, emp_id)
+    employee = await auth_service._load_employee(db, emp_id)
     if employee is None or not getattr(employee, "is_active", False):
         raise HTTPException(401, "User not found or inactive")
+    from app.services.identity_directory import hydrate_identity
+
+    await hydrate_identity(db, employee)
     return employee
 
 
@@ -417,9 +436,22 @@ def _has_all(user, action: str) -> bool:
 def _check_own_departments(user, dept_ids, action: str) -> None:
     if not dept_ids or _has_all(user, action):
         return
-    mine = {str(d) for d in (getattr(user, "department_ids", None) or [])}
+    mine = {str(d) for d in permission_engine._user_department_ids(user)}
     if any(str(d) not in mine for d in dept_ids):
         raise HTTPException(403, DEPT_ERROR)
+
+
+async def _checked_managing_department(db, user, department_id, action):
+    if department_id is None:
+        return None
+    try:
+        department_id = uuid.UUID(str(department_id))
+    except ValueError:
+        raise HTTPException(400, "Phòng ban quản lý không hợp lệ")
+    _check_own_departments(user, [department_id], action)
+    if await db.get(Department, department_id) is None:
+        raise HTTPException(400, "Phòng ban quản lý không tồn tại")
+    return department_id
 
 
 def _foreign_personal(user, source) -> bool:
@@ -477,6 +509,7 @@ async def list_sources(
     sort: str = Query("created_desc"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=5000),
+    source_ids: Optional[str] = Query(None, max_length=8000),
     db: AsyncSession = Depends(get_db),
     user: Employee = Depends(get_current_user),
 ):
@@ -487,6 +520,14 @@ async def list_sources(
     filters = []
     if clause is not None:
         filters.append(clause)
+    if isinstance(source_ids, str) and source_ids.strip():
+        try:
+            ids_filter = [uuid.UUID(value.strip()) for value in source_ids.split(",") if value.strip()]
+        except ValueError:
+            raise HTTPException(400, "Invalid source_ids")
+        if len(ids_filter) > 100:
+            raise HTTPException(400, "Tối đa 100 tài liệu cho một lần cập nhật tiến độ")
+        filters.append(Source.id.in_(ids_filter))
     if knowledge_type_id:
         filters.append(Source.knowledge_type_id == knowledge_type_id)
     if department_id:
@@ -641,7 +682,7 @@ async def get_source(
     download_url = preview_url = file_url = None
     if source.minio_key:
         try:
-            ticket = auth_service.create_source_file_token(str(user.id), str(source.id))
+            ticket = auth_service.create_source_file_token(str(user.id), str(source.id), session_claims=getattr(user, "_wiki_session_claims", None))
             base = f"/api/sources/{source.id}"
             download_url = f"{base}/file?download=1&token={ticket}"
             preview_url = f"{base}/preview?token={ticket}"
@@ -875,11 +916,13 @@ async def upload_source(
     title: Optional[str] = Form(None),
     knowledge_type_id: Optional[str] = Form(None),
     department_ids: Optional[str] = Form(None),
+    managing_department_id: Optional[str] = Form(None),
     scope_type: Optional[str] = Form(None),
     scope_id: Optional[str] = Form(None),
     preserve_verbatim: bool = Form(False),
     processing_mode: Optional[str] = Form(None),
     security_label: Optional[str] = Form(None),
+    review_before_processing: bool = Form(False),
     db: AsyncSession = Depends(get_db),
     user: Employee = require_permission("doc:create"),
 ):
@@ -890,9 +933,11 @@ async def upload_source(
     title = _form_value(title)
     knowledge_type_id = _form_value(knowledge_type_id)
     department_ids = _form_value(department_ids)
+    manager_id = await _checked_managing_department(db, user, _form_value(managing_department_id), "create")
     scope_type = _form_value(scope_type)
     preserve_verbatim = bool(_form_value(preserve_verbatim))
     mode = _checked_mode(_form_value(processing_mode))
+    # Deprecated review_before_processing is accepted for older clients; uploads continue automatically.
 
     label = _checked_label(user, _form_value(security_label))
 
@@ -947,7 +992,6 @@ async def upload_source(
     if scope == "personal":
         dept_ids = []
         resolved_scope_id = user.id
-        preserve_verbatim = True
     elif isinstance(scope_id, str) and scope_id.strip():
         try:
             resolved_scope_id = uuid.UUID(scope_id.strip())
@@ -974,10 +1018,11 @@ async def upload_source(
         progress=0,
         progress_message="Queued for ingestion...",
         knowledge_type_id=kt_id,
+        managing_department_id=manager_id,
         contributed_by_employee_id=user.id,
         scope_type=scope,
         scope_id=resolved_scope_id,
-        preserve_verbatim=preserve_verbatim or mode == "verbatim",
+        preserve_verbatim=False,
         metadata_=_mode_metadata(mode, preserve_verbatim),
         security_label=label,
     )
@@ -1019,6 +1064,7 @@ async def create_url_source(
     user: Employee = require_permission("doc:create"),
 ):
     label = _checked_label(user, body.security_label)
+    manager_id = await _checked_managing_department(db, user, body.managing_department_id, "create")
     scope = body.scope_type or "global"
     if scope not in SCOPE_TYPES:
         raise HTTPException(400, SCOPE_ERROR)
@@ -1027,7 +1073,7 @@ async def create_url_source(
     mode = _checked_mode(body.processing_mode)
     scope_id = None
     if scope == "personal":
-        dept_ids, scope_id, preserve = [], user.id, True
+        dept_ids, scope_id = [], user.id
     _check_own_departments(user, dept_ids, "create")
 
     attempt_id = uuid.uuid4()
@@ -1040,10 +1086,11 @@ async def create_url_source(
         progress=0,
         progress_message="Queued for ingestion...",
         knowledge_type_id=body.knowledge_type_id,
+        managing_department_id=manager_id,
         contributed_by_employee_id=user.id,
         scope_type=scope,
         scope_id=scope_id,
-        preserve_verbatim=preserve or mode == "verbatim",
+        preserve_verbatim=False,
         metadata_=_mode_metadata(mode, preserve),
         security_label=label,
     )
@@ -1084,7 +1131,6 @@ async def update_source(
     old_scope_type = source.scope_type or "global"
     old_scope_id = source.scope_id
     old_scopes = await _resolve_wiki_scopes(db, source)
-    was_compiled = not source.preserve_verbatim
 
     label_change = None
     if body.security_label is not None:
@@ -1100,11 +1146,13 @@ async def update_source(
         source.title = body.title
     if body.knowledge_type_id is not None:
         source.knowledge_type_id = body.knowledge_type_id
+    if "managing_department_id" in body.model_fields_set:
+        source.managing_department_id = await _checked_managing_department(db,user,body.managing_department_id,"edit")
     if body.doc_meta:
         from app.services import doc_metadata_service
 
         try:
-            doc_metadata_service.apply_manual_doc_meta(source, body.doc_meta)
+            await doc_metadata_service.store_manual_doc_meta(db, source, body.doc_meta)
         except ValueError as e:
             raise HTTPException(400, str(e))
 
@@ -1139,15 +1187,8 @@ async def update_source(
     await db.flush()
 
     serialized = _serialize_scopes(old_scopes)
-    if to_personal and scope_changed:
-        source.preserve_verbatim = True
-        source.wiki_status = "skipped"
-        source.wiki_progress = 100
-        source.wiki_progress_message = "Skipped (personal source)"
-        if was_compiled:
-            await db.commit()
-            await _enqueue("detach_source_wiki_task", str(source.id), serialized)
-    elif scope_changed and source.status in ("ready", "partial") and not source.preserve_verbatim:
+    if scope_changed and source.status in ("ready", "partial"):
+        _processing_mode.set_mode(source,"auto")
         source.wiki_status = "queued"
         source.wiki_progress = 0
         source.wiki_progress_message = "Re-queued scope reassignment..."
@@ -1213,6 +1254,56 @@ async def retry_source(
     return _self()._to_response(source)
 
 
+@router.post("/sources/{source_id}/approve-upload")
+async def approve_upload_review(
+    source_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: Employee = require_permission("doc:edit"),
+):
+    from app.services.upload_review_service import mark_reviewed, review_status
+
+    source = await db.get(Source, source_id, with_for_update=True)
+    if source is None or _foreign_personal(user, source):
+        raise HTTPException(404, "Source not found")
+    if not await can_access_document(db, user, source, "edit"):
+        raise HTTPException(403, "Permission required: doc:edit")
+    if review_status(source) != "awaiting" or source.status != "awaiting_approval":
+        raise HTTPException(409, "Tài liệu không ở bước chờ duyệt thông tin")
+    mark_reviewed(source)
+    source.status = "processing"
+    source.progress_message = "Đã duyệt thông tin — đang tiếp tục xử lý"
+    source.wiki_status = "queued"
+    await _self().log_audit(db, user, "approve", "source_upload", source.id, reason=source.title)
+    attempt = str(source.attempt_id) if source.attempt_id else None
+    await db.commit()
+    try:
+        job = await _enqueue("resume_upload_review_task", str(source_id), attempt)
+    except Exception:
+        source.metadata_ = {**(source.metadata_ or {}), "upload_review": "awaiting"}
+        source.status = source.wiki_status = "awaiting_approval"
+        await db.commit()
+        raise HTTPException(503, "Chưa thể tiếp tục xử lý. Thông tin đã lưu, hãy bấm duyệt lại.")
+    return {"queued": True, "job_id": _job_id_of(job)}
+
+
+@router.get("/sources/{source_id}/delete-impact")
+async def source_delete_impact(
+    source_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: Employee = Depends(get_current_user),
+):
+    source = await _source_for_read(db, user, source_id)
+    own_personal = source.scope_type == "personal" and source.scope_id == getattr(user, "id", None)
+    if not own_personal and not await can_access_document(db, user, source, "delete"):
+        raise HTTPException(403, "Permission required: doc:delete")
+    rows = (await db.execute(select(WikiPage).where(WikiPage.source_ids.any(source_id)))).scalars().all()
+    return {"pages": [{
+        "slug": p.slug, "title": p.title, "scope_type": p.scope_type,
+        "scope_id": str(p.scope_id) if p.scope_id else None,
+        "source_ids": [str(sid) for sid in (p.source_ids or [])],
+    } for p in rows]}
+
+
 @router.post("/sources/{source_id}/approve-extraction")
 async def approve_extraction(
     source_id: uuid.UUID,
@@ -1222,6 +1313,10 @@ async def approve_extraction(
     source = await db.get(Source, source_id)
     if source is None:
         raise HTTPException(404, "Source not found")
+    from app.services.upload_review_service import review_status
+
+    if review_status(source) in ("pending", "awaiting"):
+        raise HTTPException(400, "Hãy duyệt thông tin tài liệu trước khi tiếp tục")
     if source.status != "awaiting_approval" and source.wiki_status != "awaiting_approval":
         raise HTTPException(400, f"Source is not awaiting approval (status={source.status})")
 

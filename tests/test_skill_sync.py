@@ -107,6 +107,9 @@ async def test_items_strip_frontmatter_and_keep_chatbot_fields(fake_storage):
             "name": "tom_tat",
             "description": "Tóm tắt văn bản hành chính",
             "content": "# KN2 - Tóm tắt văn bản (`tom_tat`)\n\nQuy trình tóm tắt...",
+            "skill_md": SKILL_MD,
+            "resources": {},
+            "version_hash": None,
             "is_system": True,
             "version": 2,
             "updated_at": "2026-10-18T08:30:00+00:00",
@@ -150,6 +153,7 @@ async def test_endpoint_returns_global_skills(fake_storage, sync_secret):
     assert data["items"][0]["content"].startswith("# KN2 - Tóm tắt văn bản")
     assert data["items"][1] == {
         "slug": "soan_thao", "name": "soan_thao", "description": "", "content": "# Soạn thảo\n\nMẫu.",
+        "skill_md": "# Soạn thảo\n\nMẫu.\n", "resources": {}, "version_hash": None,
         "is_system": False, "version": 2, "updated_at": "2026-10-18T08:30:00+00:00",
     }
 

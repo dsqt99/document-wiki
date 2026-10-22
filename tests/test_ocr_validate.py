@@ -105,34 +105,46 @@ async def test_ocr_image_rejects_loop_and_truncation():
     svc = OCRService()
     kw = dict(image_bytes=b"img", base_url="https://ocr/v1", api_key="k", model="m")
 
-    with patch.object(svc, "_call_ocr_stream_sync", return_value=("Điều 1. " * 200, "stop")):
+    with patch.object(svc, "_call_ocr_sync", return_value=("Điều 1. " * 200, "stop")):
         assert await svc.ocr_image(**kw) is None
-    with patch.object(svc, "_call_ocr_stream_sync", return_value=(VN_PAGE, "length")):
+    with patch.object(svc, "_call_ocr_sync", return_value=(VN_PAGE, "length")):
         assert await svc.ocr_image(**kw) is None
-    with patch.object(svc, "_call_ocr_stream_sync", return_value=("No text content.", "stop")):
+    with patch.object(svc, "_call_ocr_sync", return_value=("No text content.", "stop")):
         assert await svc.ocr_image(**kw) is None
-    with patch.object(svc, "_call_ocr_stream_sync", return_value=(VN_PAGE, "stop")):
+    with patch.object(svc, "_call_ocr_sync", return_value=(VN_PAGE, "stop")):
         assert await svc.ocr_image(**kw) == VN_PAGE.strip()
 
 
-def _chunk(content=None, finish_reason=None):
-    delta = SimpleNamespace(content=content)
-    return SimpleNamespace(choices=[SimpleNamespace(delta=delta, finish_reason=finish_reason)])
-
-
-def test_stream_reads_finish_reason():
+@pytest.mark.parametrize("finish_reason", ["stop", "length"])
+def test_nonstream_reads_message_content_and_finish_reason(finish_reason):
     svc = OCRService()
-    stream = [_chunk("Điều 1"), _chunk(". Phạm vi"), _chunk(None, "length")]
+    def create(**request):
+        assert request["stream"] is False
+        assert request["model"] == "m"
+        assert request["messages"][0]["content"][1]["image_url"]["url"] == "data:image/png;base64,b64"
+        return SimpleNamespace(choices=[SimpleNamespace(
+            message=SimpleNamespace(content="  Điều 1. Phạm vi  "), finish_reason=finish_reason,
+        )])
     client = SimpleNamespace(
-        chat=SimpleNamespace(completions=SimpleNamespace(create=lambda **_: iter(stream)))
+        chat=SimpleNamespace(completions=SimpleNamespace(create=create))
     )
     with patch.object(svc, "_get_client", return_value=client):
-        assert svc._call_ocr_stream_sync("b64", "image/png", "p", "u", "k", "m") == "Điều 1. Phạm vi"
-    stream = [_chunk("Điều 1"), _chunk(". Phạm vi"), _chunk(None, "length")]
+        assert svc._call_ocr_sync("b64", "image/png", "p", "u", "k", "m") == "Điều 1. Phạm vi"
     with patch.object(svc, "_get_client", return_value=client):
-        assert svc._call_ocr_stream_sync(
+        assert svc._call_ocr_sync(
             "b64", "image/png", "p", "u", "k", "m", with_finish_reason=True
-        ) == ("Điều 1. Phạm vi", "length")
+        ) == ("Điều 1. Phạm vi", finish_reason)
+
+
+@pytest.mark.parametrize("choices", [[], [SimpleNamespace(message=SimpleNamespace(content=None), finish_reason="stop")]])
+def test_nonstream_empty_response_stays_empty(choices):
+    svc = OCRService()
+    def create(**request):
+        assert request["stream"] is False
+        return SimpleNamespace(choices=choices)
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    with patch.object(svc, "_get_client", return_value=client):
+        assert svc._call_ocr_sync("b64", "image/png", "p", "u", "k", "m") == ""
 
 
 # --- LLM proofreading --------------------------------------------------------

@@ -149,6 +149,7 @@ async def _active_ids(db: AsyncSession) -> dict[str, Optional[str]]:
         "vision": await svc.get(ACTIVE_VISION_MODEL_KEY),
         "embedding": await svc.get(ACTIVE_EMBEDDING_MODEL_KEY),
         "ocr": await svc.get(OCR_MODEL_SPEC_KEY),
+        "rerank": await svc.get("active_reranker_model_spec_id"),
     }
 
 
@@ -226,7 +227,9 @@ async def save_custom_model(
         base_url, protocol = provider_endpoint(body.kind, body.provider)
     if protocol not in PROTOCOLS:
         raise HTTPException(status_code=400, detail=f"protocol must be one of {PROTOCOLS}")
-    if protocol == "anthropic" and body.kind != "llm":
+    if protocol == "rerank" and body.kind != "rerank":
+        raise HTTPException(status_code=400, detail="Rerank protocol requires kind=rerank")
+    if protocol == "anthropic" and body.kind not in ("llm", "rerank"):
         raise HTTPException(
             status_code=400,
             detail="Anthropic protocol is only supported for LLM; use an OpenAI-compatible URL.",

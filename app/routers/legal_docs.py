@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from typing import Any, Optional
 
@@ -179,14 +180,48 @@ def _article_body(page, edited: bool) -> Optional[str]:
     return content if edited and content else None
 
 
+def _end_section_body(page, edited: bool) -> Optional[str]:
+    content = (getattr(page, "content_md", None) or "").replace("\r\n", "\n").strip()
+    marker = re.match(r"<!--\s*cahy:legal-endmatter kind=(?:appendix|notes)\s*-->", content)
+    if not marker:
+        return content if edited and content else None
+    lines = content[marker.end():].lstrip().split("\n")
+    if lines and lines[0].startswith("> **Toàn văn văn bản**:"):
+        lines = lines[1:]
+    return "\n".join(lines).strip()
+
+
+def _end_section_page(by_slug, slug, source_id):
+    from app.services.wiki_origin_service import compatible
+    for suffix in ("", "-extracted", f"-extracted-{str(source_id)[:8]}"):
+        page = by_slug.get((slug or "")[:300 - len(suffix)] + suffix)
+        if page is not None and compatible(page, "extracted", source_id):
+            return page
+    return None
+
+
+def _fulltext_article_parts(content: Optional[str], heading: Optional[str]) -> tuple[str, str]:
+    """Render the current article heading once, preserving corrections and all body text."""
+    from app.services.legal_hierarchy_parser import _match_article, strip_markup
+
+    text = (content or "").strip()
+    first, _, rest = text.partition("\n")
+    current_heading = strip_markup(first)
+    current = _match_article(current_heading)
+    expected = _match_article(strip_markup(heading or ""))
+    if current and expected and current.group(1).lower() == expected.group(1).lower():
+        return current_heading, rest.strip()
+    return heading or "", text
+
+
 def _overview_preamble(page) -> Optional[str]:
     content = (getattr(page, "content_md", None) or "").replace("\r\n", "\n")
     start = content.find(PREAMBLE_HEADING)
     if start < 0:
         return None
     body = content[start + len(PREAMBLE_HEADING):]
-    end = body.find(TOC_HEADING)
-    return (body[:end] if end >= 0 else body).strip()
+    ends = [pos for heading in (TOC_HEADING, "\n## Phụ lục & Chú thích") if (pos := body.find(heading)) >= 0]
+    return (body[:min(ends)] if ends else body).strip()
 
 
 class _NoProgress:
@@ -202,7 +237,7 @@ def _text_type():
 
 def _file_token(user, source) -> Optional[str]:
     try:
-        return create_source_file_token(str(user.id), str(source.id))
+        return create_source_file_token(str(user.id), str(source.id), session_claims=getattr(user, "_wiki_session_claims", None))
     except Exception as e:  # noqa: BLE001
         logger.warning("Could not create file token for %s: %s", source.id, e)
         return None
@@ -250,20 +285,49 @@ async def get_legal_doc(key: str, db: AsyncSession = Depends(get_db), user: Empl
         parsed = {"preamble": "", "articles": []}
     edited_ids = await wiki_service.human_edited_page_ids(db, [p.id for p in by_slug.values()])
     articles = []
-    for a in parsed.get("articles") or []:
+    parsed_articles = parsed.get("articles") or []
+    for index, a in enumerate(parsed_articles):
         slug = a.get("slug")
         page = by_slug.get(slug) if slug else None
         edited = page is not None and page.id in edited_ids
         body = _article_body(page, edited) if page is not None else None
+        if body and not edited and parsed.get("end_sections") and index == len(parsed_articles) - 1:
+            from app.services.legal_endmatter import find_end_sections
+            legacy_tails = find_end_sections(body)
+            if any(tail.title.casefold() == parsed["end_sections"][0]["title"].casefold() for tail in legacy_tails):
+                # An old generated last-article page may still include the tail.
+                # Fresh source parsing retains inline notes without guessing from
+                # this isolated page, which lacks following-article context.
+                body = a.get("content_md")
+        heading, content = _fulltext_article_parts(
+            body if body is not None else a.get("content_md"), a.get("heading"),
+        )
         articles.append({
             "num": a.get("num"),
-            "heading": a.get("heading"),
+            "heading": heading,
             "title": a.get("title"),
-            "content_md": body if body is not None else a.get("content_md"),
+            "content_md": content,
             "chapter_num": a.get("chapter_num"),
             "chapter_title": a.get("chapter_title"),
             "wiki_slug": slug if page is not None else None,
             "edited": edited,
+        })
+
+    end_sections = []
+    for section in parsed.get("end_sections") or []:
+        page = _end_section_page(by_slug, section.get("slug"), source.id)
+        edited = page is not None and page.id in edited_ids
+        body = _end_section_body(page, edited) if page is not None else None
+        content = body if body is not None else section.get("content_md") or ""
+        title = section.get("title") or ""
+        from app.services.legal_hierarchy_parser import strip_markup
+        first, _, rest = content.strip().partition("\n")
+        if strip_markup(first).casefold() == title.casefold():
+            content = rest.strip()
+        end_sections.append({
+            "kind": section.get("kind"), "number": section.get("number"),
+            "title": title, "content_md": content,
+            "wiki_slug": page.slug if page is not None else None, "edited": edited,
         })
 
     try:
@@ -298,6 +362,7 @@ async def get_legal_doc(key: str, db: AsyncSession = Depends(get_db), user: Empl
         "preamble": preamble,
         "preamble_edited": overview is not None and overview.id in edited_ids,
         "articles": articles,
+        "end_sections": end_sections,
         "relations": relations,
         "wiki_pages": wiki_pages,
         "overview_slug": doc_slug if overview is not None else None,
@@ -343,7 +408,8 @@ async def create_legal_doc_pages(
     parsed = legal_service.split_legal_text_by_articles(source.full_text or "", source.title or "", doc_slug)
     return {
         "doc_slug": doc_slug,
-        "overview_slug": doc_slug,
-        "article_slugs": [a.get("slug") for a in parsed.get("articles") or []],
+        "overview_slug": result.get("overview_slug", doc_slug),
+        "article_slugs": result.get("article_slugs", [a.get("slug") for a in parsed.get("articles") or []]),
+        "end_section_slugs": result.get("end_section_slugs", [s.get("slug") for s in parsed.get("end_sections") or []]),
         "articles": result.get("articles", 0),
     }

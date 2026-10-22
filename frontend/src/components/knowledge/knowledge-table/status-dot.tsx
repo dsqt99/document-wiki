@@ -3,6 +3,7 @@
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { Source } from "../types";
+import { qualitySummary } from "./processing-quality";
 
 type Tone = { dot: string; text: string; fallback: string };
 
@@ -49,8 +50,9 @@ function subLineFor(source: Source, showWikiCount: boolean): SubLine {
     case "awaiting_approval":
       return { text: "Cần xem xét để tiếp tục", error: false };
     case "ready":
-      if (source.preserve_verbatim) return { text: "Nguyên văn theo Điều", error: false };
       if (source.wiki_status === "error") return { text: "Wiki lỗi — chỉ có đoạn trích", error: true };
+      const qualityMessage = qualitySummary(source);
+      if (qualityMessage) return { text: qualityMessage, error: false };
       if (showWikiCount && (source.wiki_page_count ?? 0) > 0) return { text: `${source.wiki_page_count} trang wiki`, error: false };
       return null;
     default:
@@ -62,7 +64,7 @@ export function StatusDot({ source, showWikiCount = true }: { source: Source; sh
   const { t } = useI18n();
   const known = TONES[source.status];
   const tone = known ?? TONES.pending;
-  const label = known ? t(`knowledge.status.${source.status}`, known.fallback) : source.status;
+  const label = source.upload_review_status === "awaiting" ? "Chờ duyệt thông tin" : known ? t(`knowledge.status.${source.status}`, known.fallback) : source.status;
   const sub = subLineFor(source, showWikiCount);
 
   return (

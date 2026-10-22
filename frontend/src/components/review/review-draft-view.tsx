@@ -1,5 +1,6 @@
 "use client";
 
+import { OptionSelect } from "@/components/ui/option-select";
 import type { DraftResponse } from "@/types/wiki";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -197,9 +198,9 @@ function ComparePicker({ label, currentLabel, options, value, onChange }: Compar
   return (
     <label className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground">
       {label}
-      <select
+      <OptionSelect
         value={value}
-        onChange={(event) => onChange(event.target.value)}
+        onValueChange={(value) => onChange(value)}
         className="h-6 rounded-md border border-input bg-background px-1.5 text-xs text-foreground outline-none dark:bg-input/30"
       >
         {choices.map((choice) => (
@@ -207,7 +208,7 @@ function ComparePicker({ label, currentLabel, options, value, onChange }: Compar
             {choice.label}
           </option>
         ))}
-      </select>
+      </OptionSelect>
     </label>
   );
 }

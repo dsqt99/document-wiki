@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from typing import Any, Iterable, Optional
 
+from app.core.legal_headings import is_bare_article_continuation, is_legal_structure_candidate, legal_heading_level
+
 PAGE_JOIN_SEPARATOR = "\n\n"
 
 _ATX_HEADING = re.compile(r"^(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$")
@@ -91,6 +93,7 @@ def build_outline(pages: Iterable[Any]) -> list[dict]:
     flat: list[dict] = []
     cursor = 0
     page_list = list(pages or [])
+    previous_nonempty = ""
     for i, page in enumerate(page_list):
         if i > 0:
             cursor += len(PAGE_JOIN_SEPARATOR)
@@ -101,12 +104,16 @@ def build_outline(pages: Iterable[Any]) -> list[dict]:
         line_pos = 0
         for line in content.split("\n"):
             m = _ATX_HEADING.match(line.strip())
+            valid_heading = False
             if m:
                 title = m.group(2).strip()
-                if title:
+                valid_heading = bool(title) and not is_bare_article_continuation(line, previous_nonempty) and not (
+                    is_legal_structure_candidate(title) and legal_heading_level(title) is None
+                )
+                if valid_heading:
                     flat.append(
                         {
-                            "title": title,
+                            "title": re.sub(r"<sup\b[^>]*>.*?</sup>", "", title, flags=re.I) if legal_heading_level(title) == 3 else title,
                             "level": len(m.group(1)),
                             "page": page_no,
                             "char_start": cursor + line_pos,
@@ -114,6 +121,8 @@ def build_outline(pages: Iterable[Any]) -> list[dict]:
                             "children": [],
                         }
                     )
+            if line.strip():
+                previous_nonempty = m.group(2).strip() if m and not valid_heading else line.strip()
             line_pos += len(line) + 1
         cursor += len(content)
     if not flat:

@@ -18,6 +18,11 @@ interface WikiStoreState {
   search: string;
   /** Reading-page tree: restrict to one source document ("" = all) */
   docFilter: string;
+  /** Last reading source/scope initialized. */
+  catalogueContext: string | null;
+  catalogueScope: string | null;
+  /** User filters persist across source navigation until the access scope changes. */
+  catalogueFiltersExplicit: boolean;
   /** Reading-page tree: collapsed section keys */
   collapsedSections: Set<string>;
   sidebarScrollTop: number;
@@ -40,6 +45,9 @@ export const wikiStore: WikiStoreState = {
   expandedScopes: new Set<string>(["global"]),
   search: "",
   docFilter: "",
+  catalogueContext: null,
+  catalogueScope: null,
+  catalogueFiltersExplicit: false,
   collapsedSections: new Set<string>(),
   sidebarScrollTop: 0,
   treeCollapsed: false,
@@ -72,6 +80,23 @@ export function notifyWikiStore() {
   }
 }
 
+/** Follow the active source until the user filters; reset only when the scope changes. */
+export function enterWikiCatalogueContext(context: string, documentId: string) {
+  if (wikiStore.catalogueContext === context) return;
+  // The context consists of the access scope followed by ":<documentId>".
+  const scope = context.slice(0, -(documentId.length + 1));
+  const scopeChanged = wikiStore.catalogueScope !== scope;
+  wikiStore.catalogueContext = context;
+  wikiStore.catalogueScope = scope;
+  if (scopeChanged || !wikiStore.catalogueFiltersExplicit) {
+    wikiStore.catalogueFiltersExplicit = false;
+    wikiStore.docFilter = documentId;
+    wikiStore.search = "";
+    wikiStore.sidebarScrollTop = 0;
+  }
+  notifyWikiStore();
+}
+
 /** Hook for components to subscribe and update wikiStore state */
 export function useWikiStore() {
   const [, forceUpdate] = React.useReducer((x) => x + 1, 0);
@@ -94,6 +119,7 @@ export function useWikiStore() {
   }, []);
 
   const setSearch = React.useCallback((val: string) => {
+    wikiStore.catalogueFiltersExplicit = true;
     wikiStore.search = val;
     notifyWikiStore();
   }, []);
@@ -121,6 +147,7 @@ export function useWikiStore() {
   }, []);
 
   const setDocFilter = React.useCallback((val: string) => {
+    wikiStore.catalogueFiltersExplicit = true;
     wikiStore.docFilter = val;
     notifyWikiStore();
   }, []);
@@ -134,6 +161,7 @@ export function useWikiStore() {
   }, []);
 
   const resetFilters = React.useCallback(() => {
+    wikiStore.catalogueFiltersExplicit = true;
     wikiStore.categoryFilter = "all";
     wikiStore.search = "";
     wikiStore.docFilter = "";

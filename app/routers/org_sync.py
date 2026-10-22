@@ -14,12 +14,16 @@ phòng ban tạo trong wiki (external_id NULL) không bị đụng tới.
 role_map (nếu gửi) là bảng vai trò Keycloak → global_role của wiki do cổng quản trị chatbot quản lý;
 lưu vào app_config, thay cho SSO_ROLE_GLOBAL_MAP, áp dụng ở lần gọi wiki kế tiếp của từng người.
 
+directory_complete=true: nhận đủ hồ sơ, tài khoản không có nhóm, trạng thái và vai trò hiệu lực;
+tạo bản sao cho cán bộ chưa đăng nhập, giữ tài liệu/tác giả cũ và chỉ hiển thị danh sách nguồn chung.
+role_definitions là chính sách quản trị dùng chung, không nhận quyền cấp tay riêng trên Wiki.
+observed_at cùng khóa giao dịch ngăn bản đồng bộ cũ ghi đè thay đổi mới hơn.
+
 accounts (nếu gửi) là trạng thái tài khoản Keycloak, có hiệu lực ngay (không chờ lần đăng nhập SSO kế tiếp):
   - enabled=false: ngừng hoạt động tài khoản wiki liên kết và thu hồi mã MCP. Wiki kiểm tra is_active ở
     mọi yêu cầu nên người đó mất quyền ngay. Chỉ khớp theo id Keycloak/"chatbot:<id>", không khớp theo email,
     nên tài khoản cục bộ của wiki không bị đụng tới.
-  - enabled=true và reactivate=true (cổng quản trị vừa mở khóa): bật lại. Đồng bộ định kỳ không tự bật lại
-    tài khoản mà quản trị wiki đã chủ động ngừng.
+  - enabled=true và reactivate=true: bật lại theo nguồn chung, gồm cả sửa sai ở lần đồng bộ đầy đủ.
   - roles (vai trò realm hiện tại): đặt lại global_role ngay theo role_map.
 """
 
@@ -33,7 +37,7 @@ import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request
 from loguru import logger
 from pydantic import BaseModel, Field, ValidationError
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -83,6 +87,11 @@ class SyncAccount(BaseModel):
     enabled: bool
     reactivate: bool = False
     roles: Optional[list[str]] = Field(default=None, max_length=500)
+    username: Optional[str] = Field(default=None, max_length=255)
+    name: Optional[str] = Field(default=None, max_length=200)
+    email: Optional[str] = Field(default=None, max_length=200)
+    unit_external_ids: Optional[list[str]] = Field(default=None, max_length=1000)
+    deleted: bool = False
 
 
 class SyncPayload(BaseModel):
@@ -94,6 +103,9 @@ class SyncPayload(BaseModel):
     role_map: Optional[dict[str, str]] = Field(default=None, max_length=1000)
     # Trạng thái/vai trò tài khoản cần có hiệu lực ngay. None = không đụng tới.
     accounts: Optional[list[SyncAccount]] = Field(default=None, max_length=200000)
+    directory_complete: bool = False
+    role_definitions: Optional[dict[str, dict]] = Field(default=None, max_length=1000)
+    observed_at: Optional[int] = Field(default=None, ge=0)
     # Lý do ghi vào nhật ký kiểm toán (ví dụ "Khóa tài khoản").
     reason: Optional[str] = Field(default=None, max_length=200)
 
@@ -278,6 +290,26 @@ async def _apply_accounts(db: AsyncSession, accounts: list[SyncAccount], reason:
 
 
 async def apply_org_sync(db: AsyncSession, payload: SyncPayload) -> dict:
+    from app.services.identity_directory import apply_directory, load_directory
+
+    if payload.observed_at is not None:
+        # Serialize JSON read/merge/write across API workers, including the first snapshot.
+        if db.get_bind().dialect.name == 'postgresql':
+            await db.execute(text('SELECT pg_advisory_xact_lock(674029381)'))
+        current_directory = await load_directory(db)
+        latest = (current_directory or {}).get('observed_at', 0)
+        if payload.directory_complete and payload.observed_at < latest:
+            return {'ignored': 'stale_snapshot'}
+        if current_directory and not payload.directory_complete:
+            payload.accounts = [item for item in payload.accounts or [] if payload.observed_at >=
+                                max(current_directory['accounts'].get(item.keycloak_id, {}).get('observed_at', 0),
+                                    current_directory.get('tombstones', {}).get(item.keycloak_id, 0),
+                                    current_directory.get('last_complete_observed_at', 0))]
+            if payload.observed_at < latest:
+                payload.role_definitions = None
+                payload.role_map = None
+
+    await apply_directory(db, payload)
     if payload.accounts is not None and not payload.units and not payload.members and payload.clearances is None:
         # Sự kiện tài khoản (khóa, mở khóa, đổi vai trò): không đụng tới cây đơn vị.
         role_map_changed = await _apply_role_map(db, payload.role_map) if payload.role_map is not None else False
@@ -422,7 +454,7 @@ async def apply_org_sync(db: AsyncSession, payload: SyncPayload) -> dict:
     managed_ids = {d.id for d in assigned.values()}
     current = (
         await db.execute(
-            select(EmployeeDepartment).where(EmployeeDepartment.department_id.in_(managed_ids))
+            select(EmployeeDepartment).where(or_(EmployeeDepartment.department_id.in_(managed_ids), EmployeeDepartment.employee_id.in_(desired) if payload.directory_complete else False))
         )
     ).scalars().all() if managed_ids else []
     existing = set()
@@ -499,7 +531,8 @@ async def _skill_sync_items(skills) -> list[dict]:
     Kỹ năng chưa có nội dung, thiếu SKILL.md hoặc kho lưu trữ lỗi thì bỏ qua (ghi log) để một kỹ năng hỏng
     không làm mất cả danh sách. Chatbot chỉ nhận mục có cả slug và content.
     """
-    from app.routers.skills import _read_skill_md, frontmatter_description, split_frontmatter
+    from app.services.skill_sync_contract import collect_skill_resources
+    from app.routers.skills import _read_skill_md, _try_download, frontmatter_description, split_frontmatter
 
     items = []
     for skill in skills:
@@ -507,7 +540,7 @@ async def _skill_sync_items(skills) -> list[dict]:
             logger.warning(f"Skill sync: bỏ qua {skill.slug} (chưa có nội dung)")
             continue
         try:
-            _, text, _ = await _read_skill_md(skill)
+            rel, text, files = await _read_skill_md(skill)
         except Exception as e:
             logger.warning(f"Skill sync: bỏ qua {skill.slug} ({type(e).__name__})")
             continue
@@ -515,12 +548,16 @@ async def _skill_sync_items(skills) -> list[dict]:
         if not content:
             logger.warning(f"Skill sync: bỏ qua {skill.slug} (không có SKILL.md)")
             continue
+        resources = await collect_skill_resources(rel, files, _try_download)
         items.append(
             {
                 "slug": skill.slug,
                 "name": skill.name,
                 "description": frontmatter_description(lines),
                 "content": content,
+                "skill_md": text,
+                "resources": resources,
+                "version_hash": getattr(skill, "version_hash", None),
                 "is_system": bool(skill.is_system),
                 "version": skill.current_version,
                 "updated_at": skill.updated_at.isoformat() if skill.updated_at else None,

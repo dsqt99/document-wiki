@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import and_, any_, exists, false, func, or_, select
+from sqlalchemy import Numeric, and_, any_, case, cast, exists, false, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -45,6 +45,8 @@ HOT_PLACEHOLDER = (
 
 
 def _is_admin(user) -> bool:
+    if getattr(user, '_central_permissions', None) is not None:
+        return getattr(user, 'role', None) == 'admin'
     return getattr(user, "role", None) == "admin" or getattr(user, "global_role", None) == "admin"
 
 
@@ -76,12 +78,14 @@ def _build_wiki_scope_filter(user):
         return None
     if level == "own_dept":
         depts = _dept_ids(user)
+        personal = and_(WikiPage.scope_type == "personal", WikiPage.scope_id == user.id)
         if depts:
             return or_(
                 WikiPage.scope_type == "global",
                 and_(WikiPage.scope_type == "department", WikiPage.scope_id.in_(depts)),
+                personal,
             )
-        return WikiPage.scope_type == "global"
+        return or_(WikiPage.scope_type == "global", personal)
     return false()
 
 
@@ -133,7 +137,19 @@ def _can_propose_scope(user, scope_type: Optional[str], scope_id) -> bool:
 
 
 def _can_review(user) -> bool:
-    return _has_wiki_write_all(user)
+    return _has_wiki_write_all(user) or (
+        getattr(user, '_central_permissions', None) is not None and 'skill:contribution:review' in _perms(user)
+    )
+
+
+def _review_scope_allowed(user, scope_type, scope_id) -> bool:
+    if _is_admin(user):
+        return True
+    if getattr(user, '_central_permissions', None) is None and _has_wiki_write_all(user):
+        return True
+    if scope_type == 'personal':
+        return str(scope_id) == str(user.id)
+    return scope_type == 'global' or (scope_type == 'department' and str(scope_id) in _dept_str_set(user))
 
 
 async def _page_readable(db, user, page_id) -> bool:
@@ -145,8 +161,11 @@ async def _page_readable(db, user, page_id) -> bool:
 
 
 async def _can_review_draft(db, user, draft) -> bool:
+    if not _can_review(user):
+        return False
     if (getattr(draft, "draft_kind", None) or "edit") == "create":
-        return _can_review(user)
+        metadata = getattr(draft, 'suggested_metadata', None) or {}
+        return _review_scope_allowed(user, metadata.get('scope_type') or 'global', metadata.get('scope_id'))
     page_id = getattr(draft, "page_id", None)
     if page_id is None:
         return _is_admin(user)
@@ -155,7 +174,7 @@ async def _can_review_draft(db, user, draft) -> bool:
         return _is_admin(user)
     if not await _page_readable(db, user, page_id):
         return False
-    return _can_review(user)
+    return _review_scope_allowed(user, page.scope_type or 'global', page.scope_id)
 
 
 async def _lookup_page(db, user, slug: str, scope_type: Optional[str] = None, scope_id=None):
@@ -223,11 +242,14 @@ def _validate_content(v: str) -> str:
 
 
 class WikiPageSummary(BaseModel):
+    rerank_score: Optional[float] = None
+    id: Optional[uuid.UUID] = None
     slug: str
     title: Optional[str] = None
     page_type: str = "concept"
     status: str = "seed"
     summary: str = ""
+    origin_tag: Optional[Literal["extracted", "generated"]] = None
     knowledge_type_slugs: list[str] = Field(default_factory=list)
     source_ids: list[str] = Field(default_factory=list)
     scope_type: str = "global"
@@ -311,11 +333,13 @@ async def _scope_names(db, pages) -> dict[str, str]:
 def _summary(page, scope_names: Optional[dict] = None) -> WikiPageSummary:
     sid = getattr(page, "scope_id", None)
     return WikiPageSummary(
+        id=page.id,
         slug=page.slug,
         title=page.title,
         page_type=wiki_service._page_type_of(page),
         status=page.status or "seed",
         summary=page.summary or "",
+        origin_tag=getattr(page, "origin_tag", None),
         knowledge_type_slugs=list(page.knowledge_type_slugs or []),
         source_ids=[str(s) for s in (page.source_ids or [])],
         scope_type=page.scope_type or "global",
@@ -360,6 +384,172 @@ def _scope_clause(scope_type: Optional[str], scope_id):
 # ---------------------------------------------------------------------------
 
 
+@router.get("/wiki/library")
+async def wiki_library(
+    q: str = Query("", max_length=500),
+    source_id: Optional[uuid.UUID] = None,
+    page_type: Optional[str] = None,
+    status: Optional[str] = None,
+    origin_tag: Optional[Literal["extracted", "generated"]] = None,
+    limit: int = Query(30, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    user: Employee = require_permission("wiki:read"),
+):
+    filters = [WikiPage.slug.notin_(list(wiki_service.RESERVED_SLUGS))]
+    read_filter = _page_read_filter(user)
+    if read_filter is not None:
+        filters.append(read_filter)
+    if source_id:
+        filters.append(WikiPage.source_ids.any(source_id))
+    if page_type:
+        filters.append(WikiPage.page_type == page_type)
+    if origin_tag:
+        filters.append(WikiPage.origin_tag == origin_tag)
+    if status:
+        filters.append(WikiPage.status.in_(("growing", "developing")) if status == "developing" else WikiPage.status == status)
+    if q.strip():
+        from app.services import wiki_search_service
+        from app.services.security_label import page_label_clause
+
+        if not _is_admin(user):
+            filters.append(page_label_clause(getattr(user, 'clearance_level', None)))
+        result = await wiki_search_service.search(db, q, page_filter=and_(*filters), limit=limit, offset=offset)
+        names = await _scope_names(db, [hit['page'] for hit in result['items']])
+        return {**result, 'items':[_summary(hit['page'], names).model_copy(update={
+            'rerank_score':hit.get('rerank_score')}) for hit in result['items']], 'limit':limit, 'offset':offset}
+    total = int((await db.execute(select(func.count()).select_from(WikiPage).where(*filters))).scalar() or 0)
+    rows = (await db.execute(select(WikiPage).where(*filters).order_by(
+        WikiPage.updated_at.desc(), WikiPage.id,
+    ).offset(offset).limit(limit))).scalars().all()
+    names = await _scope_names(db, rows)
+    return {"items": [_summary(p, names) for p in rows], "total": total, "limit": limit, "offset": offset}
+
+
+class SummaryRebuildRequest(BaseModel):
+    only_missing: bool = True
+    engine: Literal["llm", "extract"] = "llm"
+    page_ids: Optional[list[uuid.UUID]] = Field(default=None, min_length=1, max_length=100)
+
+
+async def _summary_pool():
+    from app.routers.sources import get_arq_pool
+
+    try:
+        return await get_arq_pool()
+    except Exception as exc:
+        raise HTTPException(503, "Không kết nối được hàng đợi xử lý tóm tắt.") from exc
+
+
+@router.get("/wiki/summaries/status")
+async def summary_maintenance_status(
+    db: AsyncSession = Depends(get_db),
+    user: Employee = require_permission("org:settings:manage"),
+):
+    from app.services import wiki_summary_service as svc
+
+    pages = await svc.candidate_pages(db, _page_read_filter(user), only_missing=False)
+    source_matches = []
+    needs_update = 0
+    from app.services.summary_job_details import item_for
+
+    for page in pages:
+        computed = svc.build_summary(page)
+        needs_update += svc.needs_llm_summary(page)
+        if computed.rstrip().endswith(("...", "…")) and " ".join((page.summary or "").split()) == " ".join(computed.split()):
+            item = item_for(page, len(source_matches))
+            item.update(status="unchanged", stage="completed", message="Tóm tắt đã khớp đoạn nguồn. Dấu ... nằm trong nội dung Wiki/mẫu biểu; tác vụ tóm tắt không thể tự khôi phục phần chưa có trong nguồn.")
+            source_matches.append(item)
+    try:
+        redis = await _summary_pool()
+        active = await svc.active_job(redis, user.id)
+        recent = await svc.recent_job(redis, user.id) if not active else active
+    except Exception as exc:
+        raise HTTPException(503, "Không đọc được trạng thái tác vụ tóm tắt.") from exc
+    return {"total": len(pages), "needs_update": needs_update,
+            "source_matches_count": len(source_matches), "source_matches": source_matches[:100],
+            "active_job": active, "recent_job": recent}
+
+
+@router.post("/wiki/summaries/rebuild")
+async def rebuild_wiki_summaries(
+    body: SummaryRebuildRequest,
+    db: AsyncSession = Depends(get_db),
+    user: Employee = require_permission("org:settings:manage"),
+):
+    from app.services import wiki_summary_service as svc
+
+    try:
+        result = await svc.start_rebuild(db, await _summary_pool(), _page_read_filter(user), user.id,
+                                         only_missing=body.only_missing, engine=body.engine, page_ids=body.page_ids)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Could not queue wiki summary rebuild")
+        raise HTTPException(503, "Không xếp hàng được tác vụ tóm tắt. Vui lòng thử lại.") from exc
+    await log_audit(db, user, "rebuild_summaries", "wiki_page", result["job_id"],
+                    reason=f"engine={body.engine} only_missing={body.only_missing} candidates={result['total']}")
+    await db.commit()
+    return result
+
+
+@router.get("/wiki/summaries/jobs/{job_id}")
+async def wiki_summary_job(
+    job_id: uuid.UUID,
+    user: Employee = require_permission("org:settings:manage"),
+):
+    from app.services import wiki_summary_service as svc
+
+    try:
+        result = await svc.get_job(await _summary_pool(), str(job_id), user.id)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(503, "Không đọc được trạng thái tác vụ tóm tắt.") from exc
+    if result is None:
+        raise HTTPException(404, "Không tìm thấy tác vụ tóm tắt.")
+    return result
+
+
+@router.get("/wiki/summaries/jobs/{job_id}/items")
+async def wiki_summary_job_items(
+    job_id: uuid.UUID,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+    status: Optional[str] = Query(None, pattern="^(queued|running|updated|unchanged|skipped|failed|index_failed)$"),
+    q: Optional[str] = Query(None, max_length=300),
+    user: Employee = require_permission("org:settings:manage"),
+):
+    from app.services import wiki_summary_service as svc
+
+    try:
+        result = await svc.job_items(await _summary_pool(), str(job_id), user.id,
+                                     offset=offset, limit=limit, status=status, q=q)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(503, "Không tải được chi tiết tiến trình tóm tắt") from exc
+    if result is None:
+        raise HTTPException(404, "Không tìm thấy tác vụ tóm tắt")
+    return result
+
+
+def _source_page_order():
+    """Document order must survive article edits and be applied before pagination."""
+    title = func.coalesce(WikiPage.title, "")
+    number = func.substring(title, r"(?i)^\s*Điều\s+([0-9]+)")
+    suffix = func.substring(title, r"(?i)^\s*Điều\s+[0-9]+([a-zđ]*)")
+    kind = case(
+        (number.is_not(None), 2),
+        (WikiPage.slug.like("source/%"), 1),
+        (func.lower(title).contains("tổng quan"), 0),
+        else_=3,
+    )
+    return (kind.asc(), cast(number, Numeric).asc().nulls_last(),
+            func.lower(suffix).asc().nulls_first(), func.lower(title).asc(),
+            WikiPage.slug.asc(), WikiPage.id.asc())
+
+
 @router.get("/wiki/pages", response_model=list[WikiPageSummary])
 async def list_wiki_pages(
     page_type: Optional[str] = None,
@@ -384,7 +574,8 @@ async def list_wiki_pages(
         stmt = stmt.where(WikiPage.knowledge_type_slugs.any(knowledge_type_slug))
     if source_id:
         stmt = stmt.where(WikiPage.source_ids.any(source_id))
-    stmt = stmt.order_by(WikiPage.updated_at.desc()).offset(offset).limit(limit)
+    order = _source_page_order() if source_id else (WikiPage.updated_at.desc(),)
+    stmt = stmt.order_by(*order).offset(offset).limit(limit)
     pages = list((await db.execute(stmt)).scalars().all())
     names = await _scope_names(db, pages)
     return [_summary(p, names) for p in pages]
@@ -394,52 +585,28 @@ async def list_wiki_pages(
 async def search_wiki(
     q: str = Query(..., min_length=1, max_length=500),
     limit: int = Query(30, ge=1, le=100),
+    response: Response = None,
     db: AsyncSession = Depends(get_db),
     user: Employee = require_permission("wiki:read"),
 ):
-    try:
-        import app.ai.registry as registry_mod
+    from app.services import wiki_search_service
 
-        registry = registry_mod.ProviderRegistry(db)
-        emb = await registry.get_embedding(task="search_query")
-        vec = await emb.embed(q[:4000])
-    except Exception as e:  # noqa: BLE001
-        logger.warning("wiki search embedding failed: %s", e)
-        raise HTTPException(503, "Embedding model is not available")
-
-    scope_filter = _build_wiki_scope_filter(user)
-    hits = await wiki_service.search_pages_hybrid(
-        db, vec, q, top_k=3 * limit,
-        all_scopes=scope_filter is None,
-        department_ids=_dept_ids(user),
-        clearance=None if _is_admin(user) else getattr(user, "clearance_level", None),
-        page_filter=page_source_read_clause(user),
-    )
-    slugs: list[str] = []
-    ids: list = []
-    for h in hits or []:
-        page = h.get("page") if isinstance(h, dict) else (h[0] if isinstance(h, (tuple, list)) else h)
-        pid = getattr(page, "id", None) if page is not None else (h.get("page_id") if isinstance(h, dict) else None)
-        if pid is not None and pid not in ids:
-            ids.append(pid)
-        elif page is None and isinstance(h, dict) and h.get("slug") and h["slug"] not in slugs:
-            slugs.append(h["slug"])
-    if not ids and not slugs:
+    if not q.strip():
         return []
-    stmt = select(WikiPage).where(or_(WikiPage.id.in_(ids) if ids else false(),
-                                      WikiPage.slug.in_(slugs) if slugs else false()))
-    rf = _page_read_filter(user)
-    if rf is not None:
-        stmt = stmt.where(rf)
-    pages = list((await db.execute(stmt)).scalars().all())
-    by_id = {p.id: p for p in pages}
-    by_slug: dict[str, Any] = {}
-    for p in pages:
-        by_slug.setdefault(p.slug, p)
-    ordered = [by_id[i] for i in ids if i in by_id] + [by_slug[s] for s in slugs if s in by_slug]
-    ordered = ordered[:limit]
-    names = await _scope_names(db, ordered)
-    return [_summary(p, names) for p in ordered]
+    read_filter = _page_read_filter(user)
+    if not _is_admin(user):
+        from app.services.security_label import page_label_clause
+        label_filter = page_label_clause(getattr(user, 'clearance_level', None))
+        read_filter = and_(read_filter, label_filter) if read_filter is not None else label_filter
+    result = await wiki_search_service.search(db, q, page_filter=read_filter, limit=limit)
+    if response is not None:
+        response.headers['X-Wiki-Search-Mode'] = result['search']['mode']
+        response.headers['X-Wiki-Retrieval-Mode'] = result['search'].get('retrieval_mode', 'hybrid')
+        if result['search'].get('warning'):
+            response.headers['X-Wiki-Search-Warning'] = ','.join(result['search'].get('warning_codes') or ['reranker_unavailable'])
+    names = await _scope_names(db, [hit['page'] for hit in result['items']])
+    return [_summary(hit['page'], names).model_copy(update={'rerank_score':hit.get('rerank_score')})
+            for hit in result['items']]
 
 
 # ---------------------------------------------------------------------------

@@ -77,3 +77,43 @@ def test_preview_inlines_data_uri_and_respects_budget():
     assert "data:image/png;base64," in out and "<!--img:" not in out
     over = _preview_images("<!--img:rId9-->", blobs, [100])
     assert "data:" not in over and "quá dung lượng" in over
+
+
+@pytest.mark.asyncio
+async def test_docx_picture_in_table_cell_keeps_its_placeholder():
+    doc = docx.Document()
+    cell = doc.add_table(rows=1, cols=1).cell(0, 0)
+    cell.text = "Table instruction"
+    cell.add_paragraph().add_run().add_picture(io.BytesIO(_png()))
+    cell.add_paragraph("Table caption")
+    buf = io.BytesIO()
+    doc.save(buf)
+    data = buf.getvalue()
+    pages = await DocxParser().parse(data, "table-guide.docx")
+    text = pages[0]["content"]
+    rid = next(iter(docx_image_blobs(data)))
+    marker = "<!--img:" + rid + "-->"
+    assert marker in text
+    assert text.index("Table instruction") < text.index(marker) < text.index("Table caption")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("in_cell", [False, True])
+async def test_docx_numbered_picture_only_paragraph_retains_source_label(in_cell):
+    doc = docx.Document()
+    doc.add_paragraph("First item", style="List Number")
+    if in_cell:
+        paragraph = doc.add_table(rows=1, cols=1).cell(0, 0).paragraphs[0]
+        paragraph.style = doc.styles["List Number"]
+    else:
+        paragraph = doc.add_paragraph(style="List Number")
+    paragraph.add_run().add_picture(io.BytesIO(_png()))
+    doc.add_paragraph("Third item", style="List Number")
+    buf = io.BytesIO()
+    doc.save(buf)
+    data = buf.getvalue()
+    pages = await DocxParser().parse(data, "numbered-picture.docx")
+    text = pages[0]["content"]
+    rid = next(iter(docx_image_blobs(data)))
+    assert "2. <!--img:" + rid + "-->" in text
+    assert "3. Third item" in text

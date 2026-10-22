@@ -21,6 +21,8 @@ def _now() -> datetime:
 
 
 def _is_admin(user) -> bool:
+    if getattr(user, '_central_permissions', None) is not None:
+        return getattr(user, 'role', None) == 'admin'
     return getattr(user, "role", None) == "admin" or getattr(user, "global_role", None) == "admin"
 
 

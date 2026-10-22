@@ -15,4 +15,5 @@ out/
 coverage/
 .DS_Store
 Thumbs.db
-tests/
+tests/*
+!tests/test_shared_identity.py

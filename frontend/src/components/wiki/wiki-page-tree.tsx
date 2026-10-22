@@ -32,7 +32,9 @@ type Props = {
   onDeleted?: (slug: string) => void;
   pagesUrl?: string;
   linkQueryParams?: string;
-  onPageSelect?: (slug: string) => void;
+  onPageSelect?: (slug: string, page?: WikiPageSummary) => void;
+  /** Fill an overlay without the standalone tree's collapse strip or border. */
+  presentation?: "sidebar" | "overlay";
   groupByScope?: boolean;
   activeScope?: WikiScope;
   getCreateModeForScope?: (scopeType: string, scopeId: string | null) => CreateMode | null;
@@ -104,11 +106,13 @@ export function WikiPageTree({
   getCreateModeForScope,
   onCreatePage,
   onSearch,
+  presentation = "sidebar",
 }: Props) {
   const { t } = useI18n();
   const store = useWikiStore();
   const { search, docFilter, collapsedSections, treeCollapsed, setSearch, setDocFilter, toggleSection, setTreeCollapsed, resetFilters } =
     store;
+  const collapsed = presentation === "sidebar" && treeCollapsed;
 
   const [pagesState, setPagesState] = useState<{ url: string; list: WikiPageSummary[] | null }>(() => ({
     url: pagesUrl,
@@ -147,7 +151,7 @@ export function WikiPageTree({
   // Source documents (for grouping by document).
   useEffect(() => {
     let cancelled = false;
-    api<{ items?: WikiSourceItem[] }>("/api/sources?status=ready&page_size=1000")
+    api<{ items?: WikiSourceItem[] }>("/api/sources?page_size=1000")
       .then((res) => {
         if (cancelled) return;
         const items = Array.isArray(res?.items) ? res.items : [];
@@ -170,18 +174,18 @@ export function WikiPageTree({
 
   // Restore the list scroll position whenever the list (re)appears.
   useEffect(() => {
-    if (!treeCollapsed && listRef.current) listRef.current.scrollTop = wikiStore.sidebarScrollTop;
-  }, [treeCollapsed]);
+    if (!collapsed && listRef.current) listRef.current.scrollTop = wikiStore.sidebarScrollTop;
+  }, [collapsed]);
 
   // Focus the filter after expanding from the collapsed strip.
   useEffect(() => {
-    if (!focusFilter || treeCollapsed) return;
+    if (!focusFilter || collapsed) return;
     const id = setTimeout(() => {
       filterRef.current?.focus();
       setFocusFilter(false);
     }, 0);
     return () => clearTimeout(id);
-  }, [focusFilter, treeCollapsed]);
+  }, [focusFilter, collapsed]);
 
   // Clicking anywhere outside the armed row disarms the delete.
   useEffect(() => {
@@ -215,7 +219,14 @@ export function WikiPageTree({
 
   const docOfPage = useMemo(() => {
     const m = new Map<string, WikiSourceItem | null>();
-    for (const p of basePages) m.set(p.slug, getDocForPage(p, sources));
+    for (const p of basePages) {
+      const sourceId = p.source_ids?.[0];
+      // Explicit source context must work while source labels are still loading,
+      // including documents no longer returned by the ready-sources endpoint.
+      m.set(p.slug, sourceId
+        ? sources.find((source) => source.id === sourceId) ?? { id: sourceId, title: "Văn bản nguồn", status: "ready" }
+        : getDocForPage(p, sources));
+    }
     return m;
   }, [basePages, sources]);
 
@@ -308,12 +319,24 @@ export function WikiPageTree({
   const createScopeId = activeScope?.scope_id ?? null;
   const createMode = getCreateModeForScope ? getCreateModeForScope(createScopeType, createScopeId) : null;
 
-  const pageHref = (slug: string) => `/wiki/${encodeSlugPath(slug)}${linkQueryParams}`;
+  const pageHref = (p: WikiPageSummary) => {
+    const params = new URLSearchParams(linkQueryParams.replace(/^\?/, ""));
+    if (p.scope_type) {
+      params.delete("scopeType");
+      params.delete("scopeId");
+      if (p.scope_type !== "global") {
+        params.set("scopeType", p.scope_type);
+        if (p.scope_id) params.set("scopeId", p.scope_id);
+      }
+    }
+    const query = params.toString();
+    return `/wiki/${encodeSlugPath(p.slug)}${query ? `?${query}` : ""}`;
+  };
 
-  const onRowClick = (e: ReactMouseEvent<HTMLAnchorElement>, slug: string) => {
+  const onRowClick = (e: ReactMouseEvent<HTMLAnchorElement>, page: WikiPageSummary) => {
     if (!onPageSelect || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     e.preventDefault();
-    onPageSelect(slug);
+    onPageSelect(page.slug, page);
   };
 
   const doDelete = async (p: WikiPageSummary) => {
@@ -340,7 +363,7 @@ export function WikiPageTree({
     }
   };
 
-  if (treeCollapsed) {
+  if (collapsed) {
     return (
       <aside className="flex h-full w-11 shrink-0 flex-col items-center gap-1 border-r bg-muted/30 py-3">
         <Tooltip>
@@ -388,14 +411,14 @@ export function WikiPageTree({
   const shown = visible.length;
 
   return (
-    <aside className="flex h-full w-64 shrink-0 flex-col border-r bg-muted/30 lg:w-72">
+    <aside className={cn("flex h-full min-h-0 shrink-0 flex-col bg-muted/30", presentation === "overlay" ? "w-full" : "w-64 border-r lg:w-72")}>
       {/* header */}
       <div className="flex items-center gap-1 px-3 pt-3 pb-2">
         <Tooltip>
           <TooltipTrigger
             render={
               <Link
-                href="/wiki/law"
+                href="/knowledge?tab=wiki"
                 className="flex items-center gap-1 rounded-md px-1 py-0.5 text-sm font-semibold hover:bg-muted"
               />
             }
@@ -442,7 +465,7 @@ export function WikiPageTree({
             </TooltipTrigger>
             <TooltipContent>{isFiltering ? `${shown} / ${total} trang` : `${total} trang`}</TooltipContent>
           </Tooltip>
-          <HeaderButton icon="left_panel_close" tip="Thu gọn danh mục" onClick={() => setTreeCollapsed(true)} />
+          {presentation === "sidebar" && <HeaderButton icon="left_panel_close" tip="Thu gọn danh mục" onClick={() => setTreeCollapsed(true)} />}
         </div>
       </div>
 
@@ -457,10 +480,11 @@ export function WikiPageTree({
           </span>
           <input
             ref={filterRef}
+            aria-label="Lọc trang trong danh mục"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Escape") {
+              if (e.key === "Escape" && presentation === "sidebar") {
                 e.preventDefault();
                 setSearch("");
               }
@@ -489,10 +513,10 @@ export function WikiPageTree({
           )}
         </div>
 
-        {docOptions.length > 1 && (
+        {docOptions.length > 0 && (
           <div className="mt-2 flex items-center gap-1">
             <Select value={activeDoc || "__all__"} onValueChange={(v) => setDocFilter(!v || v === "__all__" ? "" : String(v))}>
-              <SelectTrigger size="sm" className="h-8! min-w-0 flex-1 text-[13px]">
+              <SelectTrigger aria-label="Văn bản trong danh mục" size="sm" className="h-8! min-w-0 flex-1 text-[13px]">
                 <SelectValue>
                   {() => {
                     const o = docOptions.find((x) => x.id === activeDoc);
@@ -514,7 +538,12 @@ export function WikiPageTree({
                 <TooltipTrigger
                   render={
                     <Link
-                      href={`/wiki/source/${encodeURIComponent(activeDoc)}`}
+                      href={`/wiki/source/${encodeURIComponent(activeDoc)}${linkQueryParams}`}
+                      onClick={(e) => {
+                        if (!onPageSelect || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                        e.preventDefault();
+                        onPageSelect(`source/${activeDoc}`);
+                      }}
                       aria-label="Mở văn bản gốc"
                       className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
                     />
@@ -592,6 +621,11 @@ export function WikiPageTree({
                         render={
                           <Link
                             href={`/wiki/source/${encodeURIComponent(sec.docId)}`}
+                            onClick={(e) => {
+                              if (!onPageSelect || !sec.docId || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                              e.preventDefault();
+                              onPageSelect(`source/${sec.docId}`);
+                            }}
                             aria-label="Mở văn bản gốc"
                             className="hidden shrink-0 items-center text-muted-foreground group-hover:flex hover:text-primary"
                           />
@@ -624,9 +658,10 @@ export function WikiPageTree({
                         >
                           {isActive && <span className="absolute top-1 bottom-1 left-0 w-0.5 rounded-full bg-primary" />}
                           <Link
-                            href={pageHref(p.slug)}
+                            href={pageHref(p)}
                             title={p.summary || p.title}
-                            onClick={(e) => onRowClick(e, p.slug)}
+                            onClick={(e) => onRowClick(e, p)}
+                            aria-current={isActive ? "page" : undefined}
                             className="flex min-w-0 flex-1 items-center gap-2 py-1.5 pr-1 pl-2.5 text-xs leading-4 text-foreground/75"
                           >
                             {asOverview ? (
@@ -676,7 +711,7 @@ export function WikiPageTree({
                                       type="button"
                                       aria-label={`Xóa "${p.title}"`}
                                       onClick={() => setArmed(p.slug)}
-                                      className="hidden size-6 items-center justify-center rounded text-muted-foreground group-hover/row:flex hover:text-destructive"
+                                      className="flex size-6 items-center justify-center rounded text-muted-foreground opacity-100 group-hover/row:opacity-100 focus:opacity-100 md:opacity-0 hover:text-destructive"
                                     />
                                   }
                                 >

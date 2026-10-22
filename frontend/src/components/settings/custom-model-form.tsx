@@ -1,12 +1,13 @@
 "use client";
 
+import { OptionSelect } from "@/components/ui/option-select";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api } from "@/lib/api";
 
-export type CustomModelKind = "llm" | "vision" | "embedding" | "ocr";
+export type CustomModelKind = "llm" | "vision" | "embedding" | "ocr" | "rerank";
 
 /** Provider groups shown in Settings; "custom" = own base URL + API key. */
 export type ProviderGroup = "anthropic" | "openai" | "google" | "custom";
@@ -89,7 +90,7 @@ export function CustomModelForm({
   const [baseUrl, setBaseUrl] = useState(initial?.base_url ?? "");
   const [modelId, setModelId] = useState(initial?.model_id ?? "");
   const [apiKey, setApiKey] = useState("");
-  const [protocol, setProtocol] = useState(initial?.protocol ?? "openai");
+  const [protocol, setProtocol] = useState(initial?.protocol ?? (kind === "rerank" ? "rerank" : "openai"));
   const [dimension, setDimension] = useState(initial?.dimension ?? 1024);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -222,9 +223,9 @@ export function CustomModelForm({
             </button>
           </div>
           {showSelect ? (
-            <select
+            <OptionSelect
               value={modelId || ""}
-              onChange={(e) => pickModel(e.target.value)}
+              onValueChange={(value) => pickModel(value)}
               className="h-9 rounded-md border border-input bg-background px-2 font-mono text-xs"
             >
               <option value="" disabled>
@@ -251,7 +252,7 @@ export function CustomModelForm({
                 </optgroup>
               )}
               <option value={MANUAL}>Khác — nhập tay…</option>
-            </select>
+            </OptionSelect>
           ) : (
             <>
               <Input
@@ -297,26 +298,27 @@ export function CustomModelForm({
             />
           </div>
         )}
-        {isCustom && kind === "llm" && (
+        {isCustom && (kind === "llm" || kind === "rerank") && (
           <div className="flex flex-col gap-1.5">
             <Label className="text-xs">Giao thức</Label>
-            <select
+            <OptionSelect
               value={protocol}
-              onChange={(e) => setProtocol(e.target.value)}
+              onValueChange={(value) => setProtocol(value)}
               className="h-9 rounded-md border border-input bg-background px-2 text-xs"
             >
               <option value="openai">OpenAI-compatible</option>
               <option value="anthropic">Anthropic Messages</option>
-            </select>
+              {kind === "rerank" && <option value="rerank">Rerank API (/rerank: BGE, TEI, Infinity, vLLM)</option>}
+            </OptionSelect>
           </div>
         )}
         {kind === "embedding" && (
           <div className="flex flex-col gap-1.5">
             <Label className="text-xs">Số chiều vector *</Label>
             <div className="flex gap-2">
-              <select
+              <OptionSelect
                 value={dimension}
-                onChange={(e) => setDimension(Number(e.target.value))}
+                onValueChange={(value) => setDimension(Number(value))}
                 className="h-9 flex-1 rounded-md border border-input bg-background px-2 text-xs"
               >
                 {EMBEDDING_DIMENSIONS.map((d) => (
@@ -324,7 +326,7 @@ export function CustomModelForm({
                     {d}
                   </option>
                 ))}
-              </select>
+              </OptionSelect>
               <Button
                 type="button"
                 size="sm"
@@ -347,7 +349,9 @@ export function CustomModelForm({
       </div>
       <p className="text-[11px] text-muted-foreground">
         {isCustom
-          ? kind === "llm"
+          ? kind === "rerank"
+            ? "Chọn /rerank cho model chuyên xếp hạng; chọn chat API cho LLM chấm điểm."
+            : kind === "llm"
             ? "Endpoint OpenAI-compatible (vLLM, Ollama, LiteLLM…) hoặc Anthropic Messages."
             : "Endpoint phải tương thích OpenAI API"
           : `Dùng endpoint và API key chung của ${PROVIDER_LABELS[provider]}.`}

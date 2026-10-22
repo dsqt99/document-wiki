@@ -24,6 +24,9 @@ RUN pnpm build
 
 # ---- 3. runtime ----
 FROM node:22-alpine AS runner
+ARG BUILD_REVISION=unknown
+LABEL org.opencontainers.image.revision=$BUILD_REVISION
+LABEL org.opencontainers.image.ref.name=feature/optimize-261022
 WORKDIR /app
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \

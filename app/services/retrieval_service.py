@@ -6,12 +6,14 @@ Combines:
 2. Dual-Arm Hybrid Search: Cosine vector kNN + Vietnamese-tokenized BM25/FTS via RRF.
 3. 1-Hop Graph Neighbor Expansion: Traverses LegalRelation edges (amendments, guidances, repeals)
    to pull in cross-document context from the legal knowledge graph.
-4. Cross-Encoder Reranking & MMR Diversification: Re-scores candidates via BGE-Reranker or local fallback.
+4. Configured Wiki Reranking: Shares the portal's model and strict threshold;
+   provider failures preserve retrieval order without fabricated relevance scores.
 """
 
 from __future__ import annotations
 
 import uuid
+from types import SimpleNamespace
 from typing import Any, Optional
 
 from loguru import logger
@@ -21,7 +23,7 @@ from sqlalchemy.orm import configure_mappers, selectinload
 
 from app.database.models import LegalRelation, LegalRelationType, LegalUnit, WikiPage
 from app.services.legal_route_service import route_exact_legal_query
-from app.services.reranker_service import RerankerService
+from app.services.wiki_reranker import configured_rank_candidates, search_metadata
 from app.utils.text import clip_text
 
 
@@ -209,26 +211,37 @@ def merge_sequential_chunks(hits: list[dict], max_gap_chars: int = 200) -> list[
             return item.get("chunk_index", 0)
 
         group.sort(key=_get_idx)
-        cur = group[0]
+        cur = dict(group[0])
         for nxt in group[1:]:
-            cur_idx = _get_idx(cur)
+            cur_idx = cur.get("chunk_index_end", _get_idx(cur))
             nxt_idx = _get_idx(nxt)
             if nxt_idx == cur_idx + 1:
                 # Sequential chunk: merge text
                 c_cur = cur.get("chunk")
                 c_nxt = nxt.get("chunk")
                 if c_cur and c_nxt and hasattr(c_cur, "text") and hasattr(c_nxt, "text"):
-                    c_cur.text = f"{c_cur.text}\n\n{c_nxt.text}"
+                    # A search passage is not a persisted chunk. Mutating the ORM
+                    # row would autoflush an UPDATE during the next graph/metadata read.
+                    chunk = SimpleNamespace(**{
+                        key: getattr(c_cur, key, None) for key in
+                        ("source_id", "chunk_index", "model_spec_id", "page_number", "start_char", "content_hash")
+                    })
+                    chunk.text = f"{c_cur.text}\n\n{c_nxt.text}"
+                    chunk.end_char = getattr(c_nxt, "end_char", None)
+                    chunk.page_end = getattr(c_nxt, "page_end", None) or getattr(c_nxt, "page_number", None)
+                    cur["chunk"] = chunk
+                    cur["chunk_index_end"] = nxt_idx
                     cur["rrf"] = max(cur.get("rrf", 0.0), nxt.get("rrf", 0.0))
                 elif "chunk_text" in cur and "chunk_text" in nxt:
                     cur["chunk_text"] = f"{cur['chunk_text']}\n\n{nxt['chunk_text']}"
+                    cur["chunk_index_end"] = nxt_idx
                     cur["rrf"] = max(cur.get("rrf", 0.0), nxt.get("rrf", 0.0))
                 else:
                     merged.append(cur)
-                    cur = nxt
+                    cur = dict(nxt)
             else:
                 merged.append(cur)
-                cur = nxt
+                cur = dict(nxt)
         merged.append(cur)
 
     # Sort merged results by rrf descending
@@ -239,7 +252,7 @@ def merge_sequential_chunks(hits: list[dict], max_gap_chars: int = 200) -> list[
 async def unified_search(
     session: AsyncSession,
     query: str,
-    query_embedding: list[float],
+    query_embedding: Optional[list[float]],
     top_k: int = 10,
     allowed_kt_slugs: Optional[list[str]] = None,
     department_ids: Optional[list[uuid.UUID]] = None,
@@ -251,6 +264,7 @@ async def unified_search(
     check_out_of_scope: bool = False,
     clearance: Optional[str] = None,
     page_filter=None,
+    personal_owner_id=None,
 ) -> dict[str, Any]:
     """Unified multi-stage search orchestrator:
 
@@ -258,7 +272,7 @@ async def unified_search(
     2. Fault-tolerant hybrid search (vector + vi-tokenized FTS) over wiki pages & source chunks.
     3. Winning-chunk text extraction & threshold filtering.
     4. 1-hop graph expansion over legal knowledge graph.
-    5. Cross-encoder reranking with auto-degradation floor and MMR diversification.
+    5. Configured reranking with the portal's threshold and honest hybrid fallback.
     """
     from app.services import wiki_service
 
@@ -295,6 +309,7 @@ async def unified_search(
         all_scopes=all_scopes,
         clearance=clearance,
         page_filter=page_filter,
+        personal_owner_id=personal_owner_id,
     )) or []
     source_hits = await _arm("source", lambda: wiki_service.search_source_chunks_hybrid(
         session,
@@ -374,31 +389,21 @@ async def unified_search(
     # Retrieval order (best RRF first) — the reranker's prior and its fallback.
     candidates.sort(key=lambda c: c["rrf"], reverse=True)
 
-    # 7. Cross-encoder Rerank with auto-degrade floor and MMR diversification
-    reranker = RerankerService.get_instance()
-    rerank_info: dict[str, Any] = {"mode": "off"}
-    if apply_reranker and candidates and reranker and reranker.enabled:
-        reranked_docs = await reranker.rerank(
-            query=query,
-            documents=candidates,
-            text_key="text",
-            top_n=top_k,
-            threshold=0.2,
-            degrade_floor=0.15,
-            apply_mmr=apply_mmr,
-            prior_key="rrf",
-            pin_key="exact",
-            info=rerank_info,
-        )
-        final_ranked = []
-        for cand in reranked_docs:
-            score = cand.get("rerank_score", cand["hit"].get("rrf", 0.0))
-            cand["hit"]["rerank_score"] = score
-            final_ranked.append((cand["kind"], score, cand["hit"]))
-    else:
-        # RRF ordering, verbatim document-number/phrase hits first (stable sort)
-        candidates.sort(key=lambda c: c["exact"], reverse=True)
-        final_ranked = [(c["kind"], c["rrf"], c["hit"]) for c in candidates[:top_k]]
+    # Exact legal routing stays separate. For search candidates use the same
+    # configured model/strict threshold as the portal, retaining the lexical
+    # prior if scoring fails. ``apply_mmr`` remains accepted for compatibility.
+    candidates.sort(key=lambda c: c["exact"], reverse=True)
+    result = await configured_rank_candidates(session, query, candidates, enabled=apply_reranker)
+    final_ranked = []
+    for cand in result.items[:top_k]:
+        hit = dict(cand["hit"])
+        if result.mode == 'rerank':
+            score = cand['rerank_score']
+            hit['rerank_score'] = score
+        else:
+            hit.pop('rerank_score', None)
+            score = cand['rrf']
+        final_ranked.append((cand['kind'], score, hit))
 
     return {
         "exact_match": exact_route_res,
@@ -406,6 +411,8 @@ async def unified_search(
         "graph_neighbors": graph_neighbors,
         "out_of_scope_hits": oos_hits,
         "failed_arms": failed_arms,
-        "rerank_mode": rerank_info["mode"],
+        "rerank_mode": result.mode,
+        "search": search_metadata(result, lexical_fallback=query_embedding is None,
+                                  candidate_count=total_candidates),
         "total_candidates": total_candidates,
     }

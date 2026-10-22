@@ -116,10 +116,15 @@ async def finalize_verbatim_pages(session, source, tracker: Any) -> dict:
             kt_slugs = [kt.slug]
 
     base = base_slug(source)
+    from app.services.wiki_origin_service import resolve_target_slug
+    scopes = await wiki_service.resolve_wiki_scopes(session, source)
+    for target_scope, target_id in scopes:
+        base = await resolve_target_slug(session, base, "extracted", target_scope, target_id, source.id)
     origin = f"> **Nguồn**: {source.file_name or title} — nguyên văn, không qua biên soạn LLM"
     pages: list = []
-    for scope_type, scope_id in await wiki_service.resolve_wiki_scopes(session, source):
+    for scope_type, scope_id in scopes:
         common = dict(
+            origin_tag="extracted",
             knowledge_type_slugs=kt_slugs, source_ids=[source.id],
             scope_type=scope_type, scope_id=scope_id, status="mature",
         )

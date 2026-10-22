@@ -4,7 +4,8 @@ Quyền `admin` vẫn chỉ đến từ SSO_ADMIN_ROLES; bảng ánh xạ không
 Nguồn của mức (employees.global_role_source) quyết định ai quản lý:
 - `sso`: Keycloak là nguồn sự thật, mỗi lần SSO đặt lại đúng mức theo vai trò (nâng và hạ). Hạ mức một
   vai trò hay xóa vai trò trên cổng quản trị thì người đã nhận mức cũ cũng bị hạ.
-- `manual`: quản trị wiki cấp tay. Keycloak chỉ được nâng; đã nâng thì từ đó Keycloak quản lý (`sso`).
+- `manual`: chỉ dành cho tài khoản cục bộ ở bản Wiki độc lập. Tài khoản đã liên kết luôn nhận lại
+  mức quyền từ nguồn chung, gồm cả thu hồi quyền từng được cấp tay.
 
 Bảng ánh xạ do Trợ lý ảo AI đẩy sang qua /internal/org-sync (vai trò tạo trên cổng quản trị) và lưu ở
 app_config; chưa từng nhận thì dùng SSO_ROLE_GLOBAL_MAP trong .env.
@@ -88,12 +89,15 @@ def sync_employee_roles(
     Keycloak là nguồn quyền admin; tài khoản admin mặc định giữ làm lối vào dự phòng.
     """
     before = (employee.global_role, employee.global_role_source)
+    linked = bool(getattr(employee, 'external_id', None))
+    if linked and roles is not None:
+        employee.global_role_source = SOURCE_SSO
     if is_admin:
         employee.role = "admin"
         employee.global_role = "admin"
         employee.global_role_source = SOURCE_SSO
     elif (employee.role == "admin" or employee.global_role == "admin") and (
-        employee.email.lower() != default_admin_email.lower()
+        linked or employee.email.lower() != default_admin_email.lower()
     ):
         employee.role = "employee"
         if employee.global_role == "admin":

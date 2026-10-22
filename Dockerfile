@@ -31,6 +31,11 @@ USER appuser
 ENV PYTHONPATH=/app \
     PYTHONUNBUFFERED=1
 
+ARG BUILD_REVISION=unknown
+LABEL org.opencontainers.image.revision=$BUILD_REVISION
+LABEL org.opencontainers.image.ref.name=feature/optimize-261022
+ENV CAHY_BUILD_REVISION=$BUILD_REVISION
+
 EXPOSE 5055
 
 ENTRYPOINT ["./entrypoint.sh"]

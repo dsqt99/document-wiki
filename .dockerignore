@@ -1,0 +1,12 @@
+.git
+.env
+.env.*
+.venv
+venv
+frontend
+tests
+docs
+temp_uploads
+**/__pycache__
+**/*.pyc
+**/*.log

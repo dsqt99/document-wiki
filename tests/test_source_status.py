@@ -82,18 +82,20 @@ def test_reset_branches():
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_dispatch_verbatim_skips_wiki():
+async def test_dispatch_legacy_verbatim_runs_both_branches():
     from app import worker
 
     src = _src(preserve_verbatim=True, attempt_id=uuid.uuid4())
     with patch.object(worker, "commit_and_enqueue_chunk_branch", AsyncMock()) as enq, \
          patch("app.services.legal_service.is_legal_source", AsyncMock(return_value=False)), \
+         patch("app.services.doc_metadata_service.store_document_metadata", AsyncMock()), \
+         patch.object(worker, "set_branch_state", AsyncMock(return_value="processing")), \
          patch.object(worker, "enqueue_post_extraction_pipeline", AsyncMock()) as mrp:
-        res = await worker.dispatch_dual_pipeline(MagicMock(), src, MagicMock(), token_count=10)
+        res = await worker.dispatch_dual_pipeline(AsyncMock(), src, MagicMock(), token_count=10)
     enq.assert_awaited_once()
-    mrp.assert_not_awaited()
-    assert src.wiki_status == "skipped"
-    assert res["branch_b"] == "skipped"
+    mrp.assert_awaited_once()
+    assert src.wiki_status == "queued" and src.preserve_verbatim is False
+    assert res["status"] == "processing"
 
 
 @pytest.mark.asyncio
@@ -103,10 +105,11 @@ async def test_dispatch_large_doc_gates_wiki_only():
     src = _src(attempt_id=uuid.uuid4())
     with patch.object(worker, "commit_and_enqueue_chunk_branch", AsyncMock()) as enq, \
          patch("app.services.legal_service.is_legal_source", AsyncMock(return_value=False)), \
+         patch("app.services.doc_metadata_service.store_document_metadata", AsyncMock()), \
          patch.object(worker, "set_branch_state", AsyncMock(return_value="awaiting_approval")) as sbs, \
          patch.object(worker, "enqueue_post_extraction_pipeline", AsyncMock()) as mrp, \
          patch.object(worker.settings, "auto_approve_extraction_threshold_tokens", 100):
-        res = await worker.dispatch_dual_pipeline(MagicMock(), src, MagicMock(), token_count=1000)
+        res = await worker.dispatch_dual_pipeline(AsyncMock(), src, MagicMock(), token_count=1000)
     enq.assert_awaited_once()  # branch A still runs
     mrp.assert_not_awaited()
     assert sbs.await_args.kwargs["status"] == "awaiting_approval"

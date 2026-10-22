@@ -175,7 +175,12 @@ def logged_tool(tool_name: str, query_arg: Optional[str] = None) -> Callable:
                 _schedule_write(row)
                 raise
             identity = current_identity.get()
-            text = result if isinstance(result, str) else str(result)
+            if isinstance(result, str):
+                text = result
+            elif hasattr(result, "content"):
+                text = "\n".join(block.text for block in result.content if getattr(block,"type",None) == "text")
+            else:
+                text = str(result)
             status = classify_status(text)
             row.update(
                 latency_ms=int((time.perf_counter() - started) * 1000),

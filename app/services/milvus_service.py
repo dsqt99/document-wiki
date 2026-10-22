@@ -94,11 +94,11 @@ def upsert_page_vector_to_milvus(
     title: Optional[str] = None,
     summary: Optional[str] = None,
     content: Optional[str] = None,
-) -> None:
+) -> bool:
     """Upsert a wiki page embedding vector into Milvus."""
     client = get_milvus_client()
     if not client:
-        return
+        return False
 
     collection_name = f"arkon_wiki_pages_{dimension}"
     try:
@@ -120,8 +120,10 @@ def upsert_page_vector_to_milvus(
             }
         ]
         client.upsert(collection_name=collection_name, data=data)
+        return True
     except Exception as e:
         logger.debug(f"Milvus upsert_page_vector error: {e}")
+        return False
 
 
 def delete_page_vectors_from_milvus(page_id: uuid.UUID, dimension: int) -> None:
@@ -155,11 +157,11 @@ def upsert_wiki_chunk_vector_to_milvus(
     text: str,
     heading_path: str,
     content_hash: str,
-) -> None:
+) -> bool:
     """Upsert a wiki chunk embedding vector into Milvus."""
     client = get_milvus_client()
     if not client:
-        return
+        return False
 
     collection_name = f"arkon_wiki_chunks_{dimension}"
     try:
@@ -179,8 +181,10 @@ def upsert_wiki_chunk_vector_to_milvus(
             }
         ]
         client.upsert(collection_name=collection_name, data=data)
+        return True
     except Exception as e:
         logger.debug(f"Milvus upsert_wiki_chunk_vector error: {e}")
+        return False
 
 
 def delete_wiki_chunk_vectors_from_milvus(
@@ -218,11 +222,11 @@ def upsert_source_chunk_vector_to_milvus(
     end_char: int = 0,
     page_number: int = 1,
     content_hash: str = "",
-) -> None:
+) -> bool:
     """Upsert a verbatim source chunk vector into Milvus."""
     client = get_milvus_client()
     if not client:
-        return
+        return False
 
     collection_name = f"arkon_source_chunks_{dimension}"
     try:
@@ -244,8 +248,10 @@ def upsert_source_chunk_vector_to_milvus(
             }
         ]
         client.upsert(collection_name=collection_name, data=data)
+        return True
     except Exception as e:
         logger.debug(f"Milvus upsert_source_chunk_vector error: {e}")
+        return False
 
 
 def delete_source_chunk_vectors_from_milvus(source_id: uuid.UUID, dimension: int) -> None:

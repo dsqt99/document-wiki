@@ -1,11 +1,12 @@
 "use client";
 
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { api, ApiError, apiUrl, clearToken, setToken } from "@/lib/api";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { api, apiUrl, clearToken, setToken } from "@/lib/api";
+import { readToken, SessionMonitor, startSessionMonitor } from "@/lib/session";
 
-/** localStorage keys; the token key must match the one used by lib/api. */
+/** SSO marker is separate from the token managed by lib/session. */
 const STORAGE_PREFIX = "arkon";
-const storageKeys = { ssoFlag: `${STORAGE_PREFIX}_sso`, token: `${STORAGE_PREFIX}_token` } as const;
+const storageKeys = { ssoFlag: `${STORAGE_PREFIX}_sso` } as const;
 
 /** Membership of the signed-in user in one workspace. */
 export interface WorkspaceMembership {
@@ -23,11 +24,13 @@ export interface User {
   permissions: string[];
   department_names: string[];
   department_ids: string[];
+  scope_department_ids?: string[];
   workspace_memberships: WorkspaceMembership[];
 }
 
 interface AuthState {
   loading: boolean;
+  error: string | null;
   user: User | null;
   refresh(): Promise<void>;
   login(email: string, password: string): Promise<void>;
@@ -56,8 +59,6 @@ const clearSsoFlag = (): void => withStorage((store) => store.removeItem(storage
 
 const isSsoSession = (): boolean => withStorage((store) => store.getItem(storageKeys.ssoFlag) === "1", false);
 
-const hasStoredToken = (): boolean => withStorage((store) => Boolean(store.getItem(storageKeys.token)), false);
-
 /** Permission scopes that satisfy a resource/action check. */
 const ACCESS_SCOPES = ["all", "own_dept"] as const;
 
@@ -70,42 +71,48 @@ const AuthContext = createContext<AuthState | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const monitor = useRef<SessionMonitor | null>(null);
+  const departingForSsoLogout = useRef(false);
+  const loginAttempt = useRef(0);
 
-  const loadMe = useCallback(async () => {
-    if (!hasStoredToken()) {
-      setUser(null);
-      setLoading(false);
-      return;
-    }
-    try {
-      const me = await api<User>("/api/auth/me");
-      setUser(me);
-    } catch (err) {
-      if (err instanceof ApiError && (err.status === 401 || err.status === 403)) clearToken();
-      setUser(null);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const loadMe = useCallback(() => monitor.current?.refresh() ?? Promise.resolve(), []);
 
   useEffect(() => {
-    // Deferred so the first (loading) render commits before storage is consulted.
-    const id = setTimeout(() => void loadMe(), 0);
-    return () => clearTimeout(id);
-  }, [loadMe]);
+    const active = startSessionMonitor<User>({
+      fetchUser: () => api<User>("/api/auth/me", { timeoutMs: 12_000 }),
+      onUser: (nextUser) => {
+        // Let the explicit SSO navigation finish before the portal's login guard runs.
+        if (!departingForSsoLogout.current) setUser(nextUser);
+      },
+      onLoading: setLoading,
+      onError: (failure) => setError(failure ? "Không thể kiểm tra phiên đăng nhập. Kiểm tra kết nối và thử lại." : null),
+    });
+    monitor.current = active;
+    return () => {
+      active.stop();
+      if (monitor.current === active) monitor.current = null;
+    };
+  }, []);
 
   const login = useCallback(async (email: string, password: string) => {
+    const attempt = ++loginAttempt.current;
+    const previousToken = readToken();
     const res = await api<{ access_token: string; user: User }>("/api/auth/login", {
       method: "POST",
       body: { email, password },
     });
-    setToken(res.access_token);
+    if (!monitor.current || attempt !== loginAttempt.current || readToken() !== previousToken) return;
+    departingForSsoLogout.current = false;
     clearSsoFlag();
-    setUser(res.user);
+    setToken(res.access_token);
+    if (readToken() === res.access_token) setUser(res.user);
   }, []);
 
   const logout = useCallback(() => {
+    loginAttempt.current++;
     const sso = isSsoSession();
+    departingForSsoLogout.current = sso;
     clearToken();
     clearSsoFlag();
     if (sso) {
@@ -144,8 +151,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const value = useMemo<AuthState>(
-    () => ({ loading, user, refresh: loadMe, login, logout, getWorkspaceRole, canAccess, hasPermission }),
-    [loading, user, loadMe, login, logout, getWorkspaceRole, canAccess, hasPermission],
+    () => ({ loading, error, user, refresh: loadMe, login, logout, getWorkspaceRole, canAccess, hasPermission }),
+    [loading, error, user, loadMe, login, logout, getWorkspaceRole, canAccess, hasPermission],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

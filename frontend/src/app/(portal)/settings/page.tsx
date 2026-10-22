@@ -7,6 +7,7 @@ import { DocumentProcessingSettingsCard } from "@/components/settings/document-p
 import { EmbeddingSettingsCard } from "@/components/settings/embedding-settings-card";
 import { ModelCatalogCard, type ModelSpec } from "@/components/settings/model-catalog-card";
 import { OcrSettingsCard } from "@/components/settings/ocr-settings-card";
+import { RerankSettingsCard } from "@/components/settings/rerank-settings-card";
 import { RolesPermissionsCard } from "@/components/settings/roles-permissions-card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -119,6 +120,7 @@ function SettingsContent() {
           <DocumentProcessingSettingsCard />
           <OcrSettingsCard />
           <EmbeddingSettingsCard />
+          <RerankSettingsCard />
           <ModelCatalogCard
             title="LLM Model"
             description="Used for entity extraction, planning, and wiki compilation."

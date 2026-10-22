@@ -281,11 +281,14 @@ class MCPAuthService:
 
     async def _resolve_scope(self, emp, session=None) -> ResolvedIdentity:
         session = session if session is not None else self.db
+        from app.services.identity_directory import hydrate_identity
+
+        await hydrate_identity(session, emp)
         perms = permission_engine.get_effective_permissions(emp)
         identity = ResolvedIdentity(
             employee_id=emp.id,
             employee_name=emp.name,
-            department_ids=list(getattr(emp, "department_ids", None) or []),
+            department_ids=permission_engine._user_department_ids(emp),
             department_names=_employee_department_names(emp),
             permissions=perms,
             clearance_level=security_label.normalize(getattr(emp, "clearance_level", None)),

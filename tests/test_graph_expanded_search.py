@@ -1,4 +1,5 @@
 import uuid
+from types import SimpleNamespace
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
@@ -198,7 +199,11 @@ async def test_unified_search_integration():
     with patch("app.services.wiki_service.search_pages_hybrid", new_callable=AsyncMock) as mock_wp, \
          patch("app.services.wiki_service.search_source_chunks_hybrid", new_callable=AsyncMock) as mock_src, \
          patch("app.services.retrieval_service.route_exact_legal_query", new_callable=AsyncMock) as mock_route, \
-         patch("app.services.retrieval_service.expand_graph_neighbors", new_callable=AsyncMock) as mock_graph:
+         patch("app.services.retrieval_service.expand_graph_neighbors", new_callable=AsyncMock) as mock_graph, \
+         patch("app.services.wiki_reranker.ConfigService.get", new=AsyncMock(side_effect=lambda key: {
+             "wiki_rerank_enabled": "true", "wiki_rerank_threshold": ".7"}.get(key))), \
+         patch("app.services.wiki_reranker.build_scorer", new=AsyncMock(return_value=SimpleNamespace(
+             score=AsyncMock(return_value=[.9])))):
 
         mock_wp.return_value = [wiki_hit]
         mock_src.return_value = []
@@ -217,6 +222,8 @@ async def test_unified_search_integration():
         assert res["exact_match"]["doc_number"] == "136/2020/NĐ-CP"
         assert len(res["ranked_results"]) == 1
         assert res["ranked_results"][0][0] == "wiki"
+        assert res["ranked_results"][0][2]["rerank_score"] == .9
+        assert res["search"]["threshold"] == .7
         assert len(res["graph_neighbors"]) == 1
         assert res["graph_neighbors"][0]["doc_number"] == "50/2024/NĐ-CP"
 

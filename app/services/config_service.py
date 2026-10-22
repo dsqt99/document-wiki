@@ -17,13 +17,14 @@ ACTIVE_EMBEDDING_MODEL_KEY = "active_embedding_model_spec_id"
 ACTIVE_LLM_MODEL_KEY = "active_llm_model_spec_id"
 ACTIVE_VISION_MODEL_KEY = "active_vision_model_spec_id"
 
-SENSITIVE_KEYS = {"embedding_api_key", "llm_api_key", "vision_api_key", "ocr_api_key"}
+SENSITIVE_KEYS = {"embedding_api_key", "llm_api_key", "vision_api_key", "ocr_api_key", "reranker_api_key"}
 _SENSITIVE_EXACT = SENSITIVE_KEYS | {"smtp_password", "webhook_secret"}
 _SENSITIVE_PREFIXES = (
     "embedding_api_key__",
     "llm_api_key__",
     "vision_api_key__",
     "ocr_api_key__",
+    "rerank_api_key__",
     "custom_model_api_key__",
 )
 _MASKED_PREFIX = "••••"
@@ -66,9 +67,14 @@ DEFAULT_CONFIG_VALUES: dict[str, str] = {
     "excel_parser_engine": "openpyxl",
     "pdf_strip_headers_footers": "true",
     "pdf_enhance_headings": "true",
+    "wiki_rerank_enabled": "true",
+    "wiki_rerank_threshold": "0.3",
 }
 
 ALL_CONFIG_KEYS: list[str] = [
+    "active_reranker_model_spec_id", "wiki_rerank_enabled", "wiki_rerank_threshold",
+    "rerank_api_key__openai", "rerank_api_key__anthropic", "rerank_api_key__google",
+    "reranker_base_url", "reranker_api_key", "reranker_model",
     # Embedding
     ACTIVE_EMBEDDING_MODEL_KEY, "embedding_api_key__google", "embedding_api_key__openai", "embedding_base_url",
     # LLM

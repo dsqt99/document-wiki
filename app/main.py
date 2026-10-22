@@ -1,6 +1,7 @@
 """FastAPI application: REST API under /api, OAuth for MCP clients, and the MCP endpoint at /mcp."""
 
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -14,6 +15,7 @@ from app.routers import (
     admin_embeddings,
     admin_failures,
     admin_models,
+    admin_rerank,
     admin_settings,
     admin_stats,
     audit,
@@ -172,6 +174,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Wiki-Search-Mode", "X-Wiki-Search-Warning"],
 )
 
 
@@ -230,7 +233,7 @@ app.include_router(oauth.wellknown_router)
 app.include_router(oauth.router, prefix="/oauth")
 for _module in (auth, sso, sources, notes, wiki_branches, wiki_drafts, legal_docs, wiki, wiki_images):
     app.include_router(_module.router, prefix="/api")
-for _module in (admin_settings, admin_embeddings, admin_models, admin_custom_models, admin_stats, admin_failures):
+for _module in (admin_settings, admin_embeddings, admin_models, admin_rerank, admin_custom_models, admin_stats, admin_failures):
     app.include_router(_module.router, prefix="/api")
 for _module in (rbac, org_sync, knowledge_types, audit, skills, skill_contributions, prompts, notifications):
     app.include_router(_module.router, prefix="/api")
@@ -278,7 +281,7 @@ async def health():
         logger.warning("Health check: minio error: %s", e)
         services["minio"] = "error"
     status = "healthy" if all(v == "healthy" for v in services.values()) else "degraded"
-    return {"status": status, "services": services}
+    return {"status": status, "services": services, "build_revision": os.getenv("CAHY_BUILD_REVISION", "unknown")}
 
 
 @app.get("/api/health")

@@ -20,10 +20,11 @@ import uuid
 from types import SimpleNamespace
 from typing import Any, Mapping, Optional
 
-from sqlalchemy import and_, case, exists, func, literal, not_, or_, select
+from sqlalchemy import and_, any_, case, exists, func, literal, not_, or_, select
 from sqlalchemy.orm import aliased, contains_eager, selectinload
 
 from app.mcp import permissions_compat
+from app.mcp import knowledge_payloads as payloads
 from app.mcp.logging import current_identity, logged_tool
 from app.services import security_label
 from app.utils.text import clip_text
@@ -194,7 +195,8 @@ def _scope_view(identity) -> SimpleNamespace:
 def _page_filter(identity):
     from app.services import mcp_auth_service
 
-    return mcp_auth_service.page_source_clause(_scope_view(identity))
+    view = _scope_view(identity)
+    return and_(mcp_auth_service.page_source_clause(view), payloads.personal_page_clause(view))
 
 
 def _strip_accents(text: str) -> str:
@@ -338,7 +340,7 @@ async def _allowed_with_session(identity, session) -> Optional[set[str]]:
         if not has_others:
             return None
 
-    query = mcp_auth_service.apply_scope_filter(select(Source.id).where(Source.status == "ready"), view)
+    query = mcp_auth_service.apply_scope_filter(select(Source.id), view)
     res = await session.execute(query)
     return {str(v) for v in res.scalars().all()}
 
@@ -443,7 +445,10 @@ def _format_wiki_hit(idx: int, hit: dict) -> list[str]:
     summary = _summary_of(page, hit)
     if summary:
         lines.append(f"   {summary}")
-    lines.append(f"   → `read_wiki_page(slug=\"{slug}\")`")
+    pid = getattr(page,"id",None)
+    origin = getattr(page,"origin_tag",None) or "unclassified"
+    lines.append(f"   Tag: {origin} · ID: {pid} · scope: {getattr(page,'scope_type',None) or 'global'}:{getattr(page,'scope_id',None)}")
+    lines.append(f"   → `read_wiki_page(page_id=\"{pid}\")` · {payloads.page_url(page)}")
     return lines
 
 
@@ -453,6 +458,8 @@ def _format_source_hit(idx: int, hit: dict) -> list[str]:
     sid = str(getattr(src, "id", "?"))
     title = getattr(src, "title", None) or getattr(src, "file_name", None) or sid
     page_no = getattr(chunk, "page_number", None)
+    page_end = getattr(chunk, "page_end", None) or page_no
+    page_range = f"{page_no}-{page_end}" if page_end and page_no and page_end != page_no else str(page_no)
     text = re.sub(r"\s+", " ", str(getattr(chunk, "text", "") or "")).strip()
     preview = text[:200] + ("…" if len(text) > 200 else "")
     page_txt = f"trang {page_no}" if page_no else "không rõ trang"
@@ -460,7 +467,7 @@ def _format_source_hit(idx: int, hit: dict) -> list[str]:
     if preview:
         lines.append(f"   > {preview}")
     if page_no:
-        lines.append(f"   → `get_source_pages(source_id=\"{sid}\", pages=\"{page_no}\")`")
+        lines.append(f"   → `get_source_pages(source_id=\"{sid}\", pages=\"{page_range}\")`")
     else:
         lines.append(f"   → `get_source_outline(source_id=\"{sid}\")`")
     base = _portal_url()
@@ -770,7 +777,7 @@ def register_tools(mcp) -> None:  # noqa: C901 - one registry for all tools
         ),
     )
     @logged_tool("search_wiki", query_arg="query")
-    async def search_wiki(query: str, top_k: int = 10) -> str:
+    async def search_wiki(query: str, top_k: int = 10) -> Any:
         identity, err = await _this()._get_identity()
         if err:
             return err
@@ -782,8 +789,14 @@ def register_tools(mcp) -> None:  # noqa: C901 - one registry for all tools
         view = _scope_view(identity)
         async with _db().async_session_factory() as session:
             allowed = await _this()._get_allowed_source_ids(identity, session)
-            embedder = await ProviderRegistry(session).get_embedding(task="search_query")
-            embedding = await embedder.embed(query)
+            try:
+                embedder = await ProviderRegistry(session).get_embedding(task="search_query")
+                embedding = await embedder.embed(query)
+                if not embedding:
+                    raise ValueError("Empty query embedding")
+            except Exception as exc:
+                logger.warning("MCP query embedding unavailable: %s", type(exc).__name__)
+                embedding = None
             result = await retrieval_service.unified_search(
                 session,
                 query,
@@ -798,6 +811,7 @@ def register_tools(mcp) -> None:  # noqa: C901 - one registry for all tools
                 check_out_of_scope=not is_admin,
                 clearance=view.clearance_level,
                 page_filter=_page_filter(identity),
+                personal_owner_id=view.employee_id,
             )
             exact = result.get("exact_match")
             ranked = list(result.get("ranked_results") or [])
@@ -808,19 +822,27 @@ def register_tools(mcp) -> None:  # noqa: C901 - one registry for all tools
                 if (t[1] if isinstance(t, (list, tuple)) and len(t) > 1 else 1.0) >= MIN_SIM_FLOOR
             ]
             hint = await _out_of_scope_hint(session, oos_pages) if oos_pages else ""
+            structured_hits,citations = await payloads.search_metadata(session,view,ranked)
+            exact_meta = None
+            if exact and exact.get("wiki_page_id"):
+                exact_pages = await payloads.find_pages(session,view,page_id=_as_uuid(exact["wiki_page_id"]))
+                if exact_pages:
+                    exact_meta = (await payloads.page_metadata_batch(session,view,exact_pages[:1]))[0]
+                    citations.insert(0,payloads.page_citation(exact_meta,exact.get("content") or ""))
 
         if "wiki" in failed and "source" in failed and not exact:
-            return (
+            return payloads.knowledge_result(
                 "Tìm kiếm thất bại: cả trang wiki và văn bản gốc đều bị lỗi. "
-                "Thử lại sau hoặc báo quản trị viên."
+                "Thử lại sau hoặc báo quản trị viên.", status='error', query=query,
+                results=[], failed_arms=failed, search=result.get('search') or {},
             )
 
         parts: list[str] = []
         shown_failed = [_ARM_LABELS[a] for a in failed if a in _ARM_LABELS]
         if shown_failed:
             parts.append(f"> ⚠ Một phần tìm kiếm bị lỗi ({', '.join(shown_failed)}); kết quả có thể chưa đầy đủ.")
-        if result.get("rerank_mode") == "local":
-            parts.append("> ℹ Đang dùng xếp hạng cục bộ (reranker từ xa không khả dụng).")
+        if (result.get("search") or {}).get("warning"):
+            parts.append("> ⚠ " + result["search"]["warning"])
 
         if exact:
             block = ["## KẾT QUẢ TRA CỨU CHÍNH XÁC THEO SỐ HIỆU VĂN BẢN"]
@@ -844,7 +866,10 @@ def register_tools(mcp) -> None:  # noqa: C901 - one registry for all tools
                 parts.append(msg + (("\n" + hint) if hint else ""))
             elif hint:
                 parts.append(hint)
-            return "\n\n".join(parts)
+            return payloads.knowledge_result("\n\n".join(parts), query=query, results=structured_hits,
+                exact_match={**exact,"page":exact_meta} if exact else None, sources=citations,
+                failed_arms=failed, total_candidates=result.get("total_candidates") or 0,
+                search=result.get("search") or {})
 
         lines = [f'**KB search — {len(ranked)} result(s) for: "{query}"**']
         lines.append(f"_Phạm vi: {security_label.describe(view.clearance_level)}"
@@ -866,7 +891,10 @@ def register_tools(mcp) -> None:  # noqa: C901 - one registry for all tools
         if hint:
             lines.append(hint)
         parts.append("\n".join(lines))
-        return "\n\n".join(parts)
+        return payloads.knowledge_result("\n\n".join(parts), query=query, results=structured_hits,
+                exact_match={**exact,"page":exact_meta} if exact else None, sources=citations,
+                failed_arms=failed, total_candidates=result.get("total_candidates") or 0,
+                search=result.get("search") or {})
 
     # -- read_wiki_index -----------------------------------------------------
 
@@ -888,6 +916,7 @@ def register_tools(mcp) -> None:  # noqa: C901 - one registry for all tools
                 all_scopes=_bool_attr(identity, "is_admin"),
                 clearance=_clearance(identity),
                 page_filter=_page_filter(identity),
+                personal_owner_id=_scope_view(identity).employee_id,
             )
 
     # -- read_wiki_page ------------------------------------------------------
@@ -896,96 +925,82 @@ def register_tools(mcp) -> None:  # noqa: C901 - one registry for all tools
         mcp,
         requires=ANY,
         name="read_wiki_page",
-        description="Read a wiki page by slug, with its outlinks and backlinks. Cite the slug in answers.",
+        description="Read Wiki content, AI summary and source metadata. Content is bounded; use offset/max_chars and returned next_offset to continue. Prefer page_id from search; otherwise supply slug and scope_type/scope_id. Ambiguous slugs return accessible choices.",
     )
     @logged_tool("read_wiki_page", query_arg="slug")
-    async def read_wiki_page(slug: str) -> str:
+    async def read_wiki_page(
+        slug: Optional[str] = None, page_id: Optional[str] = None,
+        scope_type: Optional[str] = None, scope_id: Optional[str] = None,
+        offset: int = 0, max_chars: int = payloads.READ_DEFAULT_CHARS,
+    ) -> Any:
         identity, err = await _this()._get_identity()
         if err:
             return err
         from app.database.models import LegalUnit, WikiPage
 
-        wiki = _wiki()
         view = _scope_view(identity)
-        clearance = view.clearance_level
-        pf = _page_filter(identity)
-        slug = (slug or "").strip()
+        pid = _as_uuid(page_id) if page_id else None
+        sid = _as_uuid(scope_id) if scope_id else None
+        slug = (slug or "").strip() or None
+        if page_id and pid is None:
+            return "Error: page_id must be a valid UUID."
+        if not slug and pid is None:
+            return "Error: supply page_id or slug."
+        if scope_type not in (None, "global", "department", "personal", "project"):
+            return "Error: invalid scope_type."
+        if scope_id and (sid is None or not scope_type or scope_type == "global"):
+            return "Error: scope_id requires a non-global scope_type and a valid UUID."
+        if scope_type == "personal" and sid is None:
+            sid = view.employee_id
+        if scope_type in ("department", "personal", "project") and sid is None:
+            return "Error: scope_id is required for this scope."
         async with _db().async_session_factory() as session:
-            page = None
-            if view.is_admin:
-                page = await wiki.get_page_by_slug_any_scope(session, slug, clearance=clearance, page_filter=pf)
-            else:
-                page = await wiki.get_page_by_slug(
-                    session, slug, allowed_kt_slugs=view.allowed_knowledge_types,
-                    scope_type="global", scope_id=None, clearance=clearance, page_filter=pf,
-                )
-                for dept_id in view.department_ids:
-                    if page is not None:
-                        break
-                    page = await wiki.get_page_by_slug(
-                        session, slug, allowed_kt_slugs=view.allowed_knowledge_types,
-                        scope_type="department", scope_id=dept_id, clearance=clearance, page_filter=pf,
-                    )
-
-            if page is None:
-                if not view.is_admin:
-                    q = select(WikiPage.scope_id).where(
-                        WikiPage.slug == slug, WikiPage.scope_type == "department", WikiPage.scope_id.isnot(None)
-                    )
-                    if view.department_ids:
-                        q = q.where(WikiPage.scope_id.notin_(view.department_ids))
-                    res = await session.execute(q)
-                    other = [r for r in res.scalars().all() if r is not None]
-                    if other:
-                        names = await _department_names(session, other)
-                        label = ", ".join(sorted({names.get(o, str(o)) for o in other}))
-                        return (
-                            f"Wiki page `{slug}` exists in department **{label}** but you don't have access. "
-                            "Contact the scope's admin to request access."
-                        )
-                return f"Wiki page not found or out of scope: `{slug}`"
-
-            parts: list[str] = []
-            try:
-                res = await session.execute(
-                    select(LegalUnit)
-                    .where(LegalUnit.wiki_page_id == page.id)
-                    .order_by(case((LegalUnit.unit_type == "article", 0), else_=1))
-                    .limit(1)
-                )
-                unit = res.scalars().first()
-            except Exception:
-                unit = None
+            matches = await payloads.find_pages(session, view, slug=slug, page_id=pid,
+                                               scope_type=scope_type, scope_id=sid)
+            if not matches:
+                return "Wiki page not found or out of scope."
+            if len(matches) > 1:
+                choices = [{k: payloads.page_metadata(p, [])[k] for k in
+                            ("id", "slug", "title", "origin_tag", "scope_type", "scope_id", "url")} for p in matches[:50]]
+                text = "Multiple accessible pages match this slug. Re-call read_wiki_page(page_id=...) or specify scope_type and scope_id.\n\n"
+                text += "\n".join(f"- `{c['id']}` · {c['scope_type']}:{c['scope_id']} · {c['title']}" for c in choices)
+                return payloads.knowledge_result(text, status="ambiguous", choices=choices, has_more=len(matches)>50)
+            page = matches[0]
+            meta = (await payloads.page_metadata_batch(session, view, [page], full_summary=True))[0]
+            parts = [f"# {meta['title']}", payloads.metadata_markdown({k:v for k,v in meta.items() if k != "summary"})]
+            if meta["summary"]:
+                parts.append("## Tóm tắt\n" + meta["summary"])
+            unit = (await session.execute(select(LegalUnit).where(LegalUnit.wiki_page_id == page.id)
+                    .order_by(case((LegalUnit.unit_type == "article", 0), else_=1)).limit(1))).scalars().first()
             if unit is not None:
                 callout = await _validity_callout(session, unit.id)
                 if callout:
                     parts.append(callout)
-
-            parts.append(page.content_md or "")
-            try:
-                outs = await wiki.get_outlinks(
-                    session, page.slug, scope_type=page.scope_type or "global", scope_id=page.scope_id
-                )
-            except Exception:
-                outs = []
-            try:
-                backs = await wiki.get_backlinks(session, page.slug, scope_type=page.scope_type, scope_id=page.scope_id)
-            except Exception:
-                backs = []
-
-        def _slugs(items) -> list[str]:
-            vals = []
-            for it in items or []:
-                s = it if isinstance(it, str) else getattr(it, "slug", None) or getattr(it, "to_slug", None)
-                if s:
-                    vals.append(str(s))
-            return sorted(set(vals))
-
-        out_slugs = [s for s in _slugs(outs) if s != page.slug]
-        back_slugs = _slugs(backs)
-        parts.append("## Outlinks\n" + ("\n".join(f"- [[{s}]]" for s in out_slugs) if out_slugs else "_(none)_"))
-        parts.append("## Backlinks\n" + ("\n".join(f"- [[{s}]]" for s in back_slugs) if back_slugs else "_(none)_"))
-        return "\n\n".join(parts)
+            window = payloads.text_window(page.content_md, offset=offset, max_chars=max_chars)
+            parts.append("## Nội dung\n" + window['content'])
+            if window['has_more']:
+                parts.append(f'_Nội dung chưa đầy đủ. Tiếp tục: read_wiki_page(page_id="{page.id}", offset={window["next_offset"]}, max_chars={window["max_chars"]})._')
+            wiki = _wiki()
+            outs = await wiki.get_outlinks(session, page.slug, scope_type=page.scope_type or "global", scope_id=page.scope_id)
+            backs = await wiki.get_backlinks(session, page.slug, scope_type=page.scope_type or "global", scope_id=page.scope_id)
+            def slugs(items):
+                return {it if isinstance(it,str) else getattr(it,"slug",None) or getattr(it,"to_slug",None) for it in items or []} - {None, page.slug}
+            out_slugs, back_slugs = slugs(outs), slugs(backs)
+            linked = out_slugs | back_slugs
+            if linked:
+                readable = (await session.execute(payloads.readable_pages(view).where(
+                    WikiPage.slug.in_(linked), WikiPage.scope_type == page.scope_type,
+                    WikiPage.scope_id == page.scope_id if page.scope_id else WikiPage.scope_id.is_(None)
+                ))).scalars().all()
+                allowed_links = {p.slug for p in readable}
+                out_slugs &= allowed_links; back_slugs &= allowed_links
+            out_slugs, back_slugs = sorted(out_slugs), sorted(back_slugs)
+            parts.append("## Outlinks\n" + ("\n".join(f"- [[{x}]]" for x in out_slugs) or "_(none)_"))
+            parts.append("## Backlinks\n" + ("\n".join(f"- [[{x}]]" for x in back_slugs) or "_(none)_"))
+        return payloads.knowledge_result("\n\n".join(parts), page=meta, content_md=window['content'],
+            content_truncated=window['truncated'], pagination={k:v for k,v in window.items() if k not in ('content','truncated')},
+            **{key:window[key] for key in ('content_offset','content_length','total_chars','content_version','content_empty')},
+            outlinks=out_slugs, backlinks=back_slugs, sources=[payloads.page_citation(meta,window['content'])])
 
     # -- get_document_relations ---------------------------------------------
 
@@ -1113,90 +1128,81 @@ def register_tools(mcp) -> None:  # noqa: C901 - one registry for all tools
         mcp,
         requires=ANY,
         name="list_wiki_pages",
-        description="Browse wiki pages with optional filters (page_type, knowledge_type, text query) and paging.",
+        description="Browse accessible pages with metadata and IDs. Filter by page_type, knowledge_type, origin_tag (extracted/generated), source_id, query; limit/offset paginate.",
     )
     @logged_tool("list_wiki_pages", query_arg="query")
     async def list_wiki_pages(
-        page_type: Optional[str] = None,
-        knowledge_type: Optional[str] = None,
-        query: Optional[str] = None,
-        limit: int = 50,
-        offset: int = 0,
-    ) -> str:
+        page_type: Optional[str] = None, knowledge_type: Optional[str] = None,
+        query: Optional[str] = None, limit: int = 50, offset: int = 0,
+        origin_tag: Optional[str] = None, source_id: Optional[str] = None,
+    ) -> Any:
         identity, err = await _this()._get_identity()
         if err:
             return err
+        if origin_tag not in (None, "extracted", "generated"):
+            return "Error: origin_tag must be extracted or generated."
+        source_uuid = _as_uuid(source_id) if source_id else None
+        if source_id and source_uuid is None:
+            return "Error: source_id must be a valid UUID."
         limit = _clamp(limit, 1, 50, 50)
         offset = max(0, _clamp(offset, 0, 10**9, 0))
         view = _scope_view(identity)
         async with _db().async_session_factory() as session:
-            pages = await _wiki().list_pages(
-                session,
-                page_type=page_type,
-                knowledge_type_slug=knowledge_type,
-                allowed_kt_slugs=view.allowed_knowledge_types,
-                query=query,
-                limit=limit + 1,
-                offset=offset,
-                department_ids=view.department_ids,
-                all_scopes=view.is_admin,
-                clearance=view.clearance_level,
-                page_filter=_page_filter(identity),
-            )
-        pages = list(pages or [])
-        if not pages:
-            return "No wiki pages match the filters."
-        more = len(pages) > limit
-        pages = pages[:limit]
-        lines = [f"**Wiki pages — {len(pages)} result(s)**", ""]
-        for p in pages:
-            title = getattr(p, "title", None) or p.slug
-            ptype = getattr(p, "page_type", None) or "concept"
-            line = f"- `{p.slug}` — {title} ({ptype})"
-            summary = (getattr(p, "summary", None) or "").strip()
-            if summary:
-                line += f": {summary[:200]}"
-            lines.append(line)
+            pages = list(await _wiki().list_pages(
+                session, page_type=page_type, knowledge_type_slug=knowledge_type,
+                allowed_kt_slugs=view.allowed_knowledge_types, query=query, limit=limit+1, offset=offset,
+                department_ids=view.department_ids, all_scopes=view.is_admin, clearance=view.clearance_level,
+                page_filter=and_(_page_filter(identity),payloads.personal_page_clause(view)),
+                personal_owner_id=view.employee_id, origin_tag=origin_tag, source_id=source_uuid,
+            ))
+            more = len(pages) > limit
+            meta = await payloads.page_metadata_batch(session,view,pages[:limit])
+        lines = [f"**Wiki pages — {len(meta)} result(s)**", ""]
+        for page in meta:
+            lines.append(f"- `{page['slug']}` — {page['title']} ({page['page_type']}; {page['origin_tag'] or 'unclassified'}; "
+                         f"ID {page['id']}; scope {page['scope_type']}:{page['scope_id']}): {page['summary']}")
+            lines.append(f"  → read_wiki_page(page_id=\"{page['id']}\") · {page['url']}")
         if more:
-            lines.append("")
-            lines.append(f"_Còn trang sau: gọi lại với offset={offset + limit}._")
-        return "\n".join(lines)
+            lines.append(f"_Còn trang sau: gọi lại với offset={offset+limit}._")
+        if not meta:
+            lines.append("No wiki pages match the filters.")
+        return payloads.knowledge_result("\n".join(lines), pages=meta,
+            pagination={"offset":offset,"limit":limit,"has_more":more,"next_offset":offset+limit if more else None},
+            sources=[payloads.page_citation(p,p['summary']) for p in meta])
 
     # -- get_source ----------------------------------------------------------
 
-    @kb_tool(mcp, requires=ANY, name="get_source", description="Show metadata of an original document by source ID.")
-    async def get_source(source_id: str) -> str:
+    @kb_tool(mcp, requires=ANY, name="get_source", description="Read document attributes, scope, management department, processing status and linked Wiki page IDs. Linked pages support wiki_offset/wiki_limit paging.")
+    async def get_source(source_id: str, wiki_offset: int = 0, wiki_limit: int = 50) -> Any:
         identity, err = await _this()._get_identity()
         if err:
             return err
-        from app.database.models import Employee, KnowledgeType
+        from app.database.models import WikiPage
 
+        view = _scope_view(identity)
+        wiki_offset = max(0, _clamp(wiki_offset, 0, 10**9, 0))
+        wiki_limit = _clamp(wiki_limit, 1, 100, 50)
         async with _db().async_session_factory() as session:
             src, err = await _load_scoped_source(session, identity, source_id)
             if err:
                 return err
-            kt_name = None
-            if src.knowledge_type_id:
-                kt = await session.get(KnowledgeType, src.knowledge_type_id)
-                kt_name = getattr(kt, "name", None)
-            contributor = None
-            if src.contributed_by_employee_id:
-                emp = await session.get(Employee, src.contributed_by_employee_id)
-                contributor = getattr(emp, "name", None)
-        pages = len(src.page_offsets) if isinstance(src.page_offsets, list) and src.page_offsets else None
-        lines = [
-            f"# {src.title or src.file_name or src.id}",
-            f"- **ID:** {src.id}",
-            f"- **Type:** {src.source_type or ''}",
-            f"- **Knowledge type:** {kt_name or 'Uncategorized'}",
-            f"- **Status:** {src.status or ''}",
-            f"- **Pages:** {pages if pages else '(single block)'}",
-            f"- **Contributed by:** {contributor or '(admin upload)'}",
-            f"- **File:** {src.file_name or ''}",
-            f"- **URL:** {src.url or ''}",
-            f"- **Added:** {src.created_at.isoformat() if getattr(src, 'created_at', None) else ''}",
-        ]
-        return "\n".join(lines)
+            loaded = await payloads.load_sources(session, view, [src.id])
+            if not loaded:
+                return ACCESS_DENIED_SOURCE
+            meta = payloads.source_metadata(loaded[0])
+            pages = list((await session.execute(payloads.readable_pages(view).where(
+                src.id == any_(WikiPage.source_ids)).order_by(WikiPage.created_at,WikiPage.id)
+                .offset(wiki_offset).limit(wiki_limit+1))).scalars().all())
+            more = len(pages) > wiki_limit
+            refs = [payloads.page_metadata(p,[],full_summary=False) for p in pages[:wiki_limit]]
+        lines = [f"# {meta['title']}", payloads.metadata_markdown(meta), "## Trang Wiki liên quan"]
+        lines.extend(f"- {p['title']} · {p['origin_tag'] or 'unclassified'} · ID `{p['id']}` · {p['url']}" for p in refs)
+        if more:
+            lines.append(f"Còn trang sau: get_source(source_id=\"{source_id}\", wiki_offset={wiki_offset+wiki_limit}).")
+        return payloads.knowledge_result("\n\n".join(lines), source=meta, wiki_pages=refs,
+            pagination={"offset":wiki_offset,"limit":wiki_limit,"has_more":more,
+                        "next_offset":wiki_offset+wiki_limit if more else None},
+            sources=[payloads.source_citation(meta)])
 
     # -- get_source_outline --------------------------------------------------
 
@@ -1204,7 +1210,7 @@ def register_tools(mcp) -> None:  # noqa: C901 - one registry for all tools
         mcp, requires=ANY, name="get_source_outline",
         description="Show the heading outline (with page numbers) of an original document.",
     )
-    async def get_source_outline(source_id: str) -> str:
+    async def get_source_outline(source_id: str) -> Any:
         identity, err = await _this()._get_identity()
         if err:
             return err
@@ -1214,42 +1220,55 @@ def register_tools(mcp) -> None:  # noqa: C901 - one registry for all tools
             src, err = await _load_scoped_source(session, identity, source_id)
             if err:
                 return err
+            loaded = await payloads.load_sources(session,_scope_view(identity),[src.id])
+            if not loaded:
+                return ACCESS_DENIED_SOURCE
+            src = loaded[0]
+            meta = payloads.source_metadata(src)
         nodes = src.outline_json if isinstance(src.outline_json, list) else []
         flat = flatten_outline_with_depth(nodes)
         if not flat:
-            return "_(no outline — this document has no detectable headings)_"
+            return payloads.knowledge_result("_(no outline — this document has no detectable headings)_",source=meta,outline=[],sources=[payloads.source_citation(meta)])
         lines = ["# Outline", ""]
         for e in flat:
             page = f" (page {e['page']})" if e.get("page") else ""
             lines.append(f"{'  ' * int(e.get('_depth') or 0)}- {e.get('title') or ''}{page}")
-        return "\n".join(lines)
+        return payloads.knowledge_result("\n".join(lines),source=meta,outline=flat,sources=[payloads.source_citation(meta)])
 
     # -- get_source_pages ----------------------------------------------------
 
     @kb_tool(
         mcp, requires=ANY, name="get_source_pages",
-        description="Read the verbatim text of specific pages of an original document, e.g. pages='5-7' or '3,8'.",
+        description="Read bounded verbatim text of original pages, e.g. pages='5-7' or '3,8'. Replay pages with returned offset/char_offset to continue; max_chars <= 50000 and limit <= 20 pages.",
     )
-    async def get_source_pages(source_id: str, pages: str) -> str:
+    async def get_source_pages(source_id: str, pages: str, offset: int = 0, char_offset: int = 0,
+                               max_chars: int = payloads.READ_DEFAULT_CHARS, limit: int = payloads.READ_MAX_PAGES) -> Any:
         identity, err = await _this()._get_identity()
         if err:
             return err
-        from app.services.source_outline import parse_page_range, slice_pages_by_range
-
-        requested = parse_page_range(pages)
         async with _db().async_session_factory() as session:
             src, err = await _load_scoped_source(session, identity, source_id)
             if err:
                 return err
-        if not requested:
+            loaded = await payloads.load_sources(session,_scope_view(identity),[src.id])
+            if not loaded:
+                return ACCESS_DENIED_SOURCE
+            src = loaded[0]
+            meta = payloads.source_metadata(src)
+        offsets = src.page_offsets or ([0] if src.full_text else [])
+        window = payloads.source_page_window(src.full_text, offsets, pages, offset=offset,
+                    char_offset=char_offset, max_chars=max_chars, limit=limit)
+        if not window['valid_range']:
             return f"Invalid page range: '{pages}'. Use formats like '5-7', '3,8', '12'."
-        offsets = src.page_offsets if isinstance(src.page_offsets, list) else None
-        if not src.full_text or not offsets:
-            return "_(no extractable text or page offsets for this source)_"
-        sliced = [s for s in slice_pages_by_range(src.full_text, offsets, requested) if (s.get("content") or "").strip()]
-        if not sliced:
-            return f"No content for pages: {requested}"
-        return "\n\n".join(f"--- page {s['page']} ---\n{s['content']}" for s in sliced)
+        sliced = window['pages']
+        body = "\n\n".join(f"--- page {s['page']} ---\n{s['content']}" for s in sliced)
+        text = f"# {meta['title']}\nSource ID: {source_id} · scope: {meta['scope_type']}:{meta['scope_id']}\n\n" + (body or f"No content for pages: {pages}")
+        if window['pagination']['has_more']:
+            more = window['pagination']
+            text += f'\n\n_Content truncated. Continue get_source_pages(source_id="{src.id}", pages="{pages}", offset={more["next_offset"]}, char_offset={more["next_char_offset"]}, max_chars={more["max_chars"]}, limit={more["limit"]})._'
+        return payloads.knowledge_result(text,source=meta,pages=sliced,
+            content_truncated=window['truncated'], pagination=window['pagination'],
+            sources=[payloads.source_citation(meta,p["content"],p["page"]) for p in sliced])
 
     # -- search_source_content -----------------------------------------------
 
@@ -1258,7 +1277,7 @@ def register_tools(mcp) -> None:  # noqa: C901 - one registry for all tools
         description="Keyword search inside the full text of original documents (accent-insensitive).",
     )
     @logged_tool("search_source_content", query_arg="query")
-    async def search_source_content(query: str, limit: int = 10, offset: int = 0) -> str:
+    async def search_source_content(query: str, limit: int = 10, offset: int = 0) -> Any:
         identity, err = await _this()._get_identity()
         if err:
             return err
@@ -1277,7 +1296,9 @@ def register_tools(mcp) -> None:  # noqa: C901 - one registry for all tools
 
         def base():
             return mcp_auth_service.apply_scope_filter(
-                select(Source).where(Source.status == "ready", Source.full_text.isnot(None)), view
+                # Raw text remains usable after either downstream branch fails.
+                select(Source).where(Source.full_text.isnot(None),
+                    func.length(func.btrim(Source.full_text, " \t\r\n")) > 0), view
             )
 
         tiers = []
@@ -1300,6 +1321,8 @@ def register_tools(mcp) -> None:  # noqa: C901 - one registry for all tools
                         base().where(cond).order_by(Source.created_at.desc()).offset(offset).limit(limit)
                     )
                     rows = list(res.scalars().all())
+                    loaded = await payloads.load_sources(session,view,[src.id for src in rows])
+                    metadata = {str(src.id):payloads.source_metadata(src) for src in loaded}
                 except Exception as e:
                     logger.debug("search_source_content tier failed: %s", e)
                     try:
@@ -1311,14 +1334,16 @@ def register_tools(mcp) -> None:  # noqa: C901 - one registry for all tools
                     break
 
         if not rows:
-            return f'No document content matches found for: "{query}"'
+            return payloads.knowledge_result(f'No document content matches found for: "{query}"',results=[],sources=[])
         hl_terms = terms or [query.strip()]
         lines = [f'**Document content — {len(rows)} result(s) for: "{query}"**', ""]
         for src in rows:
             lines.append(f"### {src.title or src.file_name or src.id} (ID: {src.id})")
             lines.extend(_matching_lines(src.full_text or "", src.page_offsets, hl_terms) or ["- _(khớp trong văn bản)_"])
             lines.append("")
-        return "\n".join(lines).rstrip()
+        hits = [{"source":metadata[str(src.id)],"matches":_matching_lines(src.full_text or "",src.page_offsets,hl_terms)} for src in rows if str(src.id) in metadata]
+        return payloads.knowledge_result("\n".join(lines),results=hits,offset=offset,limit=limit,
+            sources=[payloads.source_citation(hit["source"],"\n".join(hit["matches"])) for hit in hits])
 
     # -- list_sources --------------------------------------------------------
 
@@ -1330,7 +1355,7 @@ def register_tools(mcp) -> None:  # noqa: C901 - one registry for all tools
         query: Optional[str] = None,
         limit: int = 20,
         offset: int = 0,
-    ) -> str:
+    ) -> Any:
         identity, err = await _this()._get_identity()
         if err:
             return err
@@ -1348,16 +1373,20 @@ def register_tools(mcp) -> None:  # noqa: C901 - one registry for all tools
             like = f"%{query}%"
             q = q.where(or_(Source.title.ilike(like), Source.file_name.ilike(like), Source.url.ilike(like)))
         q = mcp_auth_service.apply_scope_filter(q, _scope_view(identity))
-        q = q.order_by(Source.created_at.desc()).offset(offset).limit(limit)
+        q = q.order_by(Source.created_at.desc()).offset(offset).limit(limit+1)
         async with _db().async_session_factory() as session:
-            rows = list((await session.execute(q)).all())
+            rows = list((await session.execute(q.options(*payloads.source_options()))).all())
+            more = len(rows)>limit
+            rows = rows[:limit]
+            metadata = [payloads.source_metadata(src) for src,_ in rows]
         if not rows:
             msg = "No documents found"
             if knowledge_type:
                 msg += f" of type '{knowledge_type}'"
             if query:
                 msg += f" matching '{query}'"
-            return msg + "."
+            return payloads.knowledge_result(msg + ".", documents=[], sources=[],
+                pagination={"offset":offset,"limit":limit,"has_more":False,"next_offset":None})
         groups: dict[str, list] = {}
         for src, kt_name in rows:
             groups.setdefault(kt_name or "Uncategorized", []).append(src)
@@ -1366,21 +1395,30 @@ def register_tools(mcp) -> None:  # noqa: C901 - one registry for all tools
             lines.append("")
             lines.append(f"### {name}")
             for src in groups[name]:
-                lines.append(f"- {src.title or src.file_name or src.id} (ID: `{src.id}`, status: {src.status})")
-        return "\n".join(lines)
+                meta = next(m for m in metadata if m["id"] == str(src.id))
+                doc = meta["doc_meta"]
+                lines.append(f"- {meta['title']} (ID: `{src.id}`, status: {src.status}; scope: {meta['scope_type']}; quản lý: {meta['managing_department_name'] or '—'})")
+                lines.append(f"  Số hiệu: {doc.get('doc_number') or '—'} · Cơ quan: {doc.get('issuing_authority') or '—'} · {meta['url']}")
+        if more:
+            lines.append(f"_Còn trang sau: gọi lại với offset={offset+limit}._")
+        return payloads.knowledge_result("\n".join(lines), documents=metadata,
+            pagination={"offset":offset,"limit":limit,"has_more":more,"next_offset":offset+limit if more else None},
+            sources=[payloads.source_citation(m) for m in metadata])
 
     # -- list_knowledge_types ------------------------------------------------
 
     @kb_tool(mcp, requires=ANY, name="list_knowledge_types", description="List knowledge types (document categories) you can access.")
-    async def list_knowledge_types() -> str:
+    async def list_knowledge_types() -> Any:
         identity, err = await _this()._get_identity()
         if err:
             return err
         from app.database.models import KnowledgeType, Source
 
+        from app.services import mcp_auth_service
+        visible_sources = mcp_auth_service.apply_scope_filter(select(Source.id),_scope_view(identity))
         q = (
             select(KnowledgeType, func.count(Source.id))
-            .outerjoin(Source, and_(Source.knowledge_type_id == KnowledgeType.id, Source.status == "ready"))
+            .outerjoin(Source, and_(Source.knowledge_type_id == KnowledgeType.id, Source.status == "ready", Source.id.in_(visible_sources)))
             .group_by(KnowledgeType.id)
             .order_by(KnowledgeType.sort_order, KnowledgeType.name)
         )
@@ -1399,12 +1437,13 @@ def register_tools(mcp) -> None:  # noqa: C901 - one registry for all tools
             lines.append(f"- `{kt.slug}` — {kt.name} ({count} document(s)){desc}")
         lines.append("")
         lines.append("_Dùng `get_knowledge_type_docs(knowledge_type_slug=...)` để xem văn bản theo loại._")
-        return "\n".join(lines)
+        return payloads.knowledge_result("\n".join(lines),knowledge_types=[
+            {"id":str(kt.id),"slug":kt.slug,"name":kt.name,"description":kt.description,"document_count":int(count)} for kt,count in rows],sources=[])
 
     # -- get_knowledge_type_docs ---------------------------------------------
 
     @kb_tool(mcp, requires=ANY, name="get_knowledge_type_docs", description="List the ready documents of one knowledge type.")
-    async def get_knowledge_type_docs(knowledge_type_slug: str, limit: int = 10) -> str:
+    async def get_knowledge_type_docs(knowledge_type_slug: str, limit: int = 10, offset: int = 0) -> Any:
         identity, err = await _this()._get_identity()
         if err:
             return err
@@ -1412,6 +1451,7 @@ def register_tools(mcp) -> None:  # noqa: C901 - one registry for all tools
         from app.services import mcp_auth_service
 
         limit = _clamp(limit, 1, 100, 10)
+        offset = max(0,_clamp(offset,0,10**9,0))
         view = _scope_view(identity)
         slug = (knowledge_type_slug or "").strip()
         if view.allowed_knowledge_types is not None and slug not in view.allowed_knowledge_types:
@@ -1425,14 +1465,22 @@ def register_tools(mcp) -> None:  # noqa: C901 - one registry for all tools
                 return f"Knowledge type '{slug}' not found."
             q = mcp_auth_service.apply_scope_filter(
                 select(Source).where(Source.knowledge_type_id == kt.id, Source.status == "ready"), view
-            ).order_by(Source.created_at.desc()).limit(limit)
-            docs = list((await session.execute(q)).scalars().all())
+            ).order_by(Source.created_at.desc()).offset(offset).limit(limit+1)
+            docs = list((await session.execute(q.options(*payloads.source_options()))).scalars().all())
+            more = len(docs)>limit
+            docs = docs[:limit]
+            metadata = [payloads.source_metadata(src) for src in docs]
         if not docs:
-            return f"No documents found for knowledge type: **{kt.name}**"
+            return payloads.knowledge_result(f"No documents found for knowledge type: **{kt.name}**",documents=[],sources=[],
+                pagination={"offset":offset,"limit":limit,"has_more":False,"next_offset":None})
         lines = [f"**{kt.name} — {len(docs)} document(s)**", ""]
         for src in docs:
             lines.append(f"- {src.title or src.file_name or src.id} (ID: `{src.id}`)")
-        return "\n".join(lines)
+        if more:
+            lines.append(f"_Còn trang sau: gọi lại với offset={offset+limit}._")
+        return payloads.knowledge_result("\n".join(lines),documents=metadata,
+            pagination={"offset":offset,"limit":limit,"has_more":more,"next_offset":offset+limit if more else None},
+            sources=[payloads.source_citation(m) for m in metadata])
 
     # -- edit_wiki_page ------------------------------------------------------
 

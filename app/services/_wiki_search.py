@@ -140,6 +140,7 @@ def _scope_clause(
     project_ids: Optional[Iterable[uuid.UUID]],
     inverse_scope: bool,
     all_scopes: bool,
+    personal_owner_id=None,
 ):
     if all_scopes:
         return None
@@ -153,8 +154,10 @@ def _scope_clause(
         if projs:
             proj_c = and_(proj_c, or_(WikiPage.scope_id.is_(None), WikiPage.scope_id.notin_(projs)))
         return or_(dept_c, proj_c)
-    if department_ids is not None or project_ids is not None:
+    if department_ids is not None or project_ids is not None or personal_owner_id is not None:
         parts = [WikiPage.scope_type == "global"]
+        if personal_owner_id is not None:
+            parts.append(and_(WikiPage.scope_type == "personal", WikiPage.scope_id == personal_owner_id))
         if depts:
             parts.append(and_(WikiPage.scope_type == "department", WikiPage.scope_id.in_(depts)))
         if projs:
@@ -179,6 +182,7 @@ def _page_conditions(
     all_scopes: bool = False,
     clearance: Optional[str] = None,
     page_filter: Any = None,
+    personal_owner_id=None,
 ) -> list:
     conds: list = [WikiPage.slug.notin_(RESERVED_SLUGS)]
     scope = _scope_clause(
@@ -188,6 +192,7 @@ def _page_conditions(
         project_ids=project_ids,
         inverse_scope=inverse_scope,
         all_scopes=all_scopes,
+        personal_owner_id=personal_owner_id,
     )
     if scope is not None:
         conds.append(scope)
@@ -216,7 +221,9 @@ def _source_conditions(
         or_(
             Source.chunk_status == "ready",
             Source.status.in_(_ELIGIBLE_SOURCE_STATUSES),
-            Source.preserve_verbatim.is_(True),
+            # Extraction is independent of vector/Wiki success. Keep legacy
+            # ready indexed rows above even when full_text was never populated.
+            func.length(func.btrim(Source.full_text, " \t\r\n")) > 0,
         )
     ]
     if allowed_source_ids is not None:
@@ -364,6 +371,7 @@ async def search_pages_semantic(
     all_scopes: bool = False,
     clearance: Optional[str] = None,
     page_filter: Any = None,
+    personal_owner_id=None,
 ) -> list[tuple[WikiPage, float]]:
     if query_embedding is None or top_k <= 0:
         return []
@@ -389,6 +397,7 @@ async def search_pages_semantic(
         all_scopes=all_scopes,
         clearance=clearance,
         page_filter=page_filter,
+        personal_owner_id=personal_owner_id,
     )
     res = await session.execute(select(WikiPage).where(WikiPage.id.in_(list(best)), *conds))
     pages = list(res.scalars().all())
@@ -408,6 +417,7 @@ async def search_pages_hybrid(
     all_scopes: bool = False,
     clearance: Optional[str] = None,
     page_filter: Any = None,
+    personal_owner_id=None,
 ) -> list[dict]:
     if top_k <= 0:
         return []
@@ -422,6 +432,7 @@ async def search_pages_hybrid(
         all_scopes=all_scopes,
         clearance=clearance,
         page_filter=page_filter,
+        personal_owner_id=personal_owner_id,
     )
     base = (
         select(Chunk, WikiPage)

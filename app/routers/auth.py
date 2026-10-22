@@ -40,6 +40,7 @@ def user_summary(emp) -> dict:
         "email": emp.email,
         "role": emp.role,
         "department_ids": [str(d) for d in emp.department_ids],
+        "scope_department_ids": [str(d) for d in permission_engine._user_department_ids(emp)],
         "department_names": department_names(emp),
         "permissions": permission_engine.get_effective_permissions(emp),
         "workspace_memberships": [],
@@ -51,6 +52,9 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
     employee = await auth_service.authenticate_employee(db, body.email, body.password)
     if employee is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid email or password")
+    from app.services.identity_directory import hydrate_identity
+
+    await hydrate_identity(db, employee)
     if (
         settings.sso_enabled
         and not settings.sso_allow_password_login

@@ -1,7 +1,8 @@
 """Permission checks for documents and skills.
 
 "own_dept" scope means the union of every department the user belongs to, plus
-global resources (no department link). Child departments are not included.
+global resources (no department link). Shared portal identities use their centrally
+assigned units and descendants; standalone local identities retain direct memberships.
 """
 
 import uuid
@@ -73,6 +74,9 @@ def _is_admin(user) -> bool:
 
 
 def _get_user_permissions(user) -> set[str]:
+    central = getattr(user, '_central_permissions', None)
+    if central is not None:
+        return set(central)
     if getattr(user, "role", None) == "admin" or getattr(user, "global_role", None) == "admin":
         return set(_permissions.ALL_PERMISSIONS)
     effective = _permissions.get_effective_role_permissions()
@@ -87,6 +91,9 @@ def get_effective_permissions(user) -> list[str]:
 
 
 def _user_department_ids(user) -> list:
+    central = getattr(user, '_central_department_ids', None)
+    if central is not None:
+        return list(central)
     try:
         ids = getattr(user, "department_ids", None)
     except Exception:

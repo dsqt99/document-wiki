@@ -125,7 +125,7 @@ function PasswordForm({ next }: { next: string }) {
 function LoginOrchestrator() {
   const params = useSearchParams();
   const router = useRouter();
-  const { user, loading } = useAuth();
+  const { user, loading, error: sessionError, refresh } = useAuth();
   const embedded = useIsEmbedded();
   const [view, setView] = useState<ViewState>({ kind: "redirecting" });
   const leaving = useRef(false);
@@ -217,7 +217,14 @@ function LoginOrchestrator() {
   };
 
   let body;
-  if (view.kind === "form") {
+  if (sessionError && !user) {
+    body = (
+      <div role="alert" className="flex flex-col gap-4 rounded-xl border bg-card p-6 text-center">
+        <p className="text-sm text-muted-foreground">{sessionError}</p>
+        <Button onClick={() => void refresh()}>Thử lại</Button>
+      </div>
+    );
+  } else if (view.kind === "form") {
     body = <PasswordForm next={next} />;
   } else if (view.kind === "message") {
     body = (

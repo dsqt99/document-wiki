@@ -1,5 +1,6 @@
 "use client";
 
+import { OptionSelect } from "@/components/ui/option-select";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -95,10 +96,10 @@ export function ReviewQueue({
           ))}
         </div>
 
-        <select
+        <OptionSelect
           className={nativeSelect}
           value={status}
-          onChange={(e) => onStatusChange(e.target.value as QueueStatus)}
+          onValueChange={(value) => onStatusChange(value as QueueStatus)}
           aria-label="Status"
         >
           {QUEUE_STATUSES.map((s) => (
@@ -106,13 +107,13 @@ export function ReviewQueue({
               {t(s.key, s.fallback)}
             </option>
           ))}
-        </select>
+        </OptionSelect>
 
         {scopeOptions.length > 1 && (
-          <select
+          <OptionSelect
             className={nativeSelect}
             value={scope}
-            onChange={(e) => onScopeChange(e.target.value)}
+            onValueChange={(value) => onScopeChange(value)}
             title="Filter by scope"
             aria-label="Filter by scope"
           >
@@ -122,7 +123,7 @@ export function ReviewQueue({
                 {o.label}
               </option>
             ))}
-          </select>
+          </OptionSelect>
         )}
 
         <div className="flex items-center justify-between text-[11px] text-muted-foreground">

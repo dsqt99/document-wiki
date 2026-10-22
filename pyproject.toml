@@ -45,7 +45,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-asyncio", "ruff"]
+dev = ["pytest", "pytest-asyncio", "aiosqlite", "ruff"]
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]

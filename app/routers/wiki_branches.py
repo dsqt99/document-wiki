@@ -9,13 +9,13 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import func, select
+from sqlalchemy import and_, or_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.database.models import Employee, WikiBranch, WikiPage, WikiPageDraft
 from app.routers import wiki as wiki_router
-from app.routers.wiki_drafts import DraftResponse, _to_response
+from app.routers.wiki_drafts import DraftResponse, _to_response, _may_view
 from app.services import contribution_service, wiki_service
 from app.services.audit_service import log_audit
 from app.services.auth_service import get_current_user
@@ -117,13 +117,15 @@ async def _to_branch(db, b: WikiBranch, draft_count: Optional[int] = None) -> Br
     )
 
 
-async def _detail(db, b: WikiBranch) -> BranchDetailResponse:
+async def _detail(db, b: WikiBranch, user=None) -> BranchDetailResponse:
     drafts = await _branch_drafts(db, b.id)
+    if user is not None and getattr(user, '_central_permissions', None) is not None:
+        drafts = [d for d in drafts if await _may_view(db, user, d)]
     base = await _to_branch(db, b, draft_count=len(drafts))
     return BranchDetailResponse(**base.model_dump(), drafts=[await _to_response(db, d) for d in drafts])
 
 
-async def _load_branch(db, branch_id, message: str) -> WikiBranch:
+async def _load_branch(db, branch_id, message: str, user=None) -> WikiBranch:
     try:
         bid = uuid.UUID(str(branch_id))
     except (ValueError, TypeError):
@@ -131,7 +133,32 @@ async def _load_branch(db, branch_id, message: str) -> WikiBranch:
     b = await db.get(WikiBranch, bid)
     if b is None:
         raise HTTPException(404, message)
+    if user is not None and getattr(user, '_central_permissions', None) is not None and not wiki_router._review_scope_allowed(user, b.scope_type or 'global', b.scope_id):
+        raise HTTPException(403, 'Nhánh nằm ngoài phạm vi đơn vị của bạn')
     return b
+
+
+async def _ensure_shared_branch_reviewable(db, user, branch):
+    if getattr(user, '_central_permissions', None) is None:
+        return
+    for draft in await _branch_drafts(db, branch.id):
+        if draft.status in ('pending', 'needs_revision') and not await wiki_router._can_review_draft(db, user, draft):
+            raise HTTPException(403, 'Nhánh có bản nháp nằm ngoài phạm vi duyệt của bạn')
+
+
+async def _ensure_shared_author_draft(db, user, draft):
+    if getattr(user, '_central_permissions', None) is None or wiki_router._is_admin(user):
+        return
+    if getattr(draft, 'author_id', None) != user.id:
+        raise HTTPException(403, 'Bạn không được thay đổi bản nháp của cán bộ khác')
+    if (draft.draft_kind or 'edit') == 'create':
+        meta = draft.suggested_metadata or {}
+        allowed = wiki_router._can_propose_scope(user, meta.get('scope_type') or 'global', meta.get('scope_id'))
+    else:
+        page = await db.get(WikiPage, draft.page_id) if draft.page_id else None
+        allowed = page is not None and wiki_router._can_propose(user, page) and await wiki_router._page_readable(db, user, page.id)
+    if not allowed:
+        raise HTTPException(403, 'Bản nháp nằm ngoài phạm vi được chỉnh sửa của bạn')
 
 
 def _is_branch_author(user, b) -> bool:
@@ -189,6 +216,9 @@ async def list_branches(
         stmt = stmt.where(WikiBranch.scope_id == scope_id)
     if mine:
         stmt = stmt.where(WikiBranch.author_id == user.id)
+    if getattr(user, '_central_permissions', None) is not None and not wiki_router._is_admin(user):
+        stmt = stmt.where(or_(WikiBranch.scope_type == 'global', and_(
+            WikiBranch.scope_type == 'department', WikiBranch.scope_id.in_(wiki_router._dept_ids(user)))))
     stmt = stmt.order_by(WikiBranch.updated_at.desc())
     branches = list((await db.execute(stmt)).scalars().all())
     return [await _to_branch(db, b) for b in branches]
@@ -197,14 +227,14 @@ async def list_branches(
 @router.get("/wiki/branches/{branch_id}", response_model=BranchDetailResponse)
 async def get_branch(branch_id: str, db: AsyncSession = Depends(get_db),
                      user: Employee = Depends(get_current_user)):
-    b = await _load_branch(db, branch_id, "Không tìm thấy nhánh đóng góp này")
-    return await _detail(db, b)
+    b = await _load_branch(db, branch_id, "Không tìm thấy nhánh đóng góp này", user=user)
+    return await _detail(db, b, user)
 
 
 @router.post("/wiki/branches/{branch_id}/submit", response_model=BranchDetailResponse)
 async def submit_branch(branch_id: str, db: AsyncSession = Depends(get_db),
                         user: Employee = Depends(get_current_user)):
-    b = await _load_branch(db, branch_id, "Không tìm thấy nhánh đóng góp")
+    b = await _load_branch(db, branch_id, "Không tìm thấy nhánh đóng góp", user=user)
     if not _is_branch_author(user, b) and not wiki_router._is_admin(user):
         raise HTTPException(403, "Chỉ có tác giả của nhánh mới có quyền gửi yêu cầu")
     if b.status != "draft":
@@ -213,37 +243,47 @@ async def submit_branch(branch_id: str, db: AsyncSession = Depends(get_db),
     if not drafts:
         raise HTTPException(400, "Nhánh đóng góp của bạn đang trống. Vui lòng thêm nháp trang trước khi gửi.")
     for d in drafts:
+        await _ensure_shared_author_draft(db, user, d)
+    for d in drafts:
         d.status = "pending"
         await contribution_service.notify_submitted(db, contribution_service.wiki_draft_adapter, d, user)
     b.status = "pending_merge"
     await db.commit()
     await log_audit(db, user, "submit_branch", "wiki_branch", b.id, reason=b.name)
-    return await _detail(db, b)
+    return await _detail(db, b, user)
 
 
 @router.post("/wiki/branches/{branch_id}/close", response_model=BranchDetailResponse)
 async def close_branch(branch_id: str, db: AsyncSession = Depends(get_db),
                        user: Employee = Depends(get_current_user)):
-    b = await _load_branch(db, branch_id, "Không tìm thấy nhánh đóng góp")
+    b = await _load_branch(db, branch_id, "Không tìm thấy nhánh đóng góp", user=user)
     if not (_is_branch_author(user, b) or wiki_router._is_admin(user) or _can_merge(user)):
         raise HTTPException(403, "Bạn không có quyền đóng hoặc hủy nhánh này")
+    if not _is_branch_author(user, b):
+        await _ensure_shared_branch_reviewable(db, user, b)
     if b.status in ("merged", "closed"):
         raise HTTPException(400, "Nhánh đã đóng hoặc đã được hợp nhất")
-    for d in await _branch_drafts(db, b.id):
+    drafts = await _branch_drafts(db, b.id)
+    if _is_branch_author(user, b):
+        for d in drafts:
+            if d.status in ('pending', 'needs_revision'):
+                await _ensure_shared_author_draft(db, user, d)
+    for d in drafts:
         if d.status in ("pending", "needs_revision"):
             d.status = "withdrawn"
     b.status = "closed"
     await db.commit()
     await log_audit(db, user, "close_branch", "wiki_branch", b.id, reason=b.name)
-    return await _detail(db, b)
+    return await _detail(db, b, user)
 
 
 @router.post("/wiki/branches/{branch_id}/merge", response_model=BranchDetailResponse)
 async def merge_branch(branch_id: str, body: MergeRequest = MergeRequest(), db: AsyncSession = Depends(get_db),
                        user: Employee = Depends(get_current_user)):
-    b = await _load_branch(db, branch_id, "Không tìm thấy nhánh đóng góp")
+    b = await _load_branch(db, branch_id, "Không tìm thấy nhánh đóng góp", user=user)
     if not _can_merge(user):
         raise HTTPException(403, "Bạn không có quyền hợp nhất tài liệu trong phạm vi này")
+    await _ensure_shared_branch_reviewable(db, user, b)
     if b.status != "pending_merge":
         raise HTTPException(400, "Chỉ có thể hợp nhất nhánh khi đang ở trạng thái 'pending_merge'")
 
@@ -282,13 +322,13 @@ async def merge_branch(branch_id: str, body: MergeRequest = MergeRequest(), db: 
         await db.rollback()
         raise HTTPException(400, f"Lỗi hợp nhất nhánh: {e}")
     await log_audit(db, user, "merge_branch", "wiki_branch", b.id, reason=b.name)
-    return await _detail(db, b)
+    return await _detail(db, b, user)
 
 
 @router.post("/wiki/branches/{branch_id}/rebase/{draft_id}", response_model=DraftResponse)
 async def rebase_draft(branch_id: str, draft_id: str, body: RebaseRequest, db: AsyncSession = Depends(get_db),
                        user: Employee = Depends(get_current_user)):
-    b = await _load_branch(db, branch_id, "Không tìm thấy nhánh đóng góp")
+    b = await _load_branch(db, branch_id, "Không tìm thấy nhánh đóng góp", user=user)
     if not _is_branch_author(user, b) and not wiki_router._is_admin(user):
         raise HTTPException(403, "Chỉ có tác giả nhánh mới có quyền xử lý xung đột")
     try:
@@ -298,6 +338,7 @@ async def rebase_draft(branch_id: str, draft_id: str, body: RebaseRequest, db: A
     d = await db.get(WikiPageDraft, did) if did is not None else None
     if d is None or d.branch_id != b.id:
         raise HTTPException(404, "Không tìm thấy bản nháp cần xử lý trong nhánh này")
+    await _ensure_shared_author_draft(db, user, d)
     if (d.draft_kind or "edit") == "create":
         raise HTTPException(400, "Bản nháp trang tạo mới không cần xử lý rebase")
     page = await db.get(WikiPage, d.page_id) if d.page_id is not None else None

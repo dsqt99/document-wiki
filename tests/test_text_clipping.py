@@ -61,16 +61,37 @@ def test_article_summary_uses_body_without_stray_bullets():
         "- Quyết định số 98/QĐ-BCA ngày 02/01/2020.\n"
     )
     lead = "Quyết định này có hiệu lực thi hành kể từ ngày ký. Quyết định này bãi bỏ và thay thế:"
-    out = article_summary("2", None, lead, content)
+    out = article_summary("2", None, lead, content, limit=400)
     assert out.startswith("Điều 2 — Quyết định này có hiệu lực")
     assert "— -" not in out and "Căn cứ pháp lý" not in out
     assert "Quyết định số 98/QĐ-BCA" in out
     assert len(out) <= 400
 
     long_body = "1. " + "Nội dung khoản dài " * 60
-    out = article_summary("3", "Hiệu lực thi hành", None, long_body)
+    out = article_summary("3", "Hiệu lực thi hành", None, long_body, limit=400)
     assert out.startswith("Điều 3: Hiệu lực thi hành — 1. Nội dung khoản dài")
     assert len(out) <= 400 and out.endswith(ELLIPSIS)
+
+
+def test_article_summary_keeps_complete_first_paragraph_by_default():
+    first = "1. " + "Nội dung cần giữ đầy đủ " * 30 + "kết thúc khoản một."
+    content = "### Điều 2. Nguyên tắc\n\n" + first + "\n\n2. Khoản sau không thuộc tóm tắt."
+    out = article_summary("2", "Nguyên tắc", None, content)
+    assert out == "Điều 2: Nguyên tắc — " + first
+    assert len(out) > 400 and not out.endswith(ELLIPSIS)
+
+
+def test_mrp_summary_keeps_complete_opening_paragraph_instead_of_300_character_cut():
+    from app.ai.mrp.writer import make_summary
+    paragraph = "Nội dung cần giữ đầy đủ " * 30 + "kết thúc."
+    assert make_summary("# Tiêu đề\n\n" + paragraph + "\n\nKhoản sau.") == paragraph
+
+
+def test_article_summary_keeps_wrapped_lines_but_stops_at_next_clause():
+    content = "### Điều 2. Nguyên tắc\n1. Dòng thứ nhất\nvà dòng tiếp theo.\n2. Khoản thứ hai."
+    assert article_summary("2", "Nguyên tắc", None, content) == (
+        "Điều 2: Nguyên tắc — 1. Dòng thứ nhất và dòng tiếp theo."
+    )
 
 
 def test_splitter_moves_body_sentence_out_of_title_and_keeps_slug():

@@ -1,4 +1,5 @@
 import uuid
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -29,9 +30,10 @@ def test_normalize_rejects_unknown_mode():
     [
         (None, False, True, (True, True, False)),
         (None, False, False, (False, True, False)),
-        ("articles", False, False, (True, False, False)),
-        ("verbatim_page", False, True, (False, False, True)),
-        ("verbatim_page", True, True, (False, False, False)),
+        ("articles", False, False, (False, True, False)),
+        ("verbatim_page", False, True, (True, True, False)),
+        ("verbatim_page", True, True, (True, True, False)),
+        ("verbatim", True, False, (False, True, False)),
     ],
 )
 async def test_plan_for(mode, preserve, legal, expected):
@@ -84,12 +86,13 @@ async def test_dispatch_auto_legal_runs_articles_then_llm():
 
 
 @pytest.mark.asyncio
-async def test_dispatch_verbatim_page_skips_llm():
+async def test_dispatch_legacy_personal_mode_also_runs_llm_and_embedding():
     from app import worker
 
     src = MagicMock()
     src.id = uuid.uuid4()
-    src.preserve_verbatim = False
+    src.preserve_verbatim = True
+    src.scope_type = "personal"
     src.metadata_ = {processing_mode.KEY: "verbatim_page"}
     w = MagicMock()
     w.commit_and_enqueue_chunk_branch = AsyncMock()
@@ -97,12 +100,35 @@ async def test_dispatch_verbatim_page_skips_llm():
     w.enqueue_post_extraction_pipeline = AsyncMock()
     with patch.object(worker, "_self", return_value=w), \
          patch("app.services.doc_metadata_service.store_document_metadata", new_callable=AsyncMock), \
+         patch("app.services.legal_service.is_legal_source", new_callable=AsyncMock, return_value=False), \
          patch("app.services.verbatim_page_service.finalize_verbatim_pages", new_callable=AsyncMock,
                return_value={"status": "ready"}) as fin:
         res = await worker.dispatch_dual_pipeline(AsyncMock(), src, AsyncMock(), token_count=10)
-    assert res == {"status": "ready"}
-    fin.assert_awaited_once()
-    w.enqueue_post_extraction_pipeline.assert_not_awaited()
+    fin.assert_not_awaited()
+    w.commit_and_enqueue_chunk_branch.assert_awaited_once()
+    w.enqueue_post_extraction_pipeline.assert_awaited_once()
+    assert src.preserve_verbatim is False
+
+
+@pytest.mark.asyncio
+async def test_managing_department_validation_is_independent_of_visibility():
+    from app.routers import sources
+    dept, owner = uuid.uuid4(), uuid.uuid4()
+    user = SimpleNamespace(id=owner,role="viewer",department_ids=[dept])
+    db = AsyncMock()
+    db.get.return_value = SimpleNamespace(id=dept,name="PC08")
+    with patch.object(sources,"_has_all",return_value=False):
+        assert await sources._checked_managing_department(db,user,dept,"create") == dept
+        with pytest.raises(Exception) as error:
+            await sources._checked_managing_department(db,user,uuid.uuid4(),"create")
+    assert getattr(error.value,"status_code",None) == 403
+
+
+def test_processing_mode_is_auto_even_for_legacy_private_source():
+    source = _src("verbatim", preserve=True)
+    assert processing_mode.mode_of(source) == "auto"
+    processing_mode.set_mode(source,"auto")
+    assert source.preserve_verbatim is False
 
 
 def test_part_label_skips_broken_lowercase_heading():
@@ -176,3 +202,144 @@ async def test_vision_calls_share_one_process_limit():
     await asyncio.gather(*(_call() for _ in range(8)))
     assert peak == 2
     openai_provider._vision_slots = None
+
+
+# Upload metadata review and resumption regressions.
+@pytest.mark.asyncio
+@pytest.mark.parametrize("metadata_fails", [False, True])
+async def test_legacy_review_flag_does_not_pause_automatic_processing(metadata_fails):
+    from app import worker
+
+    source = SimpleNamespace(id=uuid.uuid4(), attempt_id=uuid.uuid4(),
+                             preserve_verbatim=False, metadata_={"upload_review": "pending"})
+    session = AsyncMock()
+    w = MagicMock()
+    w.commit_and_enqueue_chunk_branch = AsyncMock()
+    w.set_branch_state = AsyncMock(return_value="processing")
+    w.enqueue_post_extraction_pipeline = AsyncMock(return_value="job")
+    with patch.object(worker, "_self", return_value=w), \
+         patch("app.services.legal_service.is_legal_source", new_callable=AsyncMock, return_value=False), \
+         patch("app.services.doc_metadata_service.store_document_metadata", new_callable=AsyncMock,
+               side_effect=RuntimeError("provider unavailable") if metadata_fails else None) as extract:
+        result = await worker.dispatch_dual_pipeline(session, source, AsyncMock(), 120)
+    assert result["status"] == "processing"
+    assert "upload_review" not in source.metadata_
+    extract.assert_awaited_once_with(session, source)
+    w.commit_and_enqueue_chunk_branch.assert_awaited_once()
+    w.enqueue_post_extraction_pipeline.assert_awaited_once()
+
+
+def test_review_state_has_no_effect_on_old_uploads_and_retains_other_metadata():
+    from app.services.upload_review_service import review_status, mark_reviewed
+
+    source = SimpleNamespace(metadata_={"processing_mode": "articles", "doc": {"doc_number": "88/2025/QH15"}})
+    assert review_status(source) is None
+    source.metadata_["upload_review"] = "awaiting"
+    mark_reviewed(source)
+    assert review_status(source) == "approved"
+    assert source.metadata_["doc"]["doc_number"] == "88/2025/QH15"
+    assert source.metadata_["processing_mode"] == "articles"
+    assert "doc_number" in source.metadata_["doc"]["manual_fields"]
+
+
+def test_retry_cannot_bypass_pending_upload_review():
+    from app.services.source_retry import pick_branch, NotRetryable
+
+    source = SimpleNamespace(metadata_={"upload_review": "awaiting"})
+    with pytest.raises(NotRetryable):
+        pick_branch(source, "chunk")
+
+
+@pytest.mark.asyncio
+async def test_deferred_upload_review_is_not_deleted_by_cleanup():
+    from app import worker
+
+    source = SimpleNamespace(metadata_={"upload_review": "awaiting"})
+    session = AsyncMock()
+    session.execute.return_value = MagicMock()
+    session.execute.return_value.scalars.return_value.all.return_value = [source]
+    factory = MagicMock()
+    factory.return_value.__aenter__.return_value = session
+    with patch("app.database.async_session_factory", factory):
+        removed = await worker.cleanup_orphan_awaiting_approval_cron({})
+    assert removed == 0
+    session.delete.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_approve_upload_queues_resume_without_reextracting():
+    from app.routers import sources
+
+    source = SimpleNamespace(id=uuid.uuid4(), metadata_={"upload_review": "awaiting"},
+                             status="awaiting_approval", attempt_id=uuid.uuid4(), title="Luật 88")
+    session = AsyncMock()
+    session.get.return_value = source
+    with patch.object(sources, "can_access_document", new_callable=AsyncMock, return_value=True), \
+         patch.object(sources, "_foreign_personal", return_value=False), \
+         patch.object(sources, "_enqueue", new_callable=AsyncMock, return_value="job") as enqueue, \
+         patch.object(sources, "log_audit", new_callable=AsyncMock):
+        result = await sources.approve_upload_review(source.id, session, MagicMock())
+    assert result["queued"] is True
+    assert source.metadata_["upload_review"] == "approved"
+    enqueue.assert_awaited_once_with("resume_upload_review_task", str(source.id), str(source.attempt_id))
+
+
+@pytest.mark.asyncio
+async def test_approve_upload_refuses_inaccessible_document():
+    from fastapi import HTTPException
+    from app.routers import sources
+
+    session = AsyncMock()
+    session.get.return_value = SimpleNamespace(id=uuid.uuid4())
+    with patch.object(sources, "_foreign_personal", return_value=False), \
+         patch.object(sources, "can_access_document", new_callable=AsyncMock, return_value=False), \
+         patch.object(sources, "_enqueue", new_callable=AsyncMock) as enqueue:
+        with pytest.raises(HTTPException) as error:
+            await sources.approve_upload_review(uuid.uuid4(), session, MagicMock())
+    assert error.value.status_code == 403
+    enqueue.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_queue_failure_returns_document_to_review():
+    from fastapi import HTTPException
+    from app.routers import sources
+
+    source = SimpleNamespace(id=uuid.uuid4(), metadata_={"upload_review": "awaiting"},
+                             status="awaiting_approval", attempt_id=uuid.uuid4(), title="Luật 88")
+    session = AsyncMock()
+    session.get.return_value = source
+    with patch.object(sources, "can_access_document", new_callable=AsyncMock, return_value=True), \
+         patch.object(sources, "_foreign_personal", return_value=False), \
+         patch.object(sources, "_enqueue", new_callable=AsyncMock, side_effect=RuntimeError("queue down")), \
+         patch.object(sources, "log_audit", new_callable=AsyncMock):
+        with pytest.raises(HTTPException) as error:
+            await sources.approve_upload_review(source.id, session, MagicMock())
+    assert error.value.status_code == 503
+    assert source.metadata_["upload_review"] == "awaiting"
+    assert source.status == "awaiting_approval"
+
+
+@pytest.mark.asyncio
+async def test_resume_uses_existing_text_and_rejects_stale_attempt():
+    from app import worker
+
+    source = SimpleNamespace(id=uuid.uuid4(), metadata_={"upload_review": "approved"}, extracted_token_count=123)
+    session = AsyncMock()
+    session.get.return_value = source
+    session.execute.return_value = MagicMock()
+    session.execute.return_value.scalar_one.return_value = 2
+    factory = MagicMock()
+    factory.return_value.__aenter__.return_value = session
+    w = MagicMock()
+    w.check_task_attempt_validity = AsyncMock(return_value=True)
+    w.dispatch_dual_pipeline = AsyncMock(return_value={"status": "processing"})
+    with patch("app.database.async_session_factory", factory), patch.object(worker, "_self", return_value=w):
+        result = await worker.resume_upload_review_task({}, str(source.id), "attempt")
+        assert result["status"] == "processing"
+        assert w.dispatch_dual_pipeline.await_args.args[3] == 123
+        assert w.dispatch_dual_pipeline.await_args.kwargs["n_images"] == 2
+        w.dispatch_dual_pipeline.reset_mock()
+        w.check_task_attempt_validity.return_value = False
+        assert await worker.resume_upload_review_task({}, str(source.id), "old-attempt") is None
+        w.dispatch_dual_pipeline.assert_not_awaited()

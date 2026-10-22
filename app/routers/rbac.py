@@ -19,6 +19,9 @@ from app.database import get_db
 from app.database.models import Department, Employee, EmployeeDepartment
 from app.services import audit_service, auth_service, config_service, permissions
 from app.services.auth_service import get_current_user, require_permission
+from app.services.identity_directory import (
+    load_directory, account_for, unit_scope, require_local_management, policy_permissions,
+)
 
 router = APIRouter()
 
@@ -84,12 +87,18 @@ async def list_departments(
     query = select(Department, func.coalesce(counts.c.n, 0)).outerjoin(counts, counts.c.department_id == Department.id)
     if not include_inactive:
         query = query.where(Department.is_active.is_(True))
+    directory = await load_directory(db)
+    if directory is not None:
+        query = query.where(Department.external_id.is_not(None))
+        if user.role != 'admin':
+            query = query.where(Department.id.in_(await unit_scope(db, user)))
     query = query.order_by(Department.created_at.asc(), Department.id.asc())
     rows = (await db.execute(query)).all()
     return [_department_out(dept, n) for dept, n in rows]
 
 
 async def _editable_department(db: AsyncSession, dept_id) -> Department:
+    await require_local_management(db)
     dept = await db.get(Department, _parse_uuid(dept_id, "Department not found"))
     if dept is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Department not found")
@@ -111,6 +120,7 @@ async def create_department(
     user: Employee = require_permission("org:departments:manage"),
     db: AsyncSession = Depends(get_db),
 ):
+    await require_local_management(db)
     name = (body.name or "").strip()
     if not name:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Department name is required")
@@ -220,6 +230,31 @@ async def _load_employee(db: AsyncSession, emp_id, not_found: str = "Employee no
     return emp
 
 
+async def _shared_employee_conditions(db, user, directory):
+    if directory is None:
+        return []
+    conds = [Employee.external_id.in_(directory['accounts'])]
+    if user.role != 'admin':
+        scope = await unit_scope(db, user)
+        conds.append(Employee.id.in_(select(EmployeeDepartment.employee_id).where(
+            EmployeeDepartment.department_id.in_(scope))))
+    return conds
+
+
+async def _load_scoped_employee(db, actor, employee_id):
+    employee = await _load_employee(db, employee_id)
+    directory = await load_directory(db)
+    if directory is not None:
+        account = account_for(directory, employee)
+        if account is None or (actor.role != 'admin' and not (
+            set(employee.department_ids) & await unit_scope(db, actor)
+        )):
+            raise HTTPException(403, 'Account is outside your unit scope')
+        if actor.role != 'admin' and 'admin' in account.get('roles', []):
+            raise HTTPException(403, 'Only a full administrator can manage an administrator account')
+    return employee
+
+
 async def _resolve_departments(db: AsyncSession, raw_ids) -> list[Department]:
     ids = []
     for raw in raw_ids or []:
@@ -250,7 +285,8 @@ async def list_employees(
     user: Employee = require_permission("org:employees:read"),
     db: AsyncSession = Depends(get_db),
 ):
-    conds = []
+    directory = await load_directory(db)
+    conds = await _shared_employee_conditions(db, user, directory)
     if department_id:
         dept_uuid = _parse_uuid(department_id, "Department not found")
         conds.append(
@@ -260,7 +296,10 @@ async def list_employees(
         )
     if search and search.strip():
         pattern = f"%{search.strip()}%"
-        conds.append(or_(Employee.name.ilike(pattern), Employee.email.ilike(pattern)))
+        username_matches = [key for key, value in (directory or {}).get('accounts', {}).items()
+                            if search.strip().lower() in value.get('username', '').lower()]
+        conds.append(or_(Employee.name.ilike(pattern), Employee.email.ilike(pattern),
+                         Employee.external_id.in_(username_matches)))
 
     total = (await db.execute(select(func.count()).select_from(Employee).where(*conds))).scalar_one()
     rows = await db.execute(
@@ -271,13 +310,22 @@ async def list_employees(
         .offset((page - 1) * page_size)
         .limit(page_size)
     )
-    items = [_employee_out(e) for e in rows.scalars().all()]
+    items = []
+    for employee in rows.scalars().all():
+        item = _employee_out(employee)
+        account = account_for(directory, employee)
+        if account:
+            item['identity_roles'] = [{'id': role, 'name': directory.get('role_definitions', {}).get(role, {}).get('name', role)}
+                                      for role in account.get('roles', [])]
+            item['username'] = account.get('username')
+        items.append(item)
     return {
         "items": items,
         "total": total,
         "page": page,
         "page_size": page_size,
         "total_pages": max(1, math.ceil(total / page_size)),
+        "managed": directory is not None,
     }
 
 
@@ -287,6 +335,7 @@ async def create_employee(
     user: Employee = require_permission("org:employees:manage"),
     db: AsyncSession = Depends(get_db),
 ):
+    await require_local_management(db)
     if not body.password:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Password is required")
     _validate_password(body.password)
@@ -333,6 +382,7 @@ async def update_employee(
     user: Employee = require_permission("org:employees:manage"),
     db: AsyncSession = Depends(get_db),
 ):
+    await require_local_management(db)
     emp = await _load_employee(db, emp_id)
     if body.global_role is not None and body.global_role not in permissions.SYSTEM_ROLE_IDS:
         raise _global_role_error()
@@ -404,6 +454,7 @@ async def delete_employee(
     user: Employee = require_permission("org:employees:manage"),
     db: AsyncSession = Depends(get_db),
 ):
+    await require_local_management(db)
     emp = await _load_employee(db, emp_id)
     if emp.role == "admin":
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Cannot delete an admin account")
@@ -421,6 +472,7 @@ async def add_employee_department(
     user: Employee = require_permission("org:employees:manage"),
     db: AsyncSession = Depends(get_db),
 ):
+    await require_local_management(db)
     emp = await _load_employee(db, emp_id)
     dept = await db.get(Department, _parse_uuid(body.department_id, "Department not found"))
     if dept is None:
@@ -440,6 +492,7 @@ async def remove_employee_department(
     user: Employee = require_permission("org:employees:manage"),
     db: AsyncSession = Depends(get_db),
 ):
+    await require_local_management(db)
     try:
         emp_uuid, dept_uuid = uuid.UUID(emp_id), uuid.UUID(dept_id)
     except ValueError:
@@ -464,6 +517,7 @@ async def toggle_employee(
     user: Employee = require_permission("org:employees:manage"),
     db: AsyncSession = Depends(get_db),
 ):
+    await require_local_management(db)
     emp = await _load_employee(db, emp_id)
     emp.is_active = not emp.is_active
     await _audit(db, user, "update", "employee", emp.id, reason=f"is_active={emp.is_active}")
@@ -519,7 +573,7 @@ async def generate_employee_token(
     user: Employee = require_permission("org:employees:manage"),
     db: AsyncSession = Depends(get_db),
 ):
-    emp = await _load_employee(db, emp_id)
+    emp = await _load_scoped_employee(db, user, emp_id)
     return await _issue_token(db, request, user, emp)
 
 
@@ -530,7 +584,7 @@ async def revoke_employee_token(
     db: AsyncSession = Depends(get_db),
 ):
     not_found = "Employee not found or has no token"
-    emp = await _load_employee(db, emp_id, not_found=not_found)
+    emp = await _load_scoped_employee(db, user, emp_id)
     if not await _mcp_service(db).revoke_token(emp):
         raise HTTPException(status.HTTP_404_NOT_FOUND, not_found)
     await _audit(db, user, "delete", "mcp_token", emp.id)
@@ -582,7 +636,15 @@ def _matrix() -> dict:
 
 
 @router.get("/rbac/matrix")
-async def get_matrix(user: Employee = require_permission("org:employees:read")):
+async def get_matrix(user: Employee = require_permission("org:roles:read"), db: AsyncSession = Depends(get_db)):
+    directory = await load_directory(db)
+    if directory is not None:
+        definitions = directory.get('role_definitions', {})
+        return {**_matrix(), 'managed': True,
+                'roles': [{'id': key, 'name': value.get('name', key), 'description': value.get('description', '')}
+                          for key, value in definitions.items()],
+                'role_permissions': {key: sorted(policy_permissions([key], definitions)) for key in definitions},
+                'portal_role_permissions': {key: value.get('permissions', []) for key, value in definitions.items()}}
     return _matrix()
 
 
@@ -592,6 +654,7 @@ async def update_matrix(
     user: Employee = require_permission("org:roles:manage"),
     db: AsyncSession = Depends(get_db),
 ):
+    await require_local_management(db)
     cleaned = permissions.sanitize_role_permissions(body.role_permissions)
     payload = json.dumps(cleaned, ensure_ascii=False)
     await config_service.ConfigService(db).set("role_permissions_custom", payload)

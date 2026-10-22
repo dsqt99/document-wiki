@@ -120,6 +120,7 @@ async def ingest_map_reduce_task(ctx, source_id, attempt_id_str=None, **_ignored
                 tracker = ProgressTracker(sid)
 
                 from app.services import legal_service, processing_mode
+                processing_mode.set_mode(source, "auto")
 
                 plan = await processing_mode.plan_for(session, source)
                 if plan.verbatim_page:
@@ -350,3 +351,9 @@ async def backfill_doc_metadata_task(ctx, only_missing=True, use_llm=True, limit
         return await doc_metadata_service.backfill_document_metadata(
             session, only_missing=only_missing, use_llm=use_llm, limit=limit
         )
+
+
+async def rebuild_wiki_summaries_task(ctx, job_id, page_ids):
+    from app.services.wiki_summary_service import run_rebuild
+
+    return await run_rebuild(ctx, job_id, page_ids)

@@ -6,11 +6,14 @@
  * to the local backend. Production builds set it to "" so the browser talks to the same
  * origin and goes through the Next rewrites.
  */
+import { clearToken, readToken } from "./session";
+
+export { clearToken, setToken } from "./session";
+
 const API_BASE: string =
   process.env.NEXT_PUBLIC_API_URL !== undefined ? process.env.NEXT_PUBLIC_API_URL : "http://localhost:5055";
 
 const DEFAULT_TIMEOUT_MS = 60_000;
-const TOKEN_KEY = "arkon_token";
 
 export class ApiError extends Error {
   status: number;
@@ -21,31 +24,6 @@ export class ApiError extends Error {
     this.name = "ApiError";
     this.status = status;
     this.data = data;
-  }
-}
-
-function readToken(): string | null {
-  if (typeof window === "undefined") return null;
-  try {
-    return window.localStorage.getItem(TOKEN_KEY);
-  } catch {
-    return null;
-  }
-}
-
-export function setToken(token: string): void {
-  try {
-    window.localStorage.setItem(TOKEN_KEY, token);
-  } catch {
-    /* storage unavailable */
-  }
-}
-
-export function clearToken(): void {
-  try {
-    window.localStorage.removeItem(TOKEN_KEY);
-  } catch {
-    /* storage unavailable */
   }
 }
 
@@ -87,6 +65,7 @@ export async function api<T = unknown>(path: string, options: ApiOptions = {}): 
   const token = readToken();
   if (token) headers["Authorization"] = `Bearer ${token}`;
   Object.assign(headers, options.headers ?? {});
+  const requestToken = token && new Headers(headers).get("Authorization") === `Bearer ${token}` ? token : null;
 
   let body: BodyInit | undefined;
   if (options.body !== undefined && options.body !== null && method !== "GET") {
@@ -110,7 +89,10 @@ export async function api<T = unknown>(path: string, options: ApiOptions = {}): 
     clearTimeout(timer);
   }
 
-  if (!res.ok) throw await errorFromResponse(res, "API Error");
+  if (!res.ok) {
+    if (res.status === 401 && requestToken) clearToken(requestToken);
+    throw await errorFromResponse(res, "API Error");
+  }
 
   const text = await res.text();
   if (!text) return {} as T;
@@ -139,6 +121,9 @@ export async function apiUpload<T = unknown>(path: string, formData: FormData, t
     clearTimeout(timer);
   }
 
-  if (!res.ok) throw await errorFromResponse(res, "Upload Error");
+  if (!res.ok) {
+    if (res.status === 401 && token) clearToken(token);
+    throw await errorFromResponse(res, "Upload Error");
+  }
   return (await res.json()) as T;
 }

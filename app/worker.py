@@ -70,9 +70,11 @@ import inspect
 import re
 import sys
 import uuid
+from types import SimpleNamespace
 from datetime import datetime, timedelta, timezone
 
 from app.services import source_status as _source_status
+from app.services import source_quality as _source_quality
 from app.services.source_status import (  # noqa: F401 - re-exported for callers and tests
     compute_source_dual_status,
     reset_branches,
@@ -261,6 +263,7 @@ async def ingest_source_chunks_task(ctx, source_id, attempt_id_str=None, chunk_a
 
     w = _self()
     sid = _as_uuid(source_id)
+    observed = None
     try:
         async with tracing.trace_context("ingest_source_chunks_task", metadata={"source_id": str(sid)}):
             async with _db.async_session_factory() as session:
@@ -272,6 +275,8 @@ async def ingest_source_chunks_task(ctx, source_id, attempt_id_str=None, chunk_a
                         return {"status": "stale"}
                     if chunk_attempt_id_str and str(source.chunk_attempt_id) != str(chunk_attempt_id_str):
                         return {"status": "stale"}
+                    observed = SimpleNamespace(id=sid, attempt_id=source.attempt_id,
+                                               chunk_attempt_id=source.chunk_attempt_id)
                     if not (source.full_text or "").strip():
                         await w.set_branch_state(
                             sid, "chunk", status="error", progress=0,
@@ -287,6 +292,15 @@ async def ingest_source_chunks_task(ctx, source_id, attempt_id_str=None, chunk_a
                     t0 = time.perf_counter()
                     n = await verbatim_service.index_source_chunks(session, source)
                     await _timing(session, sid, "source_chunks", t0, {"chunks": n})
+                    if not await _source_quality.lock_current_attempt(session, observed, "source_index"):
+                        await session.rollback()
+                        return {"status": "stale"}
+                    quality = _source_quality.public_source_quality(source)["source_index"]
+                    if quality["status"] in ("error", "partial") and quality["expected"] and n < quality["expected"]:
+                        message = f"Source index incomplete: {n}/{quality['expected']} chunks"
+                        await w.set_branch_state(sid, "chunk", status="error", progress=0,
+                                                 message=message, error=message, session=session)
+                        return {"status": "error", "chunks": n}
                     message = f"Indexed {n} raw chunks" if n > 0 else "No embedding model: keyword search only"
                     await w.set_branch_state(sid, "chunk", status="ready", progress=100, message=message, session=session)
                     return {"status": "ready", "chunks": n}
@@ -299,9 +313,12 @@ async def ingest_source_chunks_task(ctx, source_id, attempt_id_str=None, chunk_a
                                 await session.rollback()
                             except Exception:  # noqa: BLE001
                                 pass
+                            if observed is not None and not await _source_quality.lock_current_attempt(session, observed, "source_index"):
+                                return
                             await w.set_branch_state(
                                 sid, "chunk", status="error", progress=0,
                                 message=f"Chunking error: {err[:200]}", error=err[:500],
+                                session=session,
                             )
                         except Exception as e:  # noqa: BLE001
                             logger.warning("Could not mark chunk branch error for %s: %s", sid, e)
@@ -353,28 +370,28 @@ async def finalize_verbatim_source(session, source, tracker) -> dict:
 
 
 async def dispatch_dual_pipeline(session, source, tracker, token_count, n_images=0, attempt_id_str=None) -> dict:
+    from app.services.upload_review_service import review_status
+    from app.services import processing_mode
+    processing_mode.set_mode(source, "auto")
+
+    if review_status(source) in ("pending", "awaiting"):
+        source.metadata_ = {key: value for key, value in source.metadata_.items()
+                            if key not in ("upload_review", "upload_review_error")}
     w = _self()
     attempt = attempt_id_str or (str(source.attempt_id) if source.attempt_id else None)
-    verbatim = bool(getattr(source, "preserve_verbatim", False))
-    if verbatim:
-        source.wiki_status = "skipped"
-        source.wiki_progress = 100
-        source.wiki_progress_message = "Skipped (verbatim source)"
-    else:
-        source.wiki_status = "queued"
-        source.wiki_progress = 50
-        source.wiki_progress_message = "Waiting to compile wiki..."
-        _source_status.start_wiki_attempt(source)
+    source.wiki_status = "queued"
+    source.wiki_progress = 50
+    source.wiki_progress_message = "Waiting to compile wiki..."
+    _source_status.start_wiki_attempt(source)
     wiki_attempt = _source_status.wiki_attempt_of(source)
-
-    await w.commit_and_enqueue_chunk_branch(session, source, attempt)
+    await session.commit()
 
     from app.services import legal_service, processing_mode
 
     plan = await processing_mode.plan_for(session, source)
     is_legal = plan.articles
 
-    if verbatim or not is_legal:
+    if not is_legal and review_status(source) != "approved":
         try:
             from app.services import doc_metadata_service
 
@@ -384,38 +401,36 @@ async def dispatch_dual_pipeline(session, source, tracker, token_count, n_images
             logger.warning("Document metadata extraction failed for %s: %s", source.id, e)
             try:
                 await session.rollback()
+                await session.refresh(source)
             except Exception:  # noqa: BLE001
                 pass
 
-    if verbatim:
-        return {"status": source.status, "branch_a": "queued", "branch_b": "skipped"}
-
-    if plan.verbatim_page or is_legal:
+    if is_legal:
         try:
-            if plan.verbatim_page:
-                from app.services import verbatim_page_service
-
-                await w.set_branch_state(
-                    source.id, "wiki", status="processing", progress=50,
-                    message="Creating verbatim wiki page(s)...", session=session,
-                )
-                return await verbatim_page_service.finalize_verbatim_pages(session, source, tracker)
             await w.set_branch_state(
                 source.id, "wiki", status="processing", progress=50,
                 message="Parsing legal document articles...", session=session,
             )
-            result = await legal_service.finalize_legal_source(session, source, tracker, final=not plan.llm)
-            if not plan.llm:
-                return result
+            await legal_service.finalize_legal_source(session, source, tracker, final=False)
         except BaseException as exc:
+            # Extraction has already been committed. Keep the raw branch
+            # available even when legal preparation cannot finish.
+            await session.rollback()
+            await session.refresh(source)
+            await w.commit_and_enqueue_chunk_branch(session, source, attempt)
             try:
                 await asyncio.shield(w.mark_wiki_error(source.id, _error_text(exc)))
             except BaseException as e:  # noqa: BLE001
                 logger.warning("Could not mark wiki error for %s: %s", source.id, e)
             raise
 
+    # Finish synchronous metadata writers before forking workers that publish
+    # measured quality into the same JSON column. Raw indexing and generated
+    # Wiki compilation still run concurrently after this point.
+    await w.commit_and_enqueue_chunk_branch(session, source, attempt)
+
     threshold = int(getattr(settings, "auto_approve_extraction_threshold_tokens", 0) or 0)
-    if threshold > 0 and token_count > threshold:
+    if threshold > 0 and token_count > threshold and review_status(source) != "approved":
         agg = await w.set_branch_state(
             source.id, "wiki", status="awaiting_approval", progress=55,
             message=f"Awaiting approval for wiki compilation: {token_count:,} tokens > {threshold:,} threshold",
@@ -521,6 +536,33 @@ async def _store_extracted_text(session, source, pages) -> int:
     return token_count
 
 
+async def resume_upload_review_task(ctx, source_id, attempt_id_str=None):
+    import app.database as _db
+    from app.database.models import Source, SourceImage
+    from app.services.upload_review_service import review_status
+    from app.utils.progress import ProgressTracker
+    from sqlalchemy import select, func
+
+    sid = _as_uuid(source_id)
+    try:
+        async with _db.async_session_factory() as session:
+            source = await session.get(Source, sid)
+            if source is None or review_status(source) != "approved":
+                return None
+            if not await _self().check_task_attempt_validity(session, sid, attempt_id_str):
+                return None
+            n_images = (await session.execute(
+                select(func.count()).select_from(SourceImage).where(SourceImage.source_id == sid)
+            )).scalar_one()
+            return await _self().dispatch_dual_pipeline(
+                session, source, ProgressTracker(sid), source.extracted_token_count or 0,
+                n_images=n_images, attempt_id_str=attempt_id_str,
+            )
+    except BaseException as exc:
+        await _handle_ingest_failure(sid, exc, "resume_upload_review_task", attempt_id_str, {}, _error_text(exc))
+        raise
+
+
 async def ingest_file_task(ctx, source_id, attempt_id_str=None):
     import app.database as _db
     from app.ai import tracing
@@ -547,6 +589,7 @@ async def ingest_file_task(ctx, source_id, attempt_id_str=None):
                 file_name = source.file_name or str(source.minio_key).rsplit("/", 1)[-1]
 
                 _source_status.reset_branches(source, wiki_skipped=bool(source.preserve_verbatim))
+                _source_quality.reset_quality(source)
                 source.status = "processing"
                 source.progress = 0
                 source.progress_message = "Starting processing..."
@@ -569,6 +612,8 @@ async def ingest_file_task(ctx, source_id, attempt_id_str=None):
                     data, file_name, vision_provider=vision, tracker=tracker
                 )
                 pages = list(pages or [])
+                _source_quality.record_extraction(source, pages)
+                await session.commit()
                 await _timing(session, sid, "parse", t0, {"pages_count": len(pages)})
                 if not any((p.get("content") or "").strip() for p in pages):
                     source.status = "error"
@@ -650,6 +695,7 @@ async def ingest_url_task(ctx, source_id, attempt_id_str=None):
                     return None
                 url = source.url
                 _source_status.reset_branches(source, wiki_skipped=bool(source.preserve_verbatim))
+                _source_quality.reset_quality(source)
                 source.status = "processing"
                 source.progress = 0
                 source.progress_message = "Starting processing..."
@@ -662,6 +708,8 @@ async def ingest_url_task(ctx, source_id, attempt_id_str=None):
 
                 t0 = time.perf_counter()
                 pages = list(await kb_service._extract_text_from_url(url) or [])
+                _source_quality.record_extraction(source, pages)
+                await session.commit()
                 await _timing(session, sid, "fetch_url", t0, {"pages_count": len(pages)})
                 if not any((p.get("content") or "").strip() for p in pages):
                     source.status = "error"
@@ -1040,29 +1088,29 @@ async def cleanup_orphan_awaiting_approval_cron(ctx):
     from sqlalchemy import select
 
     from app.database.models import Source
-    from app.services import storage_service as storage_mod
-
     ttl_hours = max(1, int(settings.extraction_approval_ttl_hours))
     cutoff = datetime.now(timezone.utc) - timedelta(hours=ttl_hours)
-    removed = 0
+    expired = 0
     async with _db.async_session_factory() as session:
         rows = (
             await session.execute(
                 select(Source).where(Source.status == "awaiting_approval", Source.updated_at < cutoff)
+                .with_for_update(skip_locked=True)
             )
         ).scalars().all()
         for source in rows:
-            if source.minio_key:
-                try:
-                    await asyncio.to_thread(storage_mod.storage_service.delete_object, source.minio_key)
-                except Exception as e:  # noqa: BLE001
-                    logger.warning("Could not delete object %s: %s", source.minio_key, e)
-            await session.delete(source)
-            removed += 1
+            metadata = source.metadata_ if isinstance(source.metadata_, dict) else {}
+            quality = dict(metadata.get("processing_quality") or {})
+            if quality.get("review_expired"):
+                continue
+            quality["review_expired"] = True
+            quality["review_expired_at"] = datetime.now(timezone.utc).isoformat()
+            source.metadata_ = {**metadata, "processing_quality": quality}
+            expired += 1
         await session.commit()
-    if removed:
-        logger.info("cleanup_orphan_awaiting_approval_cron removed %d source(s)", removed)
-    return removed
+    if expired:
+        logger.info("cleanup_orphan_awaiting_approval_cron retained %d expired source(s)", expired)
+    return 0  # Compatibility: this cron reports the number of deleted originals.
 
 
 # INGESTION-SECTION-END
@@ -1145,6 +1193,12 @@ async def backfill_doc_metadata_task(ctx, *args, **kwargs):
     return await wiki_tasks.backfill_doc_metadata_task(ctx, *args, **kwargs)
 
 
+async def rebuild_wiki_summaries_task(ctx, *args, **kwargs):
+    from app.tasks import wiki_tasks
+
+    return await wiki_tasks.rebuild_wiki_summaries_task(ctx, *args, **kwargs)
+
+
 async def ingest_skill_task(ctx, *args, **kwargs):
     from app.tasks import skill_tasks
 
@@ -1191,6 +1245,8 @@ class WorkerSettings:
         detach_source_wiki_task,
         relink_legal_relations_task,
         backfill_doc_metadata_task,
+        resume_upload_review_task,
+        rebuild_wiki_summaries_task,
         generate_questions_task,
     ]
     redis_settings = redis_settings()

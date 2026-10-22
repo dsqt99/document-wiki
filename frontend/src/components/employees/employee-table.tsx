@@ -28,9 +28,12 @@ export type Employee = {
   is_active: boolean;
   has_token: boolean;
   last_connected?: string | null;
+  identity_roles?: { id: string; name: string }[];
+  username?: string;
 };
 
 type Props = {
+  managed?: boolean;
   employees: Employee[];
   loading: boolean;
   onEdit: (emp: Employee) => void;
@@ -106,6 +109,7 @@ function RoleBadge({ role }: { role?: string | null }) {
 }
 
 export function EmployeeTable({
+  managed = false,
   employees,
   loading,
   onEdit,
@@ -261,7 +265,9 @@ export function EmployeeTable({
                       </div>
                     </td>
                     <td className="px-2 py-2">
-                      <RoleBadge role={emp.global_role} />
+                      {emp.identity_roles ? <div className="flex flex-wrap gap-1">{emp.identity_roles.map((role) => (
+                        <Badge key={role.id} variant="secondary" className="h-auto px-2 py-0.5 text-[11px]">{role.name}</Badge>
+                      ))}</div> : <RoleBadge role={emp.global_role} />}
                     </td>
                     <td className="px-2 py-2">
                       {emp.department_names?.length ? (
@@ -303,7 +309,7 @@ export function EmployeeTable({
                       )}
                     </td>
                     <td className="px-2 py-2 text-right">
-                      <DropdownMenu>
+                      {managed ? <span className="text-xs text-muted-foreground">Đồng bộ</span> : <DropdownMenu>
                         <DropdownMenuTrigger
                           aria-label="Actions"
                           className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-secondary hover:text-foreground focus-visible:opacity-100 data-popup-open:opacity-100"
@@ -340,7 +346,7 @@ export function EmployeeTable({
                             {t("common.delete")}
                           </DropdownMenuItem>
                         </DropdownMenuContent>
-                      </DropdownMenu>
+                      </DropdownMenu>}
                     </td>
                   </tr>
                 ))}

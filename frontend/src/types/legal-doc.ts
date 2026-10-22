@@ -65,6 +65,14 @@ export type LegalDocDetail = LegalDoc & {
   preamble: string;
   preamble_edited?: boolean;
   articles: LegalArticle[];
+  end_sections?: {
+    kind: "appendix" | "notes";
+    number: string | null;
+    title: string;
+    content_md: string;
+    wiki_slug: string | null;
+    edited?: boolean;
+  }[];
   relations: { outgoing: LegalDocRelation[]; incoming: LegalDocRelation[] };
   wiki_pages: { slug: string; title: string; page_type: string; summary: string }[];
   overview_slug: string | null;

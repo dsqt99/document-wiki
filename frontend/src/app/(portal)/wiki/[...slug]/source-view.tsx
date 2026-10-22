@@ -1,7 +1,6 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { displaySourceTitle } from "@/lib/wiki-store";
 
 /** Fields of `GET /api/sources/{id}` that the wiki screens read. */
@@ -12,7 +11,6 @@ export type SourceDetail = {
   source_type?: string | null;
   url?: string | null;
   file_size?: number | null;
-  preserve_verbatim?: boolean;
   contributed_by_name?: string | null;
   download_url?: string | null;
   preview_url?: string | null;
@@ -36,7 +34,7 @@ function extensionOf(s: SourceDetail): string {
   return m ? m[1].toLowerCase() : "";
 }
 
-export function SourceView({ source }: { source: SourceDetail }) {
+export function SourceView({ source, compact = false }: { source: SourceDetail; compact?: boolean }) {
   const isUrl = source.source_type === "url";
   const title = sourceTitle(source);
   const openUrl = source.preview_url || source.file_url || source.download_url || null;
@@ -109,7 +107,7 @@ export function SourceView({ source }: { source: SourceDetail }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-3 rounded-xl border p-4">
+      {!compact && <div className="flex flex-wrap items-center gap-3 rounded-xl border p-4">
         <span
           className="material-symbols-outlined flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
           style={{ fontSize: 22 }}
@@ -121,20 +119,6 @@ export function SourceView({ source }: { source: SourceDetail }) {
             <span className="truncate font-semibold" title={title}>
               {title}
             </span>
-            {source.preserve_verbatim && (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <span className="cursor-default rounded-full bg-secondary px-2 py-0.5 text-[11px] font-medium text-secondary-foreground" />
-                  }
-                >
-                  Verbatim
-                </TooltipTrigger>
-                <TooltipContent>
-                  This document is kept word-for-word (not rewritten into wiki pages) so searches can match its exact text.
-                </TooltipContent>
-              </Tooltip>
-            )}
           </div>
           <div className="mt-0.5 text-xs text-muted-foreground">
             {isUrl && source.url ? (
@@ -175,7 +159,7 @@ export function SourceView({ source }: { source: SourceDetail }) {
             </Button>
           )}
         </div>
-      </div>
+      </div>}
       {viewer}
     </div>
   );

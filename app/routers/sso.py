@@ -13,8 +13,8 @@ Dự phòng khi chưa cấu hình chatbot: OpenID Connect qua Keycloak.
   GET /api/auth/sso/config    — cấu hình công khai cho trang /login
   GET /api/auth/sso/logout    — đăng xuất phiên dùng chung (chatbot hoặc Keycloak)
 
-Sau khi xác thực, wiki vẫn dùng JWT HS256 của mình (24h) nên mọi API cũ giữ
-nguyên. Tài khoản được tạo/liên kết theo cột external_id (sub Keycloak, hoặc
+Sau khi xác thực, JWT wiki bị giới hạn bởi hạn phiên nguồn; mỗi API xác thực lại
+trạng thái phiên nguồn. Tài khoản được tạo/liên kết theo cột external_id (sub Keycloak, hoặc
 "chatbot:<id>"), rồi theo email.
 """
 
@@ -72,6 +72,7 @@ class _Endpoints(NamedTuple):
     jwks: str
     end_session: Optional[str]
     issuers: frozenset[str]
+    introspection: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -170,6 +171,7 @@ async def _endpoints() -> _Endpoints:
         jwks=to_internal(doc["jwks_uri"]),
         end_session=to_public(doc.get("end_session_endpoint")),
         issuers=frozenset(i for i in (public, internal, discovered) if i),
+        introspection=to_internal(doc.get("introspection_endpoint")),
     )
 
 
@@ -437,7 +439,11 @@ async def employee_from_access_token(db: AsyncSession, token: str):
         return "sso_token_invalid"
     if claims.get("azp") not in settings.sso_mcp_client_set:
         return "sso_client_not_allowed"
-    return await _provision(db, claims, _realm_roles(claims), _groups(claims))
+    employee = await _provision(db, claims, _realm_roles(claims), _groups(claims))
+    if not isinstance(employee, str):
+        from app.services.sso_session_service import oidc_parent, session_binding
+        employee._wiki_session_claims = {**session_binding("oidc", oidc_parent(token, claims)), "exp": claims["exp"]}
+    return employee
 
 
 # ---------------------------------------------------------------------------
@@ -459,10 +465,11 @@ async def sso_config():
     }
 
 
-def _session_redirect(request: Request, employee: Employee, nxt: Optional[str]) -> RedirectResponse:
+def _session_redirect(request: Request, employee: Employee, nxt: Optional[str], *, auth_source: str, parent: dict) -> RedirectResponse:
     """Cấp JWT wiki và trả về /login/sso (token nằm trong fragment, không tới server nào)."""
     token = create_access_token(
         employee_id=str(employee.id), role=employee.role, name=employee.name,
+        auth_source=auth_source, parent=parent,
     )
     fragment = urlencode({"token": token, "next": _safe_next(nxt)})
     resp = RedirectResponse(f"{_public_base(request)}/login/sso#{fragment}", status_code=302)
@@ -541,6 +548,14 @@ async def chatbot_callback(
     if not secrets.compare_digest(str(claims["st"]), str(tx.get("st", ""))):
         return _login_redirect(request, "sso_state")
 
+    # Older login tickets must not mint another unbound 24-hour wiki session.
+    from app.services.sso_session_service import session_binding
+    try:
+        parent = session_binding("chatbot", {"proof": claims.get("session_proof"), "sub": claims.get("sub"),
+                                             "exp": claims.get("session_expires_at")})["parent"]
+    except ValueError:
+        return _login_redirect(request, "sso_token", nxt)
+
     chatbot_id = str(claims["sub"])
     email = str(claims.get("email") or "").strip().lower()
     chatbot_sub = f"{CHATBOT_SUB_PREFIX}{chatbot_id}"
@@ -589,7 +604,7 @@ async def chatbot_callback(
         return _login_redirect(request, result)
     await db.commit()
 
-    resp = _session_redirect(request, result, nxt)
+    resp = _session_redirect(request, result, nxt, auth_source="chatbot", parent=parent)
     # Phiên này không gắn Keycloak: đăng xuất sẽ đi qua chatbot.
     resp.delete_cookie(IDT_COOKIE, path=COOKIE_PATH)
     return resp
@@ -670,9 +685,15 @@ async def sso_callback(
         tokens = await _exchange_code(ep, code, tx["cv"], _callback_url(request))
         id_token = tokens["id_token"]
         claims = await _verify_id_token(ep, id_token, tx["nn"])
+        access_token = tokens.get("access_token")
+        access_claims = await _verify_jwt(ep, access_token) if access_token else None
+        if not access_claims or access_claims.get("sub") != claims.get("sub"):
+            raise jwt.InvalidTokenError("OIDC access-token subject mismatch")
+        from app.services.sso_session_service import oidc_parent
+        parent = oidc_parent(access_token, access_claims)
         roles = _realm_roles(claims)
-        if not roles and tokens.get("access_token"):
-            roles = _realm_roles(await _verify_jwt(ep, tokens["access_token"]))
+        if not roles:
+            roles = _realm_roles(access_claims)
     except Exception as e:
         logger.warning(f"SSO callback failed: {e}")
         return _login_redirect(request, "sso_token")
@@ -685,7 +706,7 @@ async def sso_callback(
     # Commit trước khi chuyển hướng: trang /login/sso gọi /api/auth/me ngay sau đó.
     await db.commit()
 
-    resp = _session_redirect(request, employee, tx.get("nx"))
+    resp = _session_redirect(request, employee, tx.get("nx"), auth_source="oidc", parent=parent)
     if len(id_token) <= MAX_COOKIE_BYTES:
         # Giữ id_token để đăng xuất Keycloak không phải hỏi xác nhận.
         resp.set_cookie(
