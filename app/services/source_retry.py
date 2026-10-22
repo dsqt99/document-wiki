@@ -134,8 +134,33 @@ def is_ai_outage_text(text: Optional[str]) -> bool:
     return AI_UNAVAILABLE_MARKER in text or any(sig in text for sig in TRANSIENT_SIGNATURES)
 
 
-def failed_by_ai_outage(source) -> bool:
-    return is_ai_outage_text(_failure_text(source))
+def failed_by_ai_outage(source, plan_json: Optional[dict] = None) -> bool:
+    from app.services.wiki_write_guard import is_failure_stub
+
+    if is_ai_outage_text(_failure_text(source)):
+        return True
+    # Older COMMIT errors retained only slugs, losing the underlying transport
+    # error. Recover that evidence from actual failed drafts, not document prose.
+    return any(
+        isinstance(draft, dict) and is_failure_stub(draft.get("content_md"))
+        and is_ai_outage_text(draft.get("content_md"))
+        for draft in (plan_json or {}).get("_page_drafts") or []
+    )
+
+
+async def outage_source_ids(db, sources) -> set:
+    """Classify failed sources, including legacy plans missing a top-level marker."""
+    from app.database.models import SourceCompilationPlan
+
+    found = {s.id for s in sources if failed_by_ai_outage(s)}
+    remaining = {s.id: s for s in sources if s.id not in found}
+    if remaining:
+        plans = (await db.execute(
+            select(SourceCompilationPlan.source_id, SourceCompilationPlan.plan_json)
+            .where(SourceCompilationPlan.source_id.in_(remaining))
+        )).all()
+        found.update(sid for sid, plan in plans if failed_by_ai_outage(remaining[sid], plan))
+    return found
 
 
 async def ai_ready(db, need_ocr: bool = False) -> tuple[bool, str]:
@@ -190,7 +215,8 @@ async def retry_failed_sources(enqueue: Enqueue, busy: set, *, only_ai_outage: b
             .order_by(Source.created_at)
         )).scalars().all()
         if only_ai_outage:
-            rows = [s for s in rows if failed_by_ai_outage(s)]
+            outage_ids = await outage_source_ids(db, rows)
+            rows = [s for s in rows if s.id in outage_ids]
         if not rows:
             return out
         if probe:

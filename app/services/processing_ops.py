@@ -64,7 +64,7 @@ async def missing_vector_page_ids(db, limit: Optional[int] = None) -> list[uuid.
 
 async def summary(db, clause=None) -> dict:
     """Counts behind the "Xử lý nội dung" menu; ``clause`` restricts sources to what the user may read."""
-    from app.services.source_retry import failed_by_ai_outage
+    from app.services.source_retry import outage_source_ids
 
     scope = [clause] if clause is not None else []
 
@@ -72,13 +72,13 @@ async def summary(db, clause=None) -> dict:
         return int((await db.execute(select(func.count()).select_from(Source).where(*scope, *where))).scalar() or 0)
 
     failed_rows = (await db.execute(
-        select(Source.error_message, Source.wiki_error_message, Source.chunk_error_message)
+        select(Source.id, Source.error_message, Source.wiki_error_message, Source.chunk_error_message)
         .where(*scope, Source.status.in_(FAILED))
     )).all()
-    ai_outage = sum(
-        1 for r in failed_rows
-        if failed_by_ai_outage(SimpleNamespace(error_message=r[0], wiki_error_message=r[1], chunk_error_message=r[2]))
-    )
+    ai_outage = len(await outage_source_ids(db, [
+        SimpleNamespace(id=r[0], error_message=r[1], wiki_error_message=r[2], chunk_error_message=r[3])
+        for r in failed_rows
+    ]))
     spec = await _active_spec(db)
     missing_vectors = 0
     if spec is not None:

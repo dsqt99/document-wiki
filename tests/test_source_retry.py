@@ -4,6 +4,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.routers.sources import retry_source
+from app.services import source_retry
+from app.services.wiki_write_guard import make_failure_stub
 
 
 def _mock_source(**kw):
@@ -108,3 +110,37 @@ async def test_retry_wiki_with_uncaptioned_images_resumes_captioning():
     pool, chunk_enq = await _call_retry(src, uncaptioned=True)
     chunk_enq.assert_not_awaited()
     pool.enqueue_job.assert_called_once_with("caption_images_task", str(src.id), str(src.wiki_attempt_id))
+
+
+@pytest.mark.parametrize("content, expected", [
+    (make_failure_stub("Page", "APIConnectionError: Connection error."), True),
+    (make_failure_stub("Page", "[ai_unavailable] model down"), True),
+    (make_failure_stub("Page", "ValueError: invalid plan"), False),
+    ("# Explaining APIConnectionError\n\nNormal document content.", False),
+])
+def test_legacy_outage_detected_only_in_failed_drafts(content, expected):
+    src = _mock_source(error_message=None, wiki_error_message="All 1 page(s) failed to generate: page",
+                       chunk_error_message=None)
+    assert source_retry.failed_by_ai_outage(src, {"_page_drafts": [{"content_md": content}]}) is expected
+
+
+@pytest.mark.asyncio
+async def test_outage_cron_includes_legacy_failure_without_top_level_marker():
+    src = _mock_source(error_message=None, wiki_error_message="All 1 page(s) failed to generate: page",
+                       chunk_error_message=None)
+    db = AsyncMock()
+    first = MagicMock()
+    first.scalars.return_value.all.return_value = [src]
+    second = MagicMock()
+    second.all.return_value = [(src.id, {"_page_drafts": [{
+        "content_md": make_failure_stub("Page", "APIConnectionError: Connection error.")
+    }]})]
+    db.execute.side_effect = [first, second]
+    factory = MagicMock()
+    factory.return_value.__aenter__.return_value = db
+    with patch("app.database.async_session_factory", factory), \
+         patch.object(source_retry, "ai_ready", AsyncMock(return_value=(True, "ok"))), \
+         patch.object(source_retry, "requeue_source", AsyncMock()) as requeue:
+        result = await source_retry.retry_failed_sources(AsyncMock(), set(), only_ai_outage=True)
+    assert result["requeued"] == [str(src.id)]
+    requeue.assert_awaited_once()

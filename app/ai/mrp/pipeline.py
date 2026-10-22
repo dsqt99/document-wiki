@@ -363,20 +363,23 @@ async def run_refine_pipeline(session, source, full_text, tracker, registry, kt_
     except Exception as e:
         logger.info(f"refine: no active embedding spec ({e})")
 
-    results: list[PageWriteResult] = []
-    if source.pipeline_phase not in ("verify", "commit"):
+    drafts = (plan.plan_json or {}).get("_page_drafts") or []
+    results = [PageWriteResult.from_dict(d) for d in drafts if isinstance(d, dict)]
+    planned_count = sum(1 for p in (plan.plan_json or {}).get("pages", [])
+                        if isinstance(p, dict) and p.get("slug"))
+    invalid_checkpoint = (
+        # Generated slugs can acquire a scope/origin collision suffix.
+        not results or len(results) != planned_count
+        or any(is_failure_stub(r.content_md)
+               or verifier.factual_publication_blockers(r.content_md, full_text or "") for r in results)
+    )
+    if source.pipeline_phase not in ("verify", "commit") or invalid_checkpoint:
         source.pipeline_phase = "refine"
         plan.status = "in_progress"
         await session.commit()
         results = await writer.run_refine_phase(session, source, plan, rows, full_text, llm, emb, kt_slug, tracker)
         source.pipeline_phase = "verify"
         await session.commit()
-    else:
-        drafts = (plan.plan_json or {}).get("_page_drafts") or []
-        results = [PageWriteResult.from_dict(d) for d in drafts if isinstance(d, dict)]
-        if not results:
-            results = await writer.run_refine_phase(session, source, plan, rows, full_text, llm, emb, kt_slug,
-                                                    tracker)
 
     results = await verifier.run_verify_phase(session, source, results, rows, full_text, llm, emb, tracker)
     return await run_commit_phase(session, source, results, plan, emb, embedding_spec, kt_slug, tracker)
