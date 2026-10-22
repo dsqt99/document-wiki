@@ -25,7 +25,6 @@ import { ExtractionReviewDialog } from "./extraction-review-dialog";
 import { PlanReviewDialog } from "./plan-review-dialog";
 import { SourceArticlesDrawer } from "./source-articles-drawer";
 import { StatusDot } from "./status-dot";
-import { QualityPanel } from "./quality-panel";
 import { DeleteSourcesDialog } from "../delete-sources-dialog";
 import {
   formatCreatedDate,
@@ -713,7 +712,6 @@ export function KnowledgeTable({
                               </div>
                               {showWiki && wikiCount > 0 && <div className="sm:col-span-2 md:hidden"><button type="button" aria-expanded={isOpen} onClick={() => setExpanded(isOpen ? null : s.id)} className="inline-flex cursor-pointer items-center gap-1 rounded-sm text-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"><Icon name="auto_stories" size={14} />{isOpen ? "Thu gọn" : "Xem"} {wikiCount} trang Wiki<Icon name={isOpen ? "expand_less" : "expand_more"} size={14} /></button></div>}
                             </dl>
-                            <QualityPanel quality={s.processing_quality} />
                           </div>
                         </td>
                       </tr>
