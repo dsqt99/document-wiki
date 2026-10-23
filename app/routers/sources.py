@@ -435,6 +435,17 @@ def _has_all(user, action: str) -> bool:
     return _is_admin(user) or f"doc:{action}:all" in _self()._get_user_permissions(user)
 
 
+def _checked_create_scope(user, scope, dept_ids) -> str:
+    scope = scope or "global"
+    if scope not in SCOPE_TYPES:
+        raise HTTPException(400, SCOPE_ERROR)
+    if scope == "global" and not _has_all(user, "create"):
+        raise HTTPException(403, "Phạm vi toàn hệ thống cần quyền doc:create:all")
+    if scope == "department" and not dept_ids:
+        raise HTTPException(400, "Hãy chọn ít nhất một phòng ban được xem tài liệu")
+    return scope
+
+
 def _check_own_departments(user, dept_ids, action: str) -> None:
     if not dept_ids or _has_all(user, action):
         return
@@ -987,9 +998,7 @@ async def upload_source(
     file.file.seek(0)
 
     dept_ids = _parse_department_ids(department_ids)
-    scope = scope_type or "global"
-    if scope not in SCOPE_TYPES:
-        raise HTTPException(400, SCOPE_ERROR)
+    scope = _checked_create_scope(user, scope_type, dept_ids)
     resolved_scope_id = None
     if scope == "personal":
         dept_ids = []
@@ -1067,10 +1076,8 @@ async def create_url_source(
 ):
     label = _checked_label(user, body.security_label)
     manager_id = await _checked_managing_department(db, user, body.managing_department_id, "create")
-    scope = body.scope_type or "global"
-    if scope not in SCOPE_TYPES:
-        raise HTTPException(400, SCOPE_ERROR)
     dept_ids = list(body.department_ids or [])
+    scope = _checked_create_scope(user, body.scope_type, dept_ids)
     preserve = bool(body.preserve_verbatim)
     mode = _checked_mode(body.processing_mode)
     scope_id = None
