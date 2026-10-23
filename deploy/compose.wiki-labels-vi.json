@@ -1,5 +1,5 @@
 {
   "services": {
-    "frontend": { "image": "cahy-wiki-frontend:labels-vi-261023-cf4171a" }
+    "frontend": { "image": "cahy-wiki-frontend:no-maturity-261023-6c5a671" }
   }
 }
