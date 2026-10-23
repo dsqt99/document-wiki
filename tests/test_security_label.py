@@ -112,6 +112,23 @@ def test_checked_label_blocks_labelling_above_own_clearance():
     assert _checked_label(SimpleNamespace(role="admin", clearance_level="INTERNAL"), "CONFIDENTIAL") == "CONFIDENTIAL"
 
 
+@pytest.mark.parametrize("value", [None, "", "  "])
+def test_public_upload_default_label_stays_within_clearance(value):
+    from app.routers.sources import _checked_label
+
+    assert _checked_label(SimpleNamespace(role="employee", clearance_level="PUBLIC"), value) == "PUBLIC"
+
+
+@pytest.mark.parametrize("value", ["INTERNAL", "RESTRICTED", "CONFIDENTIAL"])
+def test_public_upload_cannot_choose_a_higher_label(value):
+    from fastapi import HTTPException
+    from app.routers.sources import _checked_label
+
+    with pytest.raises(HTTPException) as error:
+        _checked_label(SimpleNamespace(role="employee", clearance_level="PUBLIC"), value)
+    assert error.value.status_code == 403
+
+
 def test_apply_clearances_sets_matched_and_resets_others_to_internal():
     from app.routers.org_sync import SyncClearance, _apply_clearances
 

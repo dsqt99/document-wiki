@@ -373,8 +373,10 @@ async def _image_counts(db: AsyncSession, ids: list) -> dict:
 
 def _checked_label(user, value) -> str:
     if not isinstance(value, str) or not value.strip():
-        return security_label.DEFAULT_LEVEL
-    label = value.strip().upper()
+        allowed = security_label.allowed_labels(getattr(user, "clearance_level", None))
+        label = security_label.DEFAULT_LEVEL if _is_admin(user) or security_label.DEFAULT_LEVEL in allowed else "PUBLIC"
+    else:
+        label = value.strip().upper()
     if label not in security_label.LEVELS:
         raise HTTPException(400, "security_label phải thuộc " + ", ".join(security_label.LEVELS))
     if not _is_admin(user) and label not in security_label.allowed_labels(getattr(user, "clearance_level", None)):
