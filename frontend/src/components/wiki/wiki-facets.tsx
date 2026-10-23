@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
+import { WIKI_STATUS_LABELS_VI } from "./wiki-status-badge";
 
 export type FacetOption = {
   value: string;
@@ -10,12 +11,7 @@ export type FacetOption = {
   color?: string;
 };
 
-export const STATUS_LABEL_VI: Record<string, string> = {
-  evergreen: "Cốt lõi ổn định",
-  mature: "Tương đối đầy đủ",
-  developing: "Đang phát triển",
-  seed: "Sơ khởi",
-};
+export const STATUS_LABEL_VI: Record<string, string> = WIKI_STATUS_LABELS_VI;
 
 export const STATUS_ORDER: string[] = ["evergreen", "mature", "developing", "seed"];
 

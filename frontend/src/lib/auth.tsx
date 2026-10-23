@@ -25,6 +25,7 @@ export interface User {
   department_names: string[];
   department_ids: string[];
   scope_department_ids?: string[];
+  clearance_level?: string;
   workspace_memberships: WorkspaceMembership[];
 }
 

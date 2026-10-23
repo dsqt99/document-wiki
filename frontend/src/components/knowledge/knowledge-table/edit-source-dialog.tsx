@@ -11,6 +11,9 @@ import { cn } from "@/lib/utils";
 import { KnowledgeTypeSelect } from "../knowledge-type-select";
 import { ManagingDepartmentSelect } from "../managing-department-select";
 import { ScopePicker, type ScopeMode } from "../scope-picker";
+import { normalizeLabel, SecurityLabelSelect, type SecurityLabel } from "../security-label-select";
+import { useAuth } from "@/lib/auth";
+import { canEditSecurityLabel } from "@/lib/security-label";
 import { errorText, type Department, type KnowledgeType, type Source } from "../types";
 
 type MetaKey =
@@ -100,6 +103,8 @@ function Section({ icon, title, hint, children }: { icon: string; title: string;
 
 export function EditSourceDialog({ source, types, departments, onClose, onSaved, reviewUpload = false }: Props) {
   const { t } = useI18n();
+  const { user } = useAuth();
+  const canChangeLabel = canEditSecurityLabel(user);
   const manual = new Set(source.doc_meta?.manual_fields ?? []);
 
   const [title, setTitle] = useState(source.title ?? "");
@@ -110,6 +115,8 @@ export function EditSourceDialog({ source, types, departments, onClose, onSaved,
   const [originalDepts] = useState<string[]>(() => source.department_ids ?? []);
   const [mode, setMode] = useState<ScopeMode>(originalMode);
   const [deptIds, setDeptIds] = useState<string[]>(originalDepts);
+  const [originalLabel] = useState<SecurityLabel>(() => normalizeLabel(source.security_label));
+  const [secLabel, setSecLabel] = useState<SecurityLabel>(originalLabel);
   const [managerId, setManagerId] = useState(source.managing_department_id || "");
   const [fields, setFields] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
@@ -148,6 +155,7 @@ export function EditSourceDialog({ source, types, departments, onClose, onSaved,
       const trimmedTitle = title.trim();
       if (managerId !== (source.managing_department_id || "")) body.managing_department_id = managerId || null;
       if (trimmedTitle) body.title = trimmedTitle;
+      if (canChangeLabel && secLabel !== originalLabel) body.security_label = secLabel;
 
       const changed: Record<string, string | null> = {};
       for (const k of META_KEYS) {
@@ -344,16 +352,24 @@ export function EditSourceDialog({ source, types, departments, onClose, onSaved,
             </div>
           </Section>
 
-          <Section icon="visibility" title={t("knowledge.upload.visibility")}>
-            <ScopePicker
-              mode={mode}
-              onModeChange={setMode}
-              departments={departments}
-              selected={deptIds}
-              onSelectedChange={setDeptIds}
-              disabled={saving}
-              allowPersonal
-            />
+          <Section icon="visibility" title="Quyền xem" hint="Người xem phải thuộc phạm vi và có mức tiếp cận từ nhãn bảo mật trở lên.">
+            <div className="space-y-1.5">
+              <span className="text-xs text-muted-foreground">{t("knowledge.upload.visibility")}</span>
+              <ScopePicker
+                mode={mode}
+                onModeChange={setMode}
+                departments={departments}
+                selected={deptIds}
+                onSelectedChange={setDeptIds}
+                disabled={saving}
+                allowPersonal
+              />
+            </div>
+            <div className="space-y-1.5">
+              <span className="text-xs text-muted-foreground">Nhãn bảo mật</span>
+              <SecurityLabelSelect value={secLabel} onChange={setSecLabel} disabled={saving || !canChangeLabel} />
+              {!canChangeLabel && <p className="text-[11px] text-muted-foreground">Cần quyền quản trị hoặc sửa tài liệu toàn hệ thống để đổi nhãn.</p>}
+            </div>
           </Section>
 
           {confirming && (

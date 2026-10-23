@@ -20,8 +20,8 @@ type ScopePickerProps = {
 
 const OPTIONS: { value: ScopeMode; icon: string; label: string; hint: string }[] = [
   { value: "personal", icon: "person", label: "Cá nhân", hint: "Chỉ mình bạn xem được" },
-  { value: "department", icon: "apartment", label: "Theo phòng ban", hint: "Chỉ các phòng ban được chọn xem được" },
-  { value: "global", icon: "public", label: "Toàn hệ thống", hint: "Mọi cán bộ đều xem được" },
+  { value: "department", icon: "apartment", label: "Theo phòng ban", hint: "Cán bộ các phòng ban được chọn xem được, trong giới hạn nhãn bảo mật" },
+  { value: "global", icon: "public", label: "Toàn hệ thống", hint: "Mọi cán bộ xem được, trong giới hạn nhãn bảo mật" },
 ];
 
 function OptionLabel({ icon, label }: { icon: string; label: string }) {

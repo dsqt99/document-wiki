@@ -5,6 +5,8 @@ import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { WIKI_STATUS_COLORS, normalizeWikiStatus } from "@/components/wiki/wiki-status-badge";
+import { useI18n } from "@/lib/i18n";
+import { wikiTypeGroupLabel } from "@/components/wiki/wiki-type-badge";
 import { cn } from "@/lib/utils";
 import type { GraphInstance } from "./force-graph-canvas";
 import type { EdgeInput, GraphLink, GraphNode, NodeInput } from "./types";
@@ -40,18 +42,18 @@ export const RELATION_COLORS: Record<string, string> = {
 };
 
 export const RELATION_LABELS: Record<string, string> = {
-  la_mot: "Là một (is-a)",
-  thuoc: "Thuộc về (part-of)",
-  quy_dinh: "Quy định (regulates)",
-  ap_dung_cho: "Áp dụng cho (applies-to)",
-  lien_quan: "Liên quan (relates-to)",
-  sua_doi: "Sửa đổi (amends)",
-  bo_sung: "Bổ sung (supplements)",
-  thay_the: "Thay thế (replaces)",
-  bai_bo: "Bãi bỏ (repeals)",
-  huong_dan: "Hướng dẫn (guides)",
-  can_cu: "Căn cứ (basis)",
-  dan_chieu: "Dẫn chiếu (cites)",
+  la_mot: "Là một",
+  thuoc: "Thuộc về",
+  quy_dinh: "Quy định",
+  ap_dung_cho: "Áp dụng cho",
+  lien_quan: "Liên quan",
+  sua_doi: "Sửa đổi",
+  bo_sung: "Bổ sung",
+  thay_the: "Thay thế",
+  bai_bo: "Bãi bỏ",
+  huong_dan: "Hướng dẫn",
+  can_cu: "Căn cứ",
+  dan_chieu: "Dẫn chiếu",
   wikilink: "Liên kết wiki",
 };
 
@@ -67,9 +69,9 @@ const SCOPE_LEVEL_COLORS: Record<string, string> = {
 };
 
 const SCOPE_LEVEL_META: Record<string, { icon: string; fallback: string }> = {
-  project: { icon: "folder_special", fallback: "Workspace" },
-  department: { icon: "business", fallback: "Department" },
-  global: { icon: "public", fallback: "Global" },
+  project: { icon: "folder_special", fallback: "Không gian làm việc" },
+  department: { icon: "business", fallback: "Phòng ban" },
+  global: { icon: "public", fallback: "Toàn hệ thống" },
 };
 
 type EdgeFilter = "all" | "concept" | "legal" | "wikilink";
@@ -79,15 +81,15 @@ const EDGE_FILTERS: { key: EdgeFilter; label: string }[] = [
   { key: "all", label: "Tất cả" },
   { key: "concept", label: "Khái niệm" },
   { key: "legal", label: "Pháp lý" },
-  { key: "wikilink", label: "Wiki link" },
+  { key: "wikilink", label: "Liên kết Wiki" },
 ];
 
 const EDGE_LEGEND: { label: string; color: string }[] = [
-  { label: "Là một (is-a)", color: RELATION_COLORS.la_mot },
-  { label: "Thuộc về (part-of)", color: RELATION_COLORS.thuoc },
+  { label: "Là một", color: RELATION_COLORS.la_mot },
+  { label: "Thuộc về", color: RELATION_COLORS.thuoc },
   { label: "Quy định / Áp dụng", color: RELATION_COLORS.quy_dinh },
   { label: "Sửa đổi / Bổ sung", color: RELATION_COLORS.sua_doi },
-  { label: "Wiki link", color: RELATION_COLORS.wikilink },
+  { label: "Liên kết Wiki", color: RELATION_COLORS.wikilink },
 ];
 
 function scopeLevel(n: { scope_type?: string }): "global" | "department" | "project" {
@@ -136,6 +138,7 @@ type WikiGraphProps = {
 };
 
 export function WikiGraph({ nodes, edges, centerSlug, mini = false, height, onNodeClick }: WikiGraphProps) {
+  const { t } = useI18n();
   const router = useRouter();
   const graphRef = useRef<GraphInstance | undefined>(undefined);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -474,7 +477,7 @@ export function WikiGraph({ nodes, edges, centerSlug, mini = false, height, onNo
           <div className="mb-1 font-semibold text-foreground">{hover.title}</div>
           <div className="flex items-center gap-1.5 text-muted-foreground">
             <span className="size-2 rounded-full" style={{ backgroundColor: nodeColor(hover) }} />
-            <span>{hover.page_type}</span>
+            <span>{wikiTypeGroupLabel(hover.page_type)}</span>
             <span>·</span>
             <span>{hover.degree} links</span>
           </div>
@@ -512,8 +515,8 @@ export function WikiGraph({ nodes, edges, centerSlug, mini = false, height, onNo
             <div className="flex items-center gap-1 rounded-lg border bg-background/90 p-1 text-xs shadow-sm">
               {(
                 [
-                  ["scope", "Scope"],
-                  ["status", "Maturity"],
+                  ["scope", "Phạm vi"],
+                  ["status", "Độ hoàn thiện"],
                 ] as const
               ).map(([key, label]) => (
                 <button
@@ -534,19 +537,19 @@ export function WikiGraph({ nodes, edges, centerSlug, mini = false, height, onNo
           {/* bottom-left legend */}
           <div className="absolute bottom-3 left-3 z-10 max-h-[50vh] w-[168px] max-w-[168px] overflow-y-auto rounded-xl border bg-background/90 px-3 py-2.5 text-xs shadow-sm">
             {colorMode === "status" ? (
-              <LegendSection title="Maturity Lifecycle">
+              <LegendSection title="Độ hoàn thiện">
                 {(["evergreen", "mature", "developing", "seed"] as const).map((s) => (
                   <LegendRow
                     key={s}
                     swatch={<span className="size-2.5 rounded-full" style={{ backgroundColor: WIKI_STATUS_COLORS[s] }} />}
-                    label={s[0].toUpperCase() + s.slice(1)}
+                    label={t(`wiki.statusLabel.${s}`)}
                     count={statusCounts[s]}
                   />
                 ))}
               </LegendSection>
             ) : (
               <>
-                <LegendSection title="Scope Levels">
+                <LegendSection title="Cấp phạm vi">
                   {(["global", "department", "project"] as const).map((lv) => (
                     <LegendRow
                       key={lv}
@@ -564,7 +567,7 @@ export function WikiGraph({ nodes, edges, centerSlug, mini = false, height, onNo
                     />
                   ))}
                 </LegendSection>
-                <LegendSection title="Scope" count={scopeList.length}>
+                <LegendSection title="Phạm vi" count={scopeList.length}>
                   {scopeList.length > 8 && (
                     <div className="relative mb-1.5">
                       <input

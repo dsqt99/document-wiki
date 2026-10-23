@@ -8,23 +8,23 @@ type TypeConfig = { icon: string; label: string; color: string };
 const NEUTRAL = "#8a8580";
 
 const TYPE_CONFIG: Record<string, TypeConfig> = {
-  entity: { icon: "article", label: "Page", color: "#c0603a" }, // terracotta
-  concept: { icon: "article", label: "Page", color: "#8c7b6b" }, // warm taupe
-  topic: { icon: "article", label: "Page", color: "#6f8f72" }, // sage
-  source: { icon: "description", label: "Source", color: "#8a78a6" }, // muted lavender
-  index: { icon: "list_alt", label: "Index", color: NEUTRAL },
-  log: { icon: "history", label: "Log", color: NEUTRAL },
-  hot: { icon: "local_fire_department", label: "Hot Cache", color: "#c0603a" },
+  entity: { icon: "article", label: "Trang Wiki", color: "#c0603a" }, // terracotta
+  concept: { icon: "article", label: "Trang Wiki", color: "#8c7b6b" }, // warm taupe
+  topic: { icon: "article", label: "Trang Wiki", color: "#6f8f72" }, // sage
+  source: { icon: "description", label: "Văn bản nguồn", color: "#8a78a6" }, // muted lavender
+  index: { icon: "list_alt", label: "Mục lục", color: NEUTRAL },
+  log: { icon: "history", label: "Nhật ký", color: NEUTRAL },
+  hot: { icon: "local_fire_department", label: "Trang tổng hợp", color: "#c0603a" },
 };
 
 const GROUP_LABEL: Record<string, string> = {
-  entity: "Pages",
-  concept: "Pages",
-  topic: "Pages",
-  source: "Sources",
-  index: "Index",
-  log: "Log",
-  hot: "Hot Cache",
+  entity: "Trang Wiki",
+  concept: "Trang Wiki",
+  topic: "Trang Wiki",
+  source: "Văn bản nguồn",
+  index: "Mục lục",
+  log: "Nhật ký",
+  hot: "Trang tổng hợp",
 };
 
 /** Material Symbols ligature for a page type (defaults to "article"). */

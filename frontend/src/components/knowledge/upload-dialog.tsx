@@ -10,6 +10,8 @@ import { cn } from "@/lib/utils";
 import { KnowledgeTypeSelect } from "./knowledge-type-select";
 import { ManagingDepartmentSelect } from "./managing-department-select";
 import { ScopePicker, type ScopeMode } from "./scope-picker";
+import { SecurityLabelSelect, type SecurityLabel } from "./security-label-select";
+import { defaultSecurityLabel } from "@/lib/security-label";
 import { errorText, type Department, type KnowledgeType, type Source } from "./types";
 
 const ACCEPTED = ["pdf", "docx", "doc", "rtf", "xlsx", "xls", "csv", "txt", "md", "pptx", "ppt"];
@@ -140,6 +142,7 @@ function UploadBody({
   const [typeId, setTypeId] = useState(() => types.find((ty) => ty.slug === "general")?.id ?? "");
   const [mode, setMode] = useState<ScopeMode>("personal");
   const [deptIds, setDeptIds] = useState<string[]>([]);
+  const [label, setLabel] = useState<SecurityLabel>(() => defaultSecurityLabel(user));
   const [managerId, setManagerId] = useState(() => user?.department_ids?.[0] ?? "");
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -208,6 +211,7 @@ function UploadBody({
       if (typeId) form.append("knowledge_type_id", typeId);
       form.append("scope_type", mode);
       if (mode === "department") form.append("department_ids", deptIds.join(","));
+      form.append("security_label", label);
       if (managerId) form.append("managing_department_id", managerId);
       try {
         const created = await apiUpload<Source>("/api/sources/upload", form);
@@ -354,6 +358,8 @@ function UploadBody({
               allowPersonal
               variant="select"
             />
+            <span className="pt-2 text-xs text-muted-foreground">Nhãn bảo mật</span>
+            <SecurityLabelSelect value={label} onChange={setLabel} disabled={uploading} />
           </div>
         </StepSection>
 

@@ -70,6 +70,7 @@ export type Source = {
   contributed_by_name?: string | null;
   scope_type?: string | null;
   scope_id?: string | null;
+  security_label?: string | null;
   pipeline_strategy?: string | null;
   pipeline_phase?: string | null;
   doc_meta?: SourceDocMeta | null;
