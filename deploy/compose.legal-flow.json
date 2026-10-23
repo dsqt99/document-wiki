@@ -1,0 +1,7 @@
+{
+  "services": {
+    "api": { "image": "cahy-wiki-backend:flow-fixes-261023-2b178fb" },
+    "worker": { "image": "cahy-wiki-backend:flow-fixes-261023-2b178fb" },
+    "worker_skills": { "image": "cahy-wiki-backend:flow-fixes-261023-2b178fb" }
+  }
+}

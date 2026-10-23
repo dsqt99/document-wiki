@@ -1,0 +1,12 @@
+ARG RUNTIME_BASE=cahy-wiki-backend:quality-261022-1bb420a2
+FROM ${RUNTIME_BASE}
+COPY app/database/models.py /app/app/database/models.py
+COPY app/services/legal_relation_extractor.py /app/app/services/legal_relation_extractor.py
+COPY app/services/legal_service.py /app/app/services/legal_service.py
+COPY app/mcp/tools.py /app/app/mcp/tools.py
+COPY app/ai/mrp/pipeline.py /app/app/ai/mrp/pipeline.py
+COPY app/ai/mrp/writer.py /app/app/ai/mrp/writer.py
+COPY app/scripts/relink_legal_relations.py /app/app/scripts/relink_legal_relations.py
+COPY app/scripts/__init__.py /app/app/scripts/__init__.py
+ARG BUILD_REVISION=unknown
+LABEL org.opencontainers.image.revision=$BUILD_REVISION
