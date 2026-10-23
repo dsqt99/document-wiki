@@ -53,10 +53,17 @@ async def catalog(db=Depends(get_db), _user=require_permission(PERMISSION)):
 @router.post('/settings/rerank/switch')
 async def switch(body: SwitchBody, db=Depends(get_db), user=require_permission(PERMISSION)):
     try:
-        await build_scorer(db, body.model_spec_id)
+        scorer = await build_scorer(db, body.model_spec_id)
     except ValueError as exc:
         raise HTTPException(400, 'Model chưa có cấu hình hoặc API key hợp lệ.') from exc
-    await ConfigService(db).set(ACTIVE_KEY, body.model_spec_id)
+    svc = ConfigService(db)
+    await svc.set(ACTIVE_KEY, body.model_spec_id)
+    from app.services.wiki_reranker import HTTPReranker
+    if isinstance(scorer, HTTPReranker):
+        await svc.set('reranker_base_url', scorer.base_url)
+        await svc.set('reranker_model', scorer.model)
+        if scorer.api_key:
+            await svc.set('reranker_api_key', scorer.api_key)
     await log_audit(db, user, 'switch_rerank_model', 'app_config', ACTIVE_KEY, reason=f'model={body.model_spec_id}')
     await db.commit()
     return {'active_spec_id':body.model_spec_id}
