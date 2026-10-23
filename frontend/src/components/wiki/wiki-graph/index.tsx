@@ -4,8 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { WIKI_STATUS_COLORS, normalizeWikiStatus } from "@/components/wiki/wiki-status-badge";
-import { useI18n } from "@/lib/i18n";
 import { wikiTypeGroupLabel } from "@/components/wiki/wiki-type-badge";
 import { cn } from "@/lib/utils";
 import type { GraphInstance } from "./force-graph-canvas";
@@ -75,7 +73,6 @@ const SCOPE_LEVEL_META: Record<string, { icon: string; fallback: string }> = {
 };
 
 type EdgeFilter = "all" | "concept" | "legal" | "wikilink";
-type ColorMode = "scope" | "status";
 
 const EDGE_FILTERS: { key: EdgeFilter; label: string }[] = [
   { key: "all", label: "Tất cả" },
@@ -138,7 +135,6 @@ type WikiGraphProps = {
 };
 
 export function WikiGraph({ nodes, edges, centerSlug, mini = false, height, onNodeClick }: WikiGraphProps) {
-  const { t } = useI18n();
   const router = useRouter();
   const graphRef = useRef<GraphInstance | undefined>(undefined);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -148,7 +144,6 @@ export function WikiGraph({ nodes, edges, centerSlug, mini = false, height, onNo
 
   const [size, setSize] = useState<{ w: number; h: number }>({ w: 0, h: height ?? 0 });
   const [edgeFilter, setEdgeFilter] = useState<EdgeFilter>("all");
-  const [colorMode, setColorMode] = useState<ColorMode>("scope");
   const [hover, setHover] = useState<GraphNode | null>(null);
   const [mouse, setMouse] = useState<{ x: number; y: number } | null>(null);
   const [scopeQuery, setScopeQuery] = useState("");
@@ -263,13 +258,7 @@ export function WikiGraph({ nodes, edges, centerSlug, mini = false, height, onNo
     return set;
   }, [hover, graphData]);
 
-  const nodeColor = useCallback(
-    (n: GraphNode) =>
-      colorMode === "status"
-        ? WIKI_STATUS_COLORS[normalizeWikiStatus(n.status)]
-        : SCOPE_LEVEL_COLORS[scopeLevel(n)],
-    [colorMode],
-  );
+  const nodeColor = useCallback((n: GraphNode) => SCOPE_LEVEL_COLORS[scopeLevel(n)], []);
 
   const drawNode = useCallback(
     (n: GraphNode, ctx: CanvasRenderingContext2D, scale: number) => {
@@ -383,12 +372,6 @@ export function WikiGraph({ nodes, edges, centerSlug, mini = false, height, onNo
   };
 
   // ---- legend data ---------------------------------------------------------
-  const statusCounts = useMemo(() => {
-    const c: Record<string, number> = { evergreen: 0, mature: 0, developing: 0, seed: 0 };
-    for (const n of graphData.nodes) c[normalizeWikiStatus(n.status)]++;
-    return c;
-  }, [graphData]);
-
   const levelCounts = useMemo(() => {
     const c: Record<string, number> = { global: 0, department: 0, project: 0 };
     for (const n of graphData.nodes) c[scopeLevel(n)]++;
@@ -512,108 +495,73 @@ export function WikiGraph({ nodes, edges, centerSlug, mini = false, height, onNo
                 </button>
               ))}
             </div>
-            <div className="flex items-center gap-1 rounded-lg border bg-background/90 p-1 text-xs shadow-sm">
-              {(
-                [
-                  ["scope", "Phạm vi"],
-                  ["status", "Độ hoàn thiện"],
-                ] as const
-              ).map(([key, label]) => (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => setColorMode(key)}
-                  className={cn(
-                    "rounded-[10px] px-2 py-0.5 text-[10px] leading-[15px] font-medium transition-colors",
-                    colorMode === key ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted",
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
           </div>
 
           {/* bottom-left legend */}
           <div className="absolute bottom-3 left-3 z-10 max-h-[50vh] w-[168px] max-w-[168px] overflow-y-auto rounded-xl border bg-background/90 px-3 py-2.5 text-xs shadow-sm">
-            {colorMode === "status" ? (
-              <LegendSection title="Độ hoàn thiện">
-                {(["evergreen", "mature", "developing", "seed"] as const).map((s) => (
-                  <LegendRow
-                    key={s}
-                    swatch={<span className="size-2.5 rounded-full" style={{ backgroundColor: WIKI_STATUS_COLORS[s] }} />}
-                    label={t(`wiki.statusLabel.${s}`)}
-                    count={statusCounts[s]}
+            <LegendSection title="Cấp phạm vi">
+              {(["global", "department", "project"] as const).map((lv) => (
+                <LegendRow
+                  key={lv}
+                  dot={SCOPE_LEVEL_COLORS[lv]}
+                  swatch={
+                    <span
+                      className="material-symbols-outlined"
+                      style={{ fontSize: 14, color: SCOPE_LEVEL_COLORS[lv] }}
+                    >
+                      {SCOPE_LEVEL_META[lv].icon}
+                    </span>
+                  }
+                  label={SCOPE_LEVEL_META[lv].fallback}
+                  count={levelCounts[lv]}
+                />
+              ))}
+            </LegendSection>
+            <LegendSection title="Phạm vi" count={scopeList.length}>
+              {scopeList.length > 8 && (
+                <div className="relative mb-1.5">
+                  <input
+                    value={scopeQuery}
+                    onChange={(e) => setScopeQuery(e.target.value)}
+                    placeholder="Filter scopes…"
+                    className="h-7 w-full rounded-md border bg-background px-2 pr-6 text-xs outline-none focus:border-primary"
                   />
-                ))}
-              </LegendSection>
-            ) : (
-              <>
-                <LegendSection title="Cấp phạm vi">
-                  {(["global", "department", "project"] as const).map((lv) => (
+                  {scopeQuery && (
+                    <button
+                      type="button"
+                      aria-label="Clear"
+                      onClick={() => setScopeQuery("")}
+                      className="absolute top-1/2 right-1 flex -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: 14 }}>
+                        close
+                      </span>
+                    </button>
+                  )}
+                </div>
+              )}
+              <div className={cn(scopeList.length > 8 && "max-h-40 overflow-y-auto")}>
+                {filteredScopes.length === 0 ? (
+                  <div className="py-1 text-muted-foreground">No matching scopes.</div>
+                ) : (
+                  filteredScopes.map((s) => (
                     <LegendRow
-                      key={lv}
-                      dot={SCOPE_LEVEL_COLORS[lv]}
+                      key={s.key}
                       swatch={
                         <span
                           className="material-symbols-outlined"
-                          style={{ fontSize: 14, color: SCOPE_LEVEL_COLORS[lv] }}
+                          style={{ fontSize: 14, color: SCOPE_LEVEL_COLORS[s.level] }}
                         >
-                          {SCOPE_LEVEL_META[lv].icon}
+                          {SCOPE_LEVEL_META[s.level].icon}
                         </span>
                       }
-                      label={SCOPE_LEVEL_META[lv].fallback}
-                      count={levelCounts[lv]}
+                      label={s.name}
+                      count={s.count}
                     />
-                  ))}
-                </LegendSection>
-                <LegendSection title="Phạm vi" count={scopeList.length}>
-                  {scopeList.length > 8 && (
-                    <div className="relative mb-1.5">
-                      <input
-                        value={scopeQuery}
-                        onChange={(e) => setScopeQuery(e.target.value)}
-                        placeholder="Filter scopes…"
-                        className="h-7 w-full rounded-md border bg-background px-2 pr-6 text-xs outline-none focus:border-primary"
-                      />
-                      {scopeQuery && (
-                        <button
-                          type="button"
-                          aria-label="Clear"
-                          onClick={() => setScopeQuery("")}
-                          className="absolute top-1/2 right-1 flex -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                        >
-                          <span className="material-symbols-outlined" style={{ fontSize: 14 }}>
-                            close
-                          </span>
-                        </button>
-                      )}
-                    </div>
-                  )}
-                  <div className={cn(scopeList.length > 8 && "max-h-40 overflow-y-auto")}>
-                    {filteredScopes.length === 0 ? (
-                      <div className="py-1 text-muted-foreground">No matching scopes.</div>
-                    ) : (
-                      filteredScopes.map((s) => (
-                        <LegendRow
-                          key={s.key}
-                          swatch={
-                            <span
-                              className="material-symbols-outlined"
-                              style={{ fontSize: 14, color: SCOPE_LEVEL_COLORS[s.level] }}
-                            >
-                              {SCOPE_LEVEL_META[s.level].icon}
-                            </span>
-                          }
-                          label={s.name}
-                          count={s.count}
-                        />
-                      ))
-                    )}
-                  </div>
-                </LegendSection>
-              </>
-            )}
+                  ))
+                )}
+              </div>
+            </LegendSection>
             <LegendSection title="Loại quan hệ (Edges)" last>
               {EDGE_LEGEND.map((e) => (
                 <LegendRow

@@ -9,7 +9,6 @@ import { ScopeBadge } from "@/components/shared/scope-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { encodeSlugPath } from "@/components/wiki/wiki-pages-loader";
-import { WikiStatusBadge } from "@/components/wiki/wiki-status-badge";
 import { WikiOriginBadge } from "@/components/wiki/wiki-origin-badge";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -253,7 +252,6 @@ export function WikiLibrary({ refreshKey = 0, onCountChange }: Props) {
                       {item.rerank_score != null && <span>Điểm liên quan {item.rerank_score.toFixed(3)}</span>}
                       <ScopeBadge scopeType={item.scope_type} />
                       {item.scope_name && item.scope_type !== "global" && <span>{item.scope_name}</span>}
-                      <WikiStatusBadge status={(item.status as string) === "growing" ? "developing" : item.status} />
                       <span>Cập nhật <time dateTime={item.updated_at}>{formatUpdated(item.updated_at)}</time></span>
                     </div>
                     {!!item.source_ids?.length && <p className="truncate text-xs text-muted-foreground" title={item.source_ids.map(sourceTitle).join(" · ")}>Tài liệu: {item.source_ids.map(sourceTitle).join(" · ")}</p>}

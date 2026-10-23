@@ -4,7 +4,6 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import { WikiStatusBadge } from "@/components/wiki/wiki-status-badge";
 import { BarList, CHART_COLORS, LineChart } from "./charts";
 import {
   ChartCard,
@@ -515,15 +514,12 @@ export function DiagnosticsTab({ data, loading }: { data: LintReport | null; loa
               icon="article"
               title="Orphan Pages"
               badge={`${orphans.length} pages`}
-              headers={[{ label: "Page Title" }, { label: "Status" }, { label: "Action", right: true }]}
+              headers={[{ label: "Page Title" }, { label: "Action", right: true }]}
             >
               {orphans.map((o) => (
                 <tr key={o.slug} className={ROW}>
                   <td className={CELL}>
                     <PageCell slug={o.slug} title={o.title} />
-                  </td>
-                  <td className={CELL}>
-                    <WikiStatusBadge status={o.status} />
                   </td>
                   <td className={cn(CELL, "text-right")}>
                     <ActionLink href={`/wiki/${o.slug}`} icon="visibility" label="View Page →" />

@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
-import { WIKI_STATUS_LABELS_VI } from "./wiki-status-badge";
 
 export type FacetOption = {
   value: string;
@@ -10,10 +9,6 @@ export type FacetOption = {
   count: number;
   color?: string;
 };
-
-export const STATUS_LABEL_VI: Record<string, string> = WIKI_STATUS_LABELS_VI;
-
-export const STATUS_ORDER: string[] = ["evergreen", "mature", "developing", "seed"];
 
 type FacetGroupProps = {
   title: string;

@@ -3,12 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { WikiPageSummaryAI } from "@/components/knowledge/summary-maintenance";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -21,7 +15,6 @@ import { WikiEditor } from "@/components/wiki/wiki-editor";
 import { WikiPageTree } from "@/components/wiki/wiki-page-tree";
 import { encodeSlugPath } from "@/components/wiki/wiki-pages-loader";
 import { WikiSearchDialog } from "@/components/wiki/wiki-search-dialog";
-import { WikiStatusBadge } from "@/components/wiki/wiki-status-badge";
 import { WikiOriginBadge } from "@/components/wiki/wiki-origin-badge";
 import { WikiTypeBadge, wikiTypeGroupLabel } from "@/components/wiki/wiki-type-badge";
 import { api, ApiError } from "@/lib/api";
@@ -59,8 +52,6 @@ type Ref = { id: string; data: SourceDetail };
 type EditState = { key: string; kind: "page" } | { key: string; kind: "draft"; draft: DraftResponse };
 
 const GLOBAL_SCOPE: WikiScope = { scope_type: "global", scope_id: null, name: "Global" };
-const NO_STATUS_TYPES = new Set(["index", "log", "hot", "source"]);
-const STATUS_CHOICES = ["seed", "developing", "mature", "evergreen"] as const;
 
 function pad(n: number) {
   return String(n).padStart(2, "0");
@@ -403,21 +394,6 @@ export function WikiPageView({ slug, scopeType, scopeId, scopeSuffix, returnTo, 
     reloadDrafts();
   };
 
-  const changeStatus = async (status: string) => {
-    if (!page || status === page.status) return;
-    try {
-      const res = await api<WikiPageDetail>(
-        `/api/wiki/pages/${encodeSlugPath(page.slug)}/status?${pageScopeQuery(page.scope_type, page.scope_id)}`,
-        { method: "PATCH", body: { status } },
-      );
-      const next: WikiPageDetail =
-        res && typeof res === "object" && "slug" in res ? { ...page, ...res } : { ...page, status: status as WikiPageDetail["status"] };
-      updatePageLocally(next);
-    } catch {
-      /* keep the current status */
-    }
-  };
-
   // ---------------------------------------------------------------- dialogs & shortcuts
   const [searchOpen, setSearchOpen] = useState(false);
   const [catalogueOpen, setCatalogueOpen] = useState(false);
@@ -539,31 +515,6 @@ export function WikiPageView({ slug, scopeType, scopeId, scopeSuffix, returnTo, 
               <div className="flex flex-wrap items-center gap-2">
                 <WikiTypeBadge type={page.page_type} className="text-xs" />
                 {!sourceMode && <ScopeBadge scopeType={page.scope_type} scopeId={page.scope_id} className="px-2.5" />}
-                {!NO_STATUS_TYPES.has(page.page_type) &&
-                  (canEdit ? (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger
-                        render={
-                          <button
-                            type="button"
-                            title="Đổi độ hoàn thiện"
-                            className="flex items-center gap-0.5 rounded-full hover:opacity-80"
-                          />
-                        }
-                      >
-                        <WikiStatusBadge status={page.status} />
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent className="w-auto min-w-40">
-                        {STATUS_CHOICES.map((s) => (
-                          <DropdownMenuItem key={s} disabled={s === page.status} onClick={() => changeStatus(s)}>
-                            <WikiStatusBadge status={s} />
-                          </DropdownMenuItem>
-                        ))}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  ) : (
-                    <WikiStatusBadge status={page.status} />
-                  ))}
                 {!sourceMode && (
                   <span className="ml-auto font-mono text-xs text-muted-foreground" title="Phiên bản">
                     v{page.version}

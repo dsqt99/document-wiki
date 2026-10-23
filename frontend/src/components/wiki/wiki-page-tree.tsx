@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { encodeSlugPath, WIKI_PAGES_URL } from "@/components/wiki/wiki-pages-loader";
-import { normalizeWikiStatus, WIKI_STATUS_COLORS } from "@/components/wiki/wiki-status-badge";
 import { wikiTypeGroupLabel } from "@/components/wiki/wiki-type-badge";
 import { api } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
@@ -674,8 +673,8 @@ export function WikiPageTree({
                               </span>
                             ) : (
                               <span
-                                className="size-1.5 shrink-0 rounded-full"
-                                style={{ backgroundColor: WIKI_STATUS_COLORS[normalizeWikiStatus(p.status)] }}
+                                aria-hidden
+                                className="size-1.5 shrink-0 rounded-full bg-muted-foreground/40"
                               />
                             )}
                             <span className={cn("truncate", isActive && "font-medium")}>{label}</span>
