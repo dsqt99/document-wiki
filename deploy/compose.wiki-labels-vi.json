@@ -1,0 +1,5 @@
+{
+  "services": {
+    "frontend": { "image": "cahy-wiki-frontend:labels-vi-261023-cf4171a" }
+  }
+}
