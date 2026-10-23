@@ -411,21 +411,14 @@ async def run_refine_pipeline(session, source, full_text, tracker, registry, kt_
     except Exception as e:
         logger.info(f"refine: no active embedding spec ({e})")
 
-    reusable = writer.reusable_checkpoint_results(source, plan, full_text, kt_slug)
-    results = list(reusable.values())
-    planned_count = sum(1 for p in (plan.plan_json or {}).get("pages", [])
-                        if isinstance(p, dict) and p.get("slug"))
-    invalid_checkpoint = (
-        # Generated slugs can acquire a scope/origin collision suffix.
-        not results or len(results) != planned_count
-    )
-    if source.pipeline_phase not in ("verify", "commit") or invalid_checkpoint:
-        source.pipeline_phase = "refine"
-        plan.status = "in_progress"
-        await session.commit()
-        results = await writer.run_refine_phase(session, source, plan, rows, full_text, llm, emb, kt_slug, tracker)
-        source.pipeline_phase = "verify"
-        await session.commit()
+    # Even a complete cache must re-resolve current target slugs and validate
+    # cached link dependencies. The writer makes zero LLM calls when stable.
+    source.pipeline_phase = "refine"
+    plan.status = "in_progress"
+    await session.commit()
+    results = await writer.run_refine_phase(session, source, plan, rows, full_text, llm, emb, kt_slug, tracker)
+    source.pipeline_phase = "verify"
+    await session.commit()
 
     results = await verifier.run_verify_phase(session, source, results, rows, full_text, llm, emb, tracker)
     return await run_commit_phase(session, source, results, plan, emb, embedding_spec, kt_slug, tracker,

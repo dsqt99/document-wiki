@@ -36,7 +36,7 @@ async def test_resuming_checkpoint_regenerates_failed_drafts(phase, draft):
 
 
 @pytest.mark.asyncio
-async def test_good_checkpoint_does_not_call_writer_again():
+async def test_good_checkpoint_still_passes_through_cache_aware_writer():
     source = SimpleNamespace(id=uuid.uuid4(), pipeline_phase="commit")
     row = writer.PageWriteResult("page", "Page", "concept", "CREATE", "Valid source text.", "")
     plan = SimpleNamespace(status="done", plan_json={"pages": [{"slug": "page"}],
@@ -51,11 +51,11 @@ async def test_good_checkpoint_does_not_call_writer_again():
     registry = AsyncMock()
     registry.get_active_embedding_spec_id.return_value = None
     with patch.object(pipeline, "_load_plan", AsyncMock(return_value=plan)), \
-         patch.object(writer, "run_refine_phase", AsyncMock()) as refine, \
+         patch.object(writer, "run_refine_phase", AsyncMock(return_value=[row])) as refine, \
          patch.object(verifier, "run_verify_phase", AsyncMock(side_effect=lambda *a: a[2])), \
          patch.object(pipeline, "run_commit_phase", AsyncMock(return_value={"status": "ready"})):
         await pipeline.run_refine_pipeline(db, source, "Valid source text.", None, registry, None, None, None)
-    refine.assert_not_awaited()
+    refine.assert_awaited_once()
 
 
 @pytest.mark.asyncio

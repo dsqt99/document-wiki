@@ -160,6 +160,61 @@ async def test_retry_invalidates_cached_links_to_a_newly_colliding_slug(old_link
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("old_link", ["[[b#detail|B]]", "[B](/wiki/b)"])
+@pytest.mark.parametrize("collision", [False, True])
+async def test_pipeline_rechecks_slug_dependencies_even_when_every_draft_is_cached(old_link, collision):
+    source, plan = source_and_plan()
+    plan.plan_json["pages"] = [{"slug": slug} for slug in ("a", "b", "c")]
+    async def initial(*args):
+        return "Valid source text. " + (old_link if args[1]["slug"] == "a" else ""), "Summary"
+    await run_writer(source, plan, generate=AsyncMock(side_effect=initial), resolve=lambda db, slug, *a: slug)
+    source.pipeline_phase, plan.status = "commit", "done"
+    db = AsyncMock()
+    def query(*args, **kwargs):
+        result = MagicMock()
+        result.scalars.return_value.all.return_value = []
+        result.one_or_none.return_value = SimpleNamespace(full_text=source.full_text,
+            outline_json=source.outline_json, attempt_id=source.attempt_id)
+        result.scalar_one_or_none.return_value = deepcopy(plan.plan_json)
+        return result
+    db.execute.side_effect = query
+    db.get.return_value = source
+    factory = MagicMock()
+    factory.return_value.__aenter__.return_value = db
+    registry = AsyncMock()
+    registry.get_llm.return_value = SimpleNamespace()
+    registry.get_active_embedding_spec_id.return_value = None
+    new_link = old_link.replace("b", "b-generated") if collision else old_link
+    async def regenerate(*args):
+        return "Valid source text. " + (new_link if args[1]["slug"] == "a" else ""), "Summary"
+    published = {}
+    async def create(*args, **kwargs):
+        published[kwargs["slug"]] = kwargs["content_md"]
+        return SimpleNamespace(content_md=kwargs["content_md"])
+    with patch("app.database.async_session_factory", factory), \
+         patch.object(pipeline, "_load_plan", AsyncMock(return_value=plan)), \
+         patch.object(verifier, "run_verify_phase", AsyncMock(side_effect=lambda *a: a[2])), \
+         patch.object(pipeline, "_resolve_wiki_scopes", AsyncMock(return_value=[("global", None)])), \
+         patch.object(pipeline.wiki_service, "resolve_wiki_scopes", AsyncMock(return_value=[("global", None)])), \
+         patch.object(pipeline, "_merge_llm", AsyncMock(return_value=None)), \
+         patch.object(pipeline, "_lock", AsyncMock()), \
+         patch("app.services.wiki_origin_service.resolve_target_slug", AsyncMock(
+             side_effect=lambda db, slug, *a: "b-generated" if collision and slug == "b" else slug)) as resolve, \
+         patch.object(pipeline.wiki_service, "get_page_by_slug", AsyncMock(return_value=None)), \
+         patch.object(pipeline.wiki_service, "apply_create", AsyncMock(side_effect=create)), \
+         patch.object(pipeline.wiki_service, "regenerate_index", AsyncMock()), \
+         patch.object(pipeline.wiki_service, "append_log", AsyncMock()), \
+         patch.object(pipeline.source_quality, "lock_current_attempt", AsyncMock(return_value=True)), \
+         patch.object(pipeline.source_quality, "save_quality", AsyncMock(return_value=True)), \
+         patch.object(pipeline.source_status, "update_source_dual_status", AsyncMock()), \
+         patch.object(writer, "write_simple", AsyncMock(side_effect=regenerate)) as generate:
+        await pipeline.run_refine_pipeline(db, source, source.full_text, None, registry, "general", None, None)
+    assert published["a"] == "Valid source text. " + new_link
+    assert [call.args[1]["slug"] for call in generate.await_args_list] == (["a", "b-generated"] if collision else [])
+    assert resolve.await_count >= 6  # All three destinations rechecked before VERIFY and COMMIT.
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("change", ["text", "source", "attempt", "plan", "plan_inputs", "outline", "legacy"])
 async def test_stale_or_unversioned_checkpoint_cannot_reuse_drafts(change):
     source, plan = source_and_plan()
@@ -236,7 +291,7 @@ async def test_final_publication_rechecks_all_reused_drafts_after_verify(change)
     registry = AsyncMock()
     registry.get_active_embedding_spec_id.return_value = None
     with patch.object(pipeline, "_load_plan", AsyncMock(return_value=plan)), \
-         patch.object(writer, "run_refine_phase", AsyncMock()) as refine, \
+         patch.object(writer, "run_refine_phase", AsyncMock(return_value=[draft])) as refine, \
          patch.object(verifier, "run_verify_phase", AsyncMock(side_effect=verify)), \
          patch.object(pipeline, "_resolve_wiki_scopes", AsyncMock(return_value=[("global", None)])), \
          patch.object(pipeline, "_merge_llm", AsyncMock(return_value=None)), \
@@ -250,7 +305,7 @@ async def test_final_publication_rechecks_all_reused_drafts_after_verify(change)
          patch.object(pipeline.source_quality, "lock_current_attempt", AsyncMock(side_effect=check_attempt)), \
          patch.object(pipeline.source_status, "update_source_dual_status", AsyncMock()) as state:
         result = await pipeline.run_refine_pipeline(db, source, source.full_text, tracker, registry, None, None, None)
-    refine.assert_not_awaited()
+    refine.assert_awaited_once()
     assert events == ["progress", "source_lock"]
     if change:
         assert result == {"status": "stale"}
