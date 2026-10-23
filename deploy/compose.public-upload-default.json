@@ -1,0 +1,7 @@
+{
+  "services": {
+    "api": {
+      "image": "cahy-wiki-backend:upload-scope-261023-cb617a4"
+    }
+  }
+}

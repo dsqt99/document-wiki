@@ -1,0 +1,4088 @@
+{
+  "mode": "selective_wiki_retry",
+  "targets": [
+    "d6de6e95-ee4e-4a31-9377-d4eca7fe77c1",
+    "b1372cdc-5cc5-423b-8a1b-1c965ba58889",
+    "440a3202-400c-48ea-8647-6c0647fcb642"
+  ],
+  "results": [
+    {
+      "id": "d6de6e95-ee4e-4a31-9377-d4eca7fe77c1",
+      "before": {
+        "id": "d6de6e95-ee4e-4a31-9377-d4eca7fe77c1",
+        "status": "partial",
+        "wiki_status": "error",
+        "chunk_status": "ready",
+        "phase": "verify",
+        "raw_text_sha256": "bcb487b538540ac74b545e67e7e4c102021f28da27e125b6f004788403537fa8",
+        "plan_pages": 74,
+        "draft_count": 73,
+        "pages": [
+          {
+            "id": "018bf189-ddb1-4bcb-bda8-6f6b307d3ba3",
+            "slug": "giay-van-chuyen",
+            "sha256": "f18a66ec9a765aab9a65fb145058f82cd329c7b6421a97cc636bec31b51445e8"
+          },
+          {
+            "id": "03ec6f53-3dfb-49de-82bb-47b5926f2925",
+            "slug": "dieu-77-56-vbhn-vpqh",
+            "sha256": "2a0f8ed795ab905fd49755b4c8cfd7ac8120d91d7ef599aa59d5034cf889a469"
+          },
+          {
+            "id": "042e3321-427f-435a-8e92-481b17c717d0",
+            "slug": "dieu-88-56-vbhn-vpqh",
+            "sha256": "eed278a350b659f663fde2545c6c4fc65d23e55ae0b89e5258e8b2ef5387e119"
+          },
+          {
+            "id": "05bc4899-b0b6-4ad4-b55c-33d60eff034b",
+            "slug": "dieu-60-56-vbhn-vpqh",
+            "sha256": "43bd91bcd85599c02ab7392e7710e2b181493fc7d524de5fb3b32081c79672ea"
+          },
+          {
+            "id": "07768521-954c-4884-b8e1-c1ba98d9b379",
+            "slug": "dieu-91-56-vbhn-vpqh",
+            "sha256": "ce1364f1f782b247015cfe5017cf77963e74fca2cfeb84baeffd9d8265abcd24"
+          },
+          {
+            "id": "089f3539-79a6-44c0-9ec0-e90fe3c434fe",
+            "slug": "trong-tai-toan-phan-cua-phuong-tien",
+            "sha256": "64c4546da7b6e5e231a3f55686e34012f6d151501f2c30dcf2cb5b2dad03fc5a"
+          },
+          {
+            "id": "0d612fce-d3b2-4ab0-a2ef-4cd7825210c8",
+            "slug": "dieu-83-56-vbhn-vpqh",
+            "sha256": "d814e8ce07e94b1d732988cd5ae512e62beb76c5c18d864e3c02619b425f7af9"
+          },
+          {
+            "id": "0dff794d-e913-4492-b087-1e85a4b63174",
+            "slug": "ve-hanh-khach",
+            "sha256": "1088bac3d84f841b5af3bd06477d02610256f1654c96214e0d95ad8c5ac34215"
+          },
+          {
+            "id": "0efa7cee-00fe-4d3d-905c-5c0e3d0edc12",
+            "slug": "dieu-96-56-vbhn-vpqh",
+            "sha256": "523079b04463fb0e32e8077cc15dddd6999a4ca667d2338540baaa2f5f3a36ec"
+          },
+          {
+            "id": "0f768cdd-4504-46b4-a2e0-4dbfba839205",
+            "slug": "dieu-44-56-vbhn-vpqh",
+            "sha256": "70239e248e226fa4424a48a41c12facaccfc843b0ccb2f0fe22e50489fb024ab"
+          },
+          {
+            "id": "101bc5e0-46e2-49b2-83dc-12d712790e0e",
+            "slug": "nguoi-kinh-doanh-van-tai",
+            "sha256": "16b84dedb4e1b785166d38b141248e215d16638aa1e438e13c352aa8c455f64b"
+          },
+          {
+            "id": "11756a98-bdd4-4d2b-bde6-7f17991c26b8",
+            "slug": "truong-trach-quan-ly-nha-nuoc-ve-giao-thong-duong-thuy-noi-dia-cua-bo-giao-thong-van-tai",
+            "sha256": "2125135c327e7784b263b1c66689df22855f9257cfe28089d621030f1b9ab7fa"
+          },
+          {
+            "id": "118b7772-3e9c-46f6-a710-b3df3a56ba13",
+            "slug": "dieu-98b-56-vbhn-vpqh",
+            "sha256": "dfc017af17c88949e52d15feddf510cf73a84370f07078396cece7939eda3ff2"
+          },
+          {
+            "id": "11ca45d9-1159-430e-bfb1-93758d2dbb71",
+            "slug": "dieu-39-56-vbhn-vpqh",
+            "sha256": "f05bba67d1e658607fce37e2950a1bd3fd27231e066d7eba19faa0f7c427be99"
+          },
+          {
+            "id": "12f85995-86dc-40d0-bc2e-84a2a282e27d",
+            "slug": "dieu-52-56-vbhn-vpqh",
+            "sha256": "f315397d38ef7b35e581a04fff1eecdd99d69211987e16ac1bb7f00f0f436b93"
+          },
+          {
+            "id": "13374133-80d7-46ec-9185-78f79b1eac7e",
+            "slug": "dieu-18-56-vbhn-vpqh",
+            "sha256": "d36e93a52bb158510230f3f77d2582edbf24f40a577fe4865a5ab870ccee303c"
+          },
+          {
+            "id": "139b9019-bdf8-4279-bfd8-990fd3af0ce1",
+            "slug": "dieu-98a-56-vbhn-vpqh",
+            "sha256": "45f10c10ad380a2d8118886c6f1d7516d4f86795eb8208448d33c465f5fe6141"
+          },
+          {
+            "id": "1486eb86-f62e-434c-8e7b-da9316a094f7",
+            "slug": "dieu-7-56-vbhn-vpqh",
+            "sha256": "f1a06a24ea1d58388f9b2e59b07f32d8d34ee31ca4f393bd7248b3920947cf40"
+          },
+          {
+            "id": "14beb4cd-7f75-4488-afba-cc6eccef40a1",
+            "slug": "dieu-93-56-vbhn-vpqh",
+            "sha256": "ec762c7e9ca19f6849783da4a4f1e55301e7109567a233a03202eb8946d0c336"
+          },
+          {
+            "id": "1646c81e-b3bd-4084-86f5-73ba9c30f9b7",
+            "slug": "dieu-2-23-2004-qh11-generated",
+            "sha256": "f6a70a993062365a6f601cfdcbe9c0c51868974d4bc1c14e3d436f30750ee2ae"
+          },
+          {
+            "id": "1b535923-fd3b-4ae1-810a-1a104369d641",
+            "slug": "dieu-14-56-vbhn-vpqh",
+            "sha256": "3b73f010a6e218694bc2c2f60d46d6d34466978e6dd2bb38239aa12c01b644c5"
+          },
+          {
+            "id": "1c4dfb1c-c9c6-4539-8e8b-cee448a4f844",
+            "slug": "dieu-36-56-vbhn-vpqh",
+            "sha256": "8f944c3feca081877fed05f1444b0dfda3d2b99f8052a129b1f0a28e100ecb4b"
+          },
+          {
+            "id": "1c62d9ab-e0ca-4a0d-99bc-72bd773a4d1b",
+            "slug": "dieu-98g-56-vbhn-vpqh",
+            "sha256": "4e9034616838b6180634e0b12da3e47a3c6be2551077094a81945075f8ad9086"
+          },
+          {
+            "id": "1e2180d7-ec7f-4c08-9f35-e39d66794b31",
+            "slug": "be",
+            "sha256": "4e173c84f321bac105d64a55560bf4376de31f5563bc240483bf9c0422cdf0f3"
+          },
+          {
+            "id": "1e823a97-6f7f-4b7c-a21a-371f42a102c0",
+            "slug": "dieu-70-56-vbhn-vpqh",
+            "sha256": "08eb31e68ffd6bbfdb5f34f7999ec2ee7d32e3e4cac6997d93b68d5a935506b1"
+          },
+          {
+            "id": "1f5e6ad3-3059-47cc-bf38-7f0000024e78",
+            "slug": "dieu-102-56-vbhn-vpqh",
+            "sha256": "8673e633655ba87aaf7cb6f03fafe96ab20460ebd4c1f734ce1eb776041bbf8c"
+          },
+          {
+            "id": "1f9a08ac-46ae-4257-a44c-c8ff4ad391c2",
+            "slug": "van-tai-hanh-khach-theo-tuyen-co-dinh",
+            "sha256": "c0085b5ca49faf4fcfe257028c4096b98cd1557f95fd30788fba51ebda46eb17"
+          },
+          {
+            "id": "258d3ee9-d49b-41c6-9c2f-0e81b1ef35f4",
+            "slug": "giay-chung-nhan-kha-nang-chuyen-mon",
+            "sha256": "808e53affe0a059b01cf2ee3c357d986ddb08b7d2f754686c0ffedf373067c5d"
+          },
+          {
+            "id": "25a45633-c87a-44bc-adbf-15e36b919ad4",
+            "slug": "phuong-tien-thuy-noi-dia",
+            "sha256": "0f103617db27f712b1082bf3161166c412e14d2125adf29ffba1a930d03c3b13"
+          },
+          {
+            "id": "2722125c-b7c2-4a27-a987-34a7b9b7c824",
+            "slug": "dieu-69-56-vbhn-vpqh",
+            "sha256": "e3d81bb13d1f9730d87bfffe05b42dd440d3eed828000891a21de8deb40a34ce"
+          },
+          {
+            "id": "2fa4497d-3875-475e-ab9d-fc3bfa95c858",
+            "slug": "dieu-55-56-vbhn-vpqh",
+            "sha256": "3fd3d73cfefb2e116d3d15e870f921559ae9f4516cca6de843ab398cc34ab4ac"
+          },
+          {
+            "id": "31341de5-1c97-4b5f-8f42-ff90a7218356",
+            "slug": "dieu-1-56-vbhn-vpqh",
+            "sha256": "23bda5908a675644d3dba2f5c9ec321259f518616d67100a07448c28f8d18ac9"
+          },
+          {
+            "id": "33051da2-439b-4188-9647-84b232415c99",
+            "slug": "phuong-tien-tho-sro",
+            "sha256": "ab611fb1d326688f154331c11c5d160319cb59331627e440e15eb7510f88b1b4"
+          },
+          {
+            "id": "339d1b59-d8f7-4015-9af3-97ac8b0348c1",
+            "slug": "he-dong-van-tai-hanh-khach",
+            "sha256": "39c6f61934d0d260f359dc84d93d17adbfc5a6f3b8188413112ee9b5cf97d5b5"
+          },
+          {
+            "id": "33d4a74f-a350-443a-aed8-15fb0c2b46c3",
+            "slug": "dieu-47-56-vbhn-vpqh",
+            "sha256": "512254b4ea650cc2d7dff96a257d9104f2f11d8c7fd7d4f1c572bdc3d7cc9ab6"
+          },
+          {
+            "id": "34e55f65-3842-4760-8923-858cabb1999a",
+            "slug": "dieu-62-56-vbhn-vpqh",
+            "sha256": "d77f848f75be4249ef777161d0afd2187f2b0182e59b062467b171f4e69a1a98"
+          },
+          {
+            "id": "354d7f0e-42a9-4872-8730-4727f65293b8",
+            "slug": "dieu-30-56-vbhn-vpqh",
+            "sha256": "7af92bddcb35838d348e1f62d6dbe89f054249de6e35916f2bda9c8b63b66a5b"
+          },
+          {
+            "id": "359e6b31-c1c4-4a07-9b1c-605a5ccade4d",
+            "slug": "truong-trach-quan-ly-nha-nuoc-ve-giao-thong-duong-thuy-noi-dia-cua-uy-ban-nhan-dan-cap-tinh",
+            "sha256": "8e673bce912215d29a477293048d40741940da519a285def625cf0e3221b65d7"
+          },
+          {
+            "id": "3625b2cd-459a-4843-9a1b-af8c4168690c",
+            "slug": "hanh-lang-bao-ve-luong",
+            "sha256": "315b5975a1e2762b04df6cce0c349a9358005004af1a9c4dcf3becb2297e51be"
+          },
+          {
+            "id": "36b2971a-5380-4026-b17f-011020103fd9",
+            "slug": "dieu-51-56-vbhn-vpqh",
+            "sha256": "651f6da6a3b79f8bff4e44875a931a1a03c39035299fa4539c90ff67b7b17173"
+          },
+          {
+            "id": "3822c72c-a1f2-4c8d-9364-4e847b512117",
+            "slug": "tai-nan-giao-thong-duong-thuy-noi-dia",
+            "sha256": "2e4d406133709d6bbc2cfa6fb81ee71c02d401a70d49c72a7c87829a5f82c72d"
+          },
+          {
+            "id": "38c071f8-655a-4c18-8c64-53a634e9e10f",
+            "slug": "van-tai-hanh-khach-ngang-song",
+            "sha256": "86dff575bebd9f197dc38d833ba7512ca59a1106380a0d04d229adac43d42aeb"
+          },
+          {
+            "id": "39d7cfbe-e87f-4a3b-bfd4-d59aa01aa8fb",
+            "slug": "ben-thuy-noi-dia",
+            "sha256": "1f0e98ddc76618aaf6978172aa7f0c40ad2c9fcdd0e6548668d24f6bef1e848a"
+          },
+          {
+            "id": "3c6a557e-c61b-45f0-b713-ba101cb75b48",
+            "slug": "dieu-38-56-vbhn-vpqh",
+            "sha256": "a3660822410a961ec68228497438a9643a5e49e318750b8d2f9b0bc0c68d3fab"
+          },
+          {
+            "id": "3f09a552-c0ac-46e8-9218-c949ce44ce9b",
+            "slug": "he-dong-van-tai-hang-hoa",
+            "sha256": "53bf17660e981b695bd8706d03852f12c341f346139735cba9fd3d75087ba56d"
+          },
+          {
+            "id": "4170bb91-6036-4f68-bfd4-184ee3980702",
+            "slug": "bao-ve-cong-trinh-thuoc-ket-cau-ha-duong-thuy-noi-dia",
+            "sha256": "aa41c7e2c58150993510c4d91704354cca66782525deef85bc2443643c9d05de"
+          },
+          {
+            "id": "453ebb08-8a36-4768-8e9a-7dc20c7d01ef",
+            "slug": "man-duoc-gio-cua-thuyen",
+            "sha256": "a7c9d12321289c9b6dbf4522a031c11b79542838098a07f0b41c34c6942ee416"
+          },
+          {
+            "id": "4a124d98-1caa-4586-9333-592e4e5c2ba4",
+            "slug": "dieu-2-56-vbhn-vpqh",
+            "sha256": "26b94de3cce3f7404fddf1f91616ba5c32deb0582d30d84b4396652c49b0e1ad"
+          },
+          {
+            "id": "4b6682f3-6805-4fca-9a49-080179f5b399",
+            "slug": "dieu-10a-56-vbhn-vpqh",
+            "sha256": "749f033c0c3b02f99dfaa9bcbd1fb134a7bcf81526a6717a864f8a897d63b81b"
+          },
+          {
+            "id": "4bb83883-2a86-4f05-92b9-5093cd3a2f2b",
+            "slug": "dieu-59-56-vbhn-vpqh",
+            "sha256": "d74690a432bd6539112b1642306d6c9ced60f01f859509366f6ab784d71eae82"
+          },
+          {
+            "id": "4cb0de18-4444-4c6e-bcde-3ce3d18df35b",
+            "slug": "chu-phuong-tien",
+            "sha256": "99a6fc2c2a64c8d0d1bce540e99ba0a40c0e47fb66ac0afbc459fa913b7cfdac"
+          },
+          {
+            "id": "4e59fb87-33bb-47c8-bb7a-68f1c4501368",
+            "slug": "doan-lai",
+            "sha256": "f64bbbac5021b6287cf59c1fb57c10b1986c1eca217ed3c83ee0d67b2b81cc91"
+          },
+          {
+            "id": "4f4531d2-6f5f-4277-ba4f-0d307241385d",
+            "slug": "bao-gui",
+            "sha256": "2050e2060a40bd5fd13b2954d985aef9a6b39afbfc97037b4ca8a01400f4f0e6"
+          },
+          {
+            "id": "4faff77d-7faf-4ad4-822f-e8786ea25bdb",
+            "slug": "dieu-63-56-vbhn-vpqh",
+            "sha256": "41fad2fc8c3bc24a451b57d6a6aa32cb46c47dc11e8547d523c45d81713fdb30"
+          },
+          {
+            "id": "52fd5cb7-5696-45d7-8863-05b397ec5fd5",
+            "slug": "loi-nang-quan-ly-nha-nuoc-ve-giao-thong-duong-thuy-noi-dia",
+            "sha256": "71fbc686c5ca35d05fd7799a45d5c90c8f2f1a6de0949435a64b2902e2a7983a"
+          },
+          {
+            "id": "54bd0d23-fee1-4ada-bd7f-dc7c97843df0",
+            "slug": "dieu-32-56-vbhn-vpqh",
+            "sha256": "d24a2914f363d31dc8432402ade9e3517bf1ec669f3da7598e2ec1f52fe94334"
+          },
+          {
+            "id": "55420655-220f-4334-957e-c0b5d86e5ed0",
+            "slug": "dieu-24-56-vbhn-vpqh",
+            "sha256": "f4e3100dcff0856c2877e50e607f64dfe9921292deeb537653f9c66daf93ed54"
+          },
+          {
+            "id": "5629b2da-fb78-4b77-9364-53a4a9f6531c",
+            "slug": "dieu-37-56-vbhn-vpqh",
+            "sha256": "796546428a19707bf3b48e306b3c6ede3539b0eeddb148bd5fc99d549370421e"
+          },
+          {
+            "id": "56dc1735-4712-43a4-9989-b8717514df18",
+            "slug": "doan-lai-hon-hop",
+            "sha256": "3fb71df7a2dabe3558b2638006ff043185c9e2042db30b88f4269cf3b4e6e60b"
+          },
+          {
+            "id": "578e7b35-dc33-4881-a31d-945a37ab9c7c",
+            "slug": "van-tai-hanh-khach-duong-thuy-noi-dia",
+            "sha256": "0fc2fac127121b70fe16c92883e892502e14bf77a69d4b22950141c891ca8ca5"
+          },
+          {
+            "id": "5796f451-5350-45b7-93ec-506ae3433cfb",
+            "slug": "vat-chuong-ngai",
+            "sha256": "4bf8991d59e85011e4d804dc70a1787918337e50a702c208431bb9b736f0e6c2"
+          },
+          {
+            "id": "57db97d9-b4f9-41ca-a71a-87075d1f0131",
+            "slug": "dieu-53-56-vbhn-vpqh",
+            "sha256": "23b89b7a95e724ef6fa3afb627d7b3c3da19f90d8e02cf97a88fdb92800d88e4"
+          },
+          {
+            "id": "57f2c814-4136-42cb-8cea-f96ad8ca7402",
+            "slug": "dieu-23-56-vbhn-vpqh",
+            "sha256": "a307a0a41031cd5ec053418b91d56b7a39cbd68128f6f089511b9051b7a6e8c3"
+          },
+          {
+            "id": "5809d1ec-aa4c-4b4b-a442-59454dc72c44",
+            "slug": "dieu-56-56-vbhn-vpqh",
+            "sha256": "f1e41f456ad9083b0f9927bff7c3604aaa353fa29c93ffb001d09c20913c753a"
+          },
+          {
+            "id": "5aea4b66-8fa6-4a17-a4bd-c26f4350aad4",
+            "slug": "dieu-40-56-vbhn-vpqh",
+            "sha256": "dd8ef7cb72e59524457008d1302f4a2f001cd8d3a158a7c83a5e6d058c472ab3"
+          },
+          {
+            "id": "5c2b8c31-fed8-48ee-a015-c383da341d07",
+            "slug": "dieu-87-56-vbhn-vpqh",
+            "sha256": "750fe6bc84b0f62a74a6ee56e71881dcbca319be5881e74efdcc13c3ba94f145"
+          },
+          {
+            "id": "5cee9d78-c3ef-4012-8ce6-3ecd21a46929",
+            "slug": "bao-ve-luong",
+            "sha256": "3a9bdcbb0f62bc524a432dd2ceec5e7fb450078526b6fdcc667c4650b55cc363"
+          },
+          {
+            "id": "5eae7468-afc7-483a-aa2d-97e9f7e1470f",
+            "slug": "dieu-29-56-vbhn-vpqh",
+            "sha256": "60c6f21cffdbdcf9de123bf42e59923b5a2143b248ec46633508460a270fe1c2"
+          },
+          {
+            "id": "632a300c-8e52-4835-8e70-6d0b3968386c",
+            "slug": "dieu-35-56-vbhn-vpqh",
+            "sha256": "0c556075d670b05fa1c0a2b7ff44b21f62cefd362ce9965dc66dfd4eed2f08b9"
+          },
+          {
+            "id": "65634ac7-af79-483b-a63c-1badb1fe084e",
+            "slug": "dieu-79-56-vbhn-vpqh",
+            "sha256": "89e7abcbb24790e68bc18a545a975418985283c88cecf3a38e129a5be4e32e2a"
+          },
+          {
+            "id": "66570c1d-9bcb-4b68-9d89-fc7f482405ac",
+            "slug": "dieu-11-56-vbhn-vpqh",
+            "sha256": "f463d2a3eed46296cbbd9f92e546a7799772851de935264a228dd45923d63479"
+          },
+          {
+            "id": "67136fd3-afab-4098-9cb6-56a9e1656c20",
+            "slug": "nguoi-van-tai",
+            "sha256": "1a87a3964a929dd500c8203b71c836c1e568a4676054ba226b2b70009a926525"
+          },
+          {
+            "id": "677c99aa-e43a-43d3-b234-7dbe4dcee161",
+            "slug": "dieu-81-56-vbhn-vpqh",
+            "sha256": "d07530dcf9c4344e3cd640fe414b0244122842a7307e1a6ad842aa08792a633e"
+          },
+          {
+            "id": "67a18a0b-d959-4d16-a908-ab13faef7f9b",
+            "slug": "dieu-57-56-vbhn-vpqh",
+            "sha256": "fca78b63d15be8f62d8d14440859043993dce0b0eb66ad151c84eafcb2b5bd0f"
+          },
+          {
+            "id": "67b6b6db-c8d8-4920-9273-50d8ca4d305b",
+            "slug": "dieu-8-56-vbhn-vpqh",
+            "sha256": "f13aa70c1aa763e70a502e043c6b1a46708b1a6bb32b962eef4fa0284946e519"
+          },
+          {
+            "id": "6871e6e6-71a6-4104-a3e0-eb57db9a5cb9",
+            "slug": "dieu-66-56-vbhn-vpqh",
+            "sha256": "744ba025b8121ce2489c9cda9affd271da615eaf38b8d40f357245c3bc3ff47f"
+          },
+          {
+            "id": "6be6a7bd-b783-4986-802b-14562c3dfa8d",
+            "slug": "dieu-20-56-vbhn-vpqh",
+            "sha256": "4038c518c719eedf72a49b4a883cae4d49e15450c8b7a735b03af7b3cb4733f1"
+          },
+          {
+            "id": "6c6a157c-42dc-4bfe-915f-22885501c1a8",
+            "slug": "nguoi-thue-van-tai",
+            "sha256": "75fd1458c78be423f8cf740f0bafd524479a9048765d430aa50aa86759eda6c8"
+          },
+          {
+            "id": "6d90b832-8ada-4215-8b75-bb2deac60406",
+            "slug": "truong-trach-quan-ly-nha-nuoc-ve-giao-thong-duong-thuy-noi-dia-cua-chinh-phu",
+            "sha256": "4f56a53e5e6cd30e243ee5119f57ffa44dd3b66684faae538c2a588da7d644de"
+          },
+          {
+            "id": "6f0bcda0-d8f2-40f4-83d1-654180eb2c61",
+            "slug": "dieu-95-56-vbhn-vpqh",
+            "sha256": "8c208b8e6db1a280b3881ebe3cda42db1e83579e4921e94daeb3eb029199edf5"
+          },
+          {
+            "id": "733f01f7-96d5-4bbf-aed1-738fd5ed1752",
+            "slug": "dieu-50-56-vbhn-vpqh",
+            "sha256": "42f41d4017a44b58369e754a48edf24bd13a4d6833b8ff04cdf79f183ed95374"
+          },
+          {
+            "id": "79537287-0a0e-4597-b0aa-6aba3d4ea398",
+            "slug": "dieu-97-56-vbhn-vpqh",
+            "sha256": "70fc08f5263a08ac20e43ddc4eadee597b954968bceb78d86aa9524fd42e9212"
+          },
+          {
+            "id": "7e3545a9-72db-4587-a12b-e16988fc0993",
+            "slug": "au-tau",
+            "sha256": "580b4327b131c740c3ae4fc20b99f3ff0688d2417d0db81ac3b7bc864d70beeb"
+          },
+          {
+            "id": "7f0f21f2-f90a-4721-a039-7aea3bba6dbf",
+            "slug": "dieu-6-56-vbhn-vpqh",
+            "sha256": "1be02ab89d9c1237778b6f1bd46749266ade88ccd7634a3d0f6fbde67c4d8d99"
+          },
+          {
+            "id": "7f5649db-89ee-42fa-b002-bb40db043f29",
+            "slug": "thoi-hien-gui-yeu-cau-boi-thuong",
+            "sha256": "6dbe362c35536bb98b0c4933c1a380ea1327753cc97c467b62058b7e6705d511"
+          },
+          {
+            "id": "80a5edcc-7967-4031-b506-1504bd7faea1",
+            "slug": "hoan-cai-phuong-tien",
+            "sha256": "bb7080ab0d4cb4a749aa95c0ed73682c4194155175fb2b6f85894beb0a0a2ad3"
+          },
+          {
+            "id": "84f70a64-6190-45b5-b190-0d7911e912fa",
+            "slug": "dieu-46-56-vbhn-vpqh",
+            "sha256": "fa00ad1d64b35a1250298cff89bcbc793ebba3c1f248af5cb655212d40618067"
+          },
+          {
+            "id": "874c5014-2849-44c0-8177-5dfd8098184d",
+            "slug": "dieu-94-56-vbhn-vpqh",
+            "sha256": "1122ffb3ee65d796dabdade561a081a7d95b739c751bc8ff6319692fa2ad4f03"
+          },
+          {
+            "id": "880c7b82-4752-475d-a25f-5cad3036fc65",
+            "slug": "dieu-64-56-vbhn-vpqh",
+            "sha256": "e801efe69afe4f81af8f6cb4327e10d199e3728efdab7ae95d3adcba8726239f"
+          },
+          {
+            "id": "8b9985df-399e-4ac2-bdcf-32efdf53e09d",
+            "slug": "dieu-101-56-vbhn-vpqh",
+            "sha256": "58c016423c50b001c354d18bf1f580f35cb2ac3695f9c32f710641d8086f196a"
+          },
+          {
+            "id": "8f5fd830-9772-4ec4-b7ff-aef37753cc13",
+            "slug": "phan-vi-bao-ve-cong-trinh-thuoc-ket-cau-ha-duong-thuy-noi-dia",
+            "sha256": "48673cbbb4535364961c2fee3f9000de94571137bfc638297bd42353946ed50d"
+          },
+          {
+            "id": "93b795a4-056c-407c-94e6-00ca8026921b",
+            "slug": "dieu-26-56-vbhn-vpqh",
+            "sha256": "1e3b2a0a73fcda15228d1f8ec4a1fc6a3f99430b222af619206c423bb91c5e1b"
+          },
+          {
+            "id": "93fe5dc9-ac52-40e0-91bd-303897829ea2",
+            "slug": "thoi-hieu-khoi-kien-doi-boi-thuong",
+            "sha256": "fda12a2b9bb6a0ea5b6d62ef1aa5b65a6ca9780eaca7f3e8dd06fe1788699cea"
+          },
+          {
+            "id": "942acbfe-a936-458b-9f81-ea6cb0841cd0",
+            "slug": "dieu-42-56-vbhn-vpqh",
+            "sha256": "23ec2123ae0a068bbe6a380b3c43b6c7f592461baac956229e349256d4260db8"
+          },
+          {
+            "id": "95a5261a-d3fa-454a-b7a8-2e09596c264b",
+            "slug": "dieu-31-56-vbhn-vpqh",
+            "sha256": "3e137aa17ac9220fe7522aef1614dc6f775c1955211fd9f73962bc5405f4859b"
+          },
+          {
+            "id": "95f893fa-39d1-4951-9214-8d861c5d224e",
+            "slug": "dieu-65-56-vbhn-vpqh",
+            "sha256": "d19f5779c6c3fccd2f7f510f3f5d3c9e5990bd8a6bff3e696a9761907913a4f2"
+          },
+          {
+            "id": "96c8a954-cdfc-4d18-a98f-43db9bf223ea",
+            "slug": "cang-thuy-noi-dia",
+            "sha256": "3a3a2e0d610d3072ba86bd269666e626b169b30be56a63ccebd04b759f516a87"
+          },
+          {
+            "id": "99b6a9da-12ee-4ac9-9a8c-5d27486d0967",
+            "slug": "dieu-73-56-vbhn-vpqh",
+            "sha256": "cf6984a4bda3268829258d8c0757f04041f7238b007412831bffc172f21483b5"
+          },
+          {
+            "id": "9cedd59c-ef4b-45d8-952f-f69c4f65a0ba",
+            "slug": "dieu-43-56-vbhn-vpqh",
+            "sha256": "4ec17e31dab93e918dbd6b40597ecc786326a24d1a4ac791821d496798c6c3bf"
+          },
+          {
+            "id": "9ec28fd7-60b4-4d2a-91dc-5250d8399c81",
+            "slug": "dieu-74-56-vbhn-vpqh",
+            "sha256": "c8d5beb49ec5d511ae692337f292b62a1f0c40f346b759d185984353aff9008d"
+          },
+          {
+            "id": "a15cd9ef-7b7d-48af-bbb1-4860900c181f",
+            "slug": "dieu-92-56-vbhn-vpqh",
+            "sha256": "90eeb1c7a72d81893d715290ed171f78d7634a8436c2174288453a9cf57fa761"
+          },
+          {
+            "id": "a25c514c-5706-4a4e-8992-465fea7d2a0c",
+            "slug": "dieu-54-56-vbhn-vpqh",
+            "sha256": "df2be3dc98324f8e6840df4c2e244441b43bef91866d120fbf77f51405357571"
+          },
+          {
+            "id": "a3487da7-7a27-4617-8a88-cd782a7c518e",
+            "slug": "dieu-19-56-vbhn-vpqh",
+            "sha256": "7dfc1640765f64cb679e2ed255604cf3ca0fa25b6b64a66aac9702adceffe6b4"
+          },
+          {
+            "id": "a49d7d05-2792-496f-ac33-592cdff52a3f",
+            "slug": "dieu-68-56-vbhn-vpqh",
+            "sha256": "774b69fac99b3d599a0e813e1709956d6de922951efee6c562b293143d0e4684"
+          },
+          {
+            "id": "a953e260-6617-4cc0-82ea-2804f7863003",
+            "slug": "hoa-tieu-duong-thuy-noi-dia",
+            "sha256": "e3de7d6d5bb1e73601bb1aee06592458dacd0aca5738a720912286ae6ea1b2dd"
+          },
+          {
+            "id": "aac6e5d6-2f31-4aae-9053-976962f7c6c4",
+            "slug": "dieu-9-56-vbhn-vpqh",
+            "sha256": "5268327018ffc5ec17f676c7f7134d589b798a2f873d7e70504f2f1a47c9c28f"
+          },
+          {
+            "id": "ab4a1e49-069a-4d99-906e-958947c963c9",
+            "slug": "dieu-63-56-vbhn-vpqh-hieu-luc-thi-hanh",
+            "sha256": "dcc3d3ef6e7cce3932b8f069d6177d6ddb6bb5834deb4a61fb69ca764cf99236"
+          },
+          {
+            "id": "adb69131-5799-47b0-b343-8244a5c76a0e",
+            "slug": "vach-dau-mon-nuoc-an-toan",
+            "sha256": "ac8f017805acb6a5bd1f949065a9e91d1537f35c8023c761222a96059556aa14"
+          },
+          {
+            "id": "af01beec-54de-438b-b989-969b70aaccc0",
+            "slug": "dieu-71-56-vbhn-vpqh",
+            "sha256": "69b495825167d7ef306e90ebebc629ac379e028f2d8333136051848315e32e7c"
+          },
+          {
+            "id": "b0d94a93-fa4b-4cfa-a870-1a9cfe856be6",
+            "slug": "dieu-13-56-vbhn-vpqh",
+            "sha256": "b0ef871166ee1c88dac07bafc59c2f6942ea2c5d94cad09d55aef1f50bb7c34c"
+          },
+          {
+            "id": "b213ee30-5455-444a-9201-a700e1bb6f9a",
+            "slug": "dieu-35a-56-vbhn-vpqh",
+            "sha256": "205c93f96107da0f7dc2c9fa1805afbd2f5c7717bc5ccb3b3f8e191c5f3b606f"
+          },
+          {
+            "id": "b260374d-3e17-44eb-90fe-181bb3f67f2a",
+            "slug": "luong-chay-tau-thuyen",
+            "sha256": "a40edd2709679222fc91deb7c37402900c724f2e7f9c75ad1a6268d1a37c3686"
+          },
+          {
+            "id": "b3481647-5bf0-4b4f-a999-44499d08d0d9",
+            "slug": "dieu-25-56-vbhn-vpqh",
+            "sha256": "8da60870edfbca6b9f7daa1ab3825712fa4958fa40c813ad5521fab2fa5b0ccc"
+          },
+          {
+            "id": "b4223cab-562b-49b2-90f5-f2c2ad5d4178",
+            "slug": "duong-thuy-noi-dia",
+            "sha256": "c58552e330084795a7e797364a8b4a9073dffe92cd0769adc2323248b5b30a51"
+          },
+          {
+            "id": "b4868597-5da7-4425-b2d8-8bb97fe825e4",
+            "slug": "dieu-75-56-vbhn-vpqh",
+            "sha256": "87656ee4f1468a9cea4791b334ed02fc7a040fc083d88ba29cf683044eff036a"
+          },
+          {
+            "id": "b554dfab-1cce-4725-9a30-890aad354b27",
+            "slug": "dieu-10-56-vbhn-vpqh",
+            "sha256": "3c20aeb4ae58cb74ab68600d2cdf5b085974a76c758a5d2700735b199d61956f"
+          },
+          {
+            "id": "b6d0baca-3ce9-401f-9f5e-a42719727551",
+            "slug": "dieu-86-56-vbhn-vpqh",
+            "sha256": "3e7984155b3061d02c7501f0767c09df77d03b5deb1a3c70b9b32fd07ad49e65"
+          },
+          {
+            "id": "b6e1351e-f629-4488-a511-81f462d9ebb4",
+            "slug": "dieu-34-56-vbhn-vpqh",
+            "sha256": "06d9d08adcff7f607cad34820b1c97eeed5f5ca756d620faf5507c88329a90db"
+          },
+          {
+            "id": "b711216a-fb64-4617-8564-cf4200ed3678",
+            "slug": "dieu-1-56-vbhn-vpqh-generated",
+            "sha256": "dc937cca13f4ee44c9a9ea1a3aa0358c86dfc96d9ea872001af6628402be72f2"
+          },
+          {
+            "id": "b91dbf3d-22c9-419c-a900-7d5a3c4f6c56",
+            "slug": "dieu-57-56-vbhn-vpqh-hieu-luc-thi-hanh",
+            "sha256": "ef35025df720bc2929f2ebf941057f2e99e34fd1d972622fd7448d27ffc8639a"
+          },
+          {
+            "id": "b91f7feb-c0c5-474b-806c-f67abdf84bba",
+            "slug": "dieu-78-56-vbhn-vpqh",
+            "sha256": "cabaa498686319acab41590d798fcd88a1fc87c4c54b2ad8a459c9916236a2d7"
+          },
+          {
+            "id": "b921fbea-edf3-4cfc-a81f-69dd1e41790f",
+            "slug": "dieu-48-56-vbhn-vpqh",
+            "sha256": "aef7738519e05d64dbfdd880c709674e7db0614a3500242db84a1e1469e04934"
+          },
+          {
+            "id": "bafabe65-a50c-4fb1-a8d6-1c80be721948",
+            "slug": "dieu-76-56-vbhn-vpqh",
+            "sha256": "78384c03159773e8c2f63b62dcd4eb2c13884d6acd8a7906356f744c375e9920"
+          },
+          {
+            "id": "c09acae7-4d61-4e76-ac7b-581ee90ab64f",
+            "slug": "thuyen-vien",
+            "sha256": "ea4ff903caa1dbe41630f8a793c898b0193f0861f5d30077fe725e0d62ff42b7"
+          },
+          {
+            "id": "c2475060-0f8e-47d1-a762-e13d77606b7b",
+            "slug": "dieu-45-56-vbhn-vpqh",
+            "sha256": "b3910b411354e5fa42dd7a239b64d7fad009dd5ca7035b7d377692dbc493fd46"
+          },
+          {
+            "id": "c27f022e-5c28-4ec2-a3d9-9223b39ea0ff",
+            "slug": "chuc-danh-thuyen-vien",
+            "sha256": "f3ab489c7435295f7430063e5de238add28acdf49438749e44db15ededf7b1ac"
+          },
+          {
+            "id": "c2e6fdf1-e30f-4b80-8b71-fa71e10ca187",
+            "slug": "dieu-98c-56-vbhn-vpqh",
+            "sha256": "2fbbb01f8829a81f8a8df2f12a298bffe4d94b06e538028957e79b1a1fe387ef"
+          },
+          {
+            "id": "c2effeb9-40b1-434e-8445-027b58d39095",
+            "slug": "dieu-98-56-vbhn-vpqh",
+            "sha256": "8009ce5a3d4a521c986bef306f9eb32eab2bb521dcb7a6f042a43ec1082d7b83"
+          },
+          {
+            "id": "c60440a0-07c5-4375-a8af-a7ecde8544b2",
+            "slug": "dieu-80-56-vbhn-vpqh",
+            "sha256": "671f9f3d3ffb1a3709aae1b3cc9f986128c3793599ac1c57edcfe29e21dc146d"
+          },
+          {
+            "id": "c65d85f0-52bd-4a9b-b44a-f9329b8435f8",
+            "slug": "nguoi-nhan-hang",
+            "sha256": "5bde66734db39d9418232ba947851e3a3ebb728f93937fce1aea176e78a852b8"
+          },
+          {
+            "id": "cc600b98-b2fa-48fe-a271-7a636f40faec",
+            "slug": "dang-kiem-phuong-tien",
+            "sha256": "ed127f55592950e178c5f4d77554ce0f9c41543e4176ead29799b06c2b6a854e"
+          },
+          {
+            "id": "ccd93e9f-e0c1-401d-b849-ee5190c28c92",
+            "slug": "dieu-67-56-vbhn-vpqh",
+            "sha256": "449a26b96057f94cd73c12ce617254338b62f19058f80bb2cc24f75e53ca6242"
+          },
+          {
+            "id": "cd5694ad-37a0-4382-bc18-9fc72381d301",
+            "slug": "hanh-ly",
+            "sha256": "85efd19b6421f0ade2c53857bd4385aa6ef816bec656e03f4831529fcd10d1ad"
+          },
+          {
+            "id": "cd8305a9-4366-4a7c-9594-037b7c20f42a",
+            "slug": "dieu-100-56-vbhn-vpqh",
+            "sha256": "52523570cbec1ac7ac523f865144528ad9511cc6204c91494e2266112b514a9f"
+          },
+          {
+            "id": "cda89520-0a2c-4c6a-a383-7c66255ead6b",
+            "slug": "dieu-15-56-vbhn-vpqh",
+            "sha256": "ed1890bd40d56fae0c4de6dc4da99a7cf5c2d5abc9d2e8b766e5910bd9397b78"
+          },
+          {
+            "id": "ce6406dc-672a-4e22-a6a5-3fd81b0f60ab",
+            "slug": "dieu-33-56-vbhn-vpqh",
+            "sha256": "a936f94a05a422869483c3604074048a089cd431bdea8021c005c12b8556fdbc"
+          },
+          {
+            "id": "d210c4cf-b314-4aaf-9a61-d2521c13c19e",
+            "slug": "dieu-72-56-vbhn-vpqh",
+            "sha256": "63d1a7b812cf3161186b28990728e44a4202b70518b4d7b94c6e5645f6b26212"
+          },
+          {
+            "id": "d4802556-0f52-474a-b6d0-7de1b16b1dbd",
+            "slug": "giay-gui-hang-hoa",
+            "sha256": "6ae127a0eff3ca67206b07897e7e3040930e17de7d54a07402e862d8410676ea"
+          },
+          {
+            "id": "d5bc6222-4242-4ab2-8418-4255c685b5d0",
+            "slug": "dieu-12-56-vbhn-vpqh",
+            "sha256": "df872d4ae5aeec7437fc2fcd09d07ad9f3df58fab50be2a9344c48cf1759e376"
+          },
+          {
+            "id": "d5ed6350-5cbd-49cf-9e2b-28ccc2c33b8a",
+            "slug": "dieu-58-56-vbhn-vpqh",
+            "sha256": "c4fe68212b9e03e04965a0f72aee326ba6b12371b20ba5a67a912fb0c9c24926"
+          },
+          {
+            "id": "d60c0f09-548d-495a-a62e-51e2a8222c4d",
+            "slug": "dieu-98e-56-vbhn-vpqh",
+            "sha256": "fad6e14bff31bc282bc4d999080150d4f1fe816d850327a0c3a9848648c5b1d3"
+          },
+          {
+            "id": "d6e043a5-3d9c-419c-9572-5b4c6b401ee3",
+            "slug": "dieu-99-56-vbhn-vpqh",
+            "sha256": "440f97a3e41b2f88c2d990fa2f4376c65234de563908610eecae6e0d7ef537ad"
+          },
+          {
+            "id": "da62ac5a-12c6-4077-9ca9-37c62f8cdb6b",
+            "slug": "bao-hieu-duong-thuy-noi-dia",
+            "sha256": "599f50b1fc8add81ff7bc333f699ab938c339884dde7e0f16ac4bbedb9915fa4"
+          },
+          {
+            "id": "da700fdf-5612-4a6a-bbcc-8e0f88f6c1a1",
+            "slug": "luat-giao-thong-duong-thuy-noi-dia",
+            "sha256": "aec550b58eb7565b269f366e24ecf9829079ed3f347f31527fda10519cc823b1"
+          },
+          {
+            "id": "da884686-3464-41bb-b34e-26824dc84953",
+            "slug": "dieu-21-56-vbhn-vpqh",
+            "sha256": "3558bcfe639c3a0e6e8c2fef8e2ae2991affa360efc994838d751258584bcdf2"
+          },
+          {
+            "id": "dab71d0a-a81c-436c-885e-1decbebedeae",
+            "slug": "dieu-4-56-vbhn-vpqh",
+            "sha256": "6e1d23a66e22e9502f50fa89f09afca51273c1340da267b181484566f73ffbb7"
+          },
+          {
+            "id": "db1ecf11-d56e-4954-9746-72c09766c0eb",
+            "slug": "dieu-85-56-vbhn-vpqh",
+            "sha256": "78ea6b767c10cb7cb4e03fdf75abcb10b3859ad39c3be9ee979e2487a77ae70c"
+          },
+          {
+            "id": "dc55a86e-9d1e-4dd6-b4d9-4608b02035b4",
+            "slug": "dieu-5-56-vbhn-vpqh",
+            "sha256": "87504583a6712c250244357cd72b95342887c4f1d582c32c4d5ea8b5dda0064b"
+          },
+          {
+            "id": "dcce0663-7781-4a5f-8323-12057d84498c",
+            "slug": "dieu-17-56-vbhn-vpqh",
+            "sha256": "b07d0723c698d6f68c8da9ed4e84e2a9cc765ad0f085dfc8850707fb13776290"
+          },
+          {
+            "id": "de15b7e3-515a-446a-8054-f6562dd2d479",
+            "slug": "dieu-90-56-vbhn-vpqh",
+            "sha256": "df08be6b1783dc0d31ea10482e3e541f1515e13067e8440bdcd695a809233935"
+          },
+          {
+            "id": "de61ccac-c158-4368-996f-a6d9732a0ac0",
+            "slug": "dieu-98d-56-vbhn-vpqh",
+            "sha256": "4b81f04f9e53d14948ad20b34362aa58e15a5fff17c1e1beabecc7fc6564524c"
+          },
+          {
+            "id": "e11b2c4a-a209-4400-8d23-c57a27dbfed8",
+            "slug": "dieu-41-56-vbhn-vpqh",
+            "sha256": "3e4a71c05b6ea25e0b88e851ae645d6f31e952dfb2c1f85812135729f778af91"
+          },
+          {
+            "id": "e12962b6-d60d-4bce-a507-917c8afb45e0",
+            "slug": "truong-trach-quan-ly-nha-nuoc-ve-giao-thong-duong-thuy-noi-dia-cua-bo-cong-an",
+            "sha256": "c69e82e1d3bb3389bce48c468ceba8b9191231f0480158eeb3b1f8fd6c585708"
+          },
+          {
+            "id": "e1611f1d-f7c0-49cd-9761-82850b519d74",
+            "slug": "dieu-3-56-vbhn-vpqh",
+            "sha256": "64c563939183dee508d8ce8d0d0021dd79725e3a42b889bc4f87b323f67f96f3"
+          },
+          {
+            "id": "e197d9ca-972d-4f95-8e7b-f788349b7745",
+            "slug": "dieu-22-56-vbhn-vpqh",
+            "sha256": "c4977c1a911b205bdcdf2053812ce00911ea189b0c84ff301223b9e89e19fe84"
+          },
+          {
+            "id": "e25801f7-4552-4c2f-956a-eeb6e69a1c67",
+            "slug": "van-tai-hang-hoa-duong-thuy-noi-dia",
+            "sha256": "41fc4907bd7095d935e1e61f79b4a3b4767f4b27b5eb613f03bd0d212d585c06"
+          },
+          {
+            "id": "e2992ebf-0899-4486-8df7-a2100e6da8a6",
+            "slug": "dieu-82-56-vbhn-vpqh",
+            "sha256": "36c5faa24e87c91fbef17bc355b8771b177cf361960285b00e5f39d3a1a62c2f"
+          },
+          {
+            "id": "e8745802-3ff1-420e-b581-8010ba6ea917",
+            "slug": "dieu-16-56-vbhn-vpqh",
+            "sha256": "7c8fe12026b75ec442d27293415319a8a05b5a2069ebace57e9a266fb7dcc03a"
+          },
+          {
+            "id": "e94fe03e-b463-474d-9b13-f1a1865b881d",
+            "slug": "suc-chore-nguoi-cua-phuong-tien",
+            "sha256": "5d5205d0155ee6027f4cd645464b3e30e9ffac183b9a5035d89ecd0b96b89441"
+          },
+          {
+            "id": "ec56c5c7-f484-4870-b305-0e4f4f44b4d3",
+            "slug": "ket-cau-ha-duong-thuy-noi-dia",
+            "sha256": "31fffc9ae952e541b4345ea6a37ed4c69261008dc8b33de79d33145167fc208c"
+          },
+          {
+            "id": "ef7fff3d-b274-4ec0-ab08-9bf7a00bf503",
+            "slug": "56-vbhn-vpqh",
+            "sha256": "25b7b78017ff3c21fea45290d5837795a4c496fe483d731d115a698da2bccc1e"
+          },
+          {
+            "id": "f04ee477-cca7-4c7e-a16c-5946b3a393e1",
+            "slug": "dieu-49-56-vbhn-vpqh",
+            "sha256": "543bbf31db7f9f32d995ceb25fda483c80a3f2d24494c07191eb057d7c2f7c44"
+          },
+          {
+            "id": "f25cebfe-de0a-40e9-9890-151c9a8d6ad6",
+            "slug": "phuong-tien-di-doi-huong-nhau",
+            "sha256": "39c1781408e55b1c781e9dff28348126fb8f623bd022a1afae5fa6322df94ded"
+          },
+          {
+            "id": "f5afcb13-8eb6-46a1-8d58-8d7d25d680d2",
+            "slug": "dieu-89-56-vbhn-vpqh",
+            "sha256": "0107b4a39f46da74c0f2ba01a1fe29d328aca420ee1e2bb33ea1a6016a4ff624"
+          },
+          {
+            "id": "f6b4805a-e0ee-4d23-8db7-e1e8bcba285b",
+            "slug": "dieu-98h-56-vbhn-vpqh",
+            "sha256": "18c9461dfcb30397e9426a3a233536c4bee9beaacc1e403640f778f5ef986a1e"
+          },
+          {
+            "id": "f72a4894-9f79-478a-b724-6e89701a131f",
+            "slug": "van-tai-hanh-khach-theo-hop-dong-chuyen",
+            "sha256": "cf410a8fe7c92e56a922b252787c7e35f9c0693bcbbebc5d3798c5ae87536aa1"
+          },
+          {
+            "id": "f91a0a59-553f-4385-89fa-be4604542a37",
+            "slug": "dieu-27-56-vbhn-vpqh",
+            "sha256": "94e1bdb783b2fc6e643d74a198dcc88ed6bfb6eb839c314b483ffd6f2164fead"
+          },
+          {
+            "id": "fbcb6df3-0932-4069-85e6-990447c51fa7",
+            "slug": "thuyen-truong",
+            "sha256": "aa4aaeb2c80407f1f4e300bac6a0c4e8f6f3b7dfb6d15e61328ce1d3d5e863b9"
+          },
+          {
+            "id": "fc427b8a-e49a-4797-b41f-7eb64e63b3c7",
+            "slug": "nguoi-lai-phuong-tien",
+            "sha256": "9fdfcf5199a547aeb99f4319c186f2bbb5a176112bea70104b8871729fc54c0e"
+          },
+          {
+            "id": "fcf5d9ab-bd2f-4759-8c77-2b281b8ea003",
+            "slug": "dieu-84-56-vbhn-vpqh",
+            "sha256": "749887544ed546b9f6a5a0d9dcc44ee1b784ebe76e08bfc642e92778a28144ee"
+          },
+          {
+            "id": "fd664e8f-7408-4632-a2fc-b5e4ce783fe6",
+            "slug": "dieu-28-56-vbhn-vpqh",
+            "sha256": "fb517a6dee579f6dd4451642cac885e9fc2ce121b6a6e26adc2799478ae5bc22"
+          },
+          {
+            "id": "feef79c3-058e-4639-bcda-ca4bead99471",
+            "slug": "dieu-61-56-vbhn-vpqh",
+            "sha256": "094b787f007ce22ae2fc0ccd92eaed7bfa15284207bfadd4827ed2e89aee77e1"
+          }
+        ]
+      },
+      "action": "wiki_requeued",
+      "job_id": "ac528a5e6f9943849e081638c1ca5250",
+      "after": {
+        "id": "d6de6e95-ee4e-4a31-9377-d4eca7fe77c1",
+        "status": "processing",
+        "wiki_status": "queued",
+        "chunk_status": "ready",
+        "phase": "verify",
+        "raw_text_sha256": "bcb487b538540ac74b545e67e7e4c102021f28da27e125b6f004788403537fa8",
+        "plan_pages": 74,
+        "draft_count": 73,
+        "pages": [
+          {
+            "id": "018bf189-ddb1-4bcb-bda8-6f6b307d3ba3",
+            "slug": "giay-van-chuyen",
+            "sha256": "f18a66ec9a765aab9a65fb145058f82cd329c7b6421a97cc636bec31b51445e8"
+          },
+          {
+            "id": "03ec6f53-3dfb-49de-82bb-47b5926f2925",
+            "slug": "dieu-77-56-vbhn-vpqh",
+            "sha256": "2a0f8ed795ab905fd49755b4c8cfd7ac8120d91d7ef599aa59d5034cf889a469"
+          },
+          {
+            "id": "042e3321-427f-435a-8e92-481b17c717d0",
+            "slug": "dieu-88-56-vbhn-vpqh",
+            "sha256": "eed278a350b659f663fde2545c6c4fc65d23e55ae0b89e5258e8b2ef5387e119"
+          },
+          {
+            "id": "05bc4899-b0b6-4ad4-b55c-33d60eff034b",
+            "slug": "dieu-60-56-vbhn-vpqh",
+            "sha256": "43bd91bcd85599c02ab7392e7710e2b181493fc7d524de5fb3b32081c79672ea"
+          },
+          {
+            "id": "07768521-954c-4884-b8e1-c1ba98d9b379",
+            "slug": "dieu-91-56-vbhn-vpqh",
+            "sha256": "ce1364f1f782b247015cfe5017cf77963e74fca2cfeb84baeffd9d8265abcd24"
+          },
+          {
+            "id": "089f3539-79a6-44c0-9ec0-e90fe3c434fe",
+            "slug": "trong-tai-toan-phan-cua-phuong-tien",
+            "sha256": "64c4546da7b6e5e231a3f55686e34012f6d151501f2c30dcf2cb5b2dad03fc5a"
+          },
+          {
+            "id": "0d612fce-d3b2-4ab0-a2ef-4cd7825210c8",
+            "slug": "dieu-83-56-vbhn-vpqh",
+            "sha256": "d814e8ce07e94b1d732988cd5ae512e62beb76c5c18d864e3c02619b425f7af9"
+          },
+          {
+            "id": "0dff794d-e913-4492-b087-1e85a4b63174",
+            "slug": "ve-hanh-khach",
+            "sha256": "1088bac3d84f841b5af3bd06477d02610256f1654c96214e0d95ad8c5ac34215"
+          },
+          {
+            "id": "0efa7cee-00fe-4d3d-905c-5c0e3d0edc12",
+            "slug": "dieu-96-56-vbhn-vpqh",
+            "sha256": "523079b04463fb0e32e8077cc15dddd6999a4ca667d2338540baaa2f5f3a36ec"
+          },
+          {
+            "id": "0f768cdd-4504-46b4-a2e0-4dbfba839205",
+            "slug": "dieu-44-56-vbhn-vpqh",
+            "sha256": "70239e248e226fa4424a48a41c12facaccfc843b0ccb2f0fe22e50489fb024ab"
+          },
+          {
+            "id": "101bc5e0-46e2-49b2-83dc-12d712790e0e",
+            "slug": "nguoi-kinh-doanh-van-tai",
+            "sha256": "16b84dedb4e1b785166d38b141248e215d16638aa1e438e13c352aa8c455f64b"
+          },
+          {
+            "id": "11756a98-bdd4-4d2b-bde6-7f17991c26b8",
+            "slug": "truong-trach-quan-ly-nha-nuoc-ve-giao-thong-duong-thuy-noi-dia-cua-bo-giao-thong-van-tai",
+            "sha256": "2125135c327e7784b263b1c66689df22855f9257cfe28089d621030f1b9ab7fa"
+          },
+          {
+            "id": "118b7772-3e9c-46f6-a710-b3df3a56ba13",
+            "slug": "dieu-98b-56-vbhn-vpqh",
+            "sha256": "dfc017af17c88949e52d15feddf510cf73a84370f07078396cece7939eda3ff2"
+          },
+          {
+            "id": "11ca45d9-1159-430e-bfb1-93758d2dbb71",
+            "slug": "dieu-39-56-vbhn-vpqh",
+            "sha256": "f05bba67d1e658607fce37e2950a1bd3fd27231e066d7eba19faa0f7c427be99"
+          },
+          {
+            "id": "12f85995-86dc-40d0-bc2e-84a2a282e27d",
+            "slug": "dieu-52-56-vbhn-vpqh",
+            "sha256": "f315397d38ef7b35e581a04fff1eecdd99d69211987e16ac1bb7f00f0f436b93"
+          },
+          {
+            "id": "13374133-80d7-46ec-9185-78f79b1eac7e",
+            "slug": "dieu-18-56-vbhn-vpqh",
+            "sha256": "d36e93a52bb158510230f3f77d2582edbf24f40a577fe4865a5ab870ccee303c"
+          },
+          {
+            "id": "139b9019-bdf8-4279-bfd8-990fd3af0ce1",
+            "slug": "dieu-98a-56-vbhn-vpqh",
+            "sha256": "45f10c10ad380a2d8118886c6f1d7516d4f86795eb8208448d33c465f5fe6141"
+          },
+          {
+            "id": "1486eb86-f62e-434c-8e7b-da9316a094f7",
+            "slug": "dieu-7-56-vbhn-vpqh",
+            "sha256": "f1a06a24ea1d58388f9b2e59b07f32d8d34ee31ca4f393bd7248b3920947cf40"
+          },
+          {
+            "id": "14beb4cd-7f75-4488-afba-cc6eccef40a1",
+            "slug": "dieu-93-56-vbhn-vpqh",
+            "sha256": "ec762c7e9ca19f6849783da4a4f1e55301e7109567a233a03202eb8946d0c336"
+          },
+          {
+            "id": "1646c81e-b3bd-4084-86f5-73ba9c30f9b7",
+            "slug": "dieu-2-23-2004-qh11-generated",
+            "sha256": "f6a70a993062365a6f601cfdcbe9c0c51868974d4bc1c14e3d436f30750ee2ae"
+          },
+          {
+            "id": "1b535923-fd3b-4ae1-810a-1a104369d641",
+            "slug": "dieu-14-56-vbhn-vpqh",
+            "sha256": "3b73f010a6e218694bc2c2f60d46d6d34466978e6dd2bb38239aa12c01b644c5"
+          },
+          {
+            "id": "1c4dfb1c-c9c6-4539-8e8b-cee448a4f844",
+            "slug": "dieu-36-56-vbhn-vpqh",
+            "sha256": "8f944c3feca081877fed05f1444b0dfda3d2b99f8052a129b1f0a28e100ecb4b"
+          },
+          {
+            "id": "1c62d9ab-e0ca-4a0d-99bc-72bd773a4d1b",
+            "slug": "dieu-98g-56-vbhn-vpqh",
+            "sha256": "4e9034616838b6180634e0b12da3e47a3c6be2551077094a81945075f8ad9086"
+          },
+          {
+            "id": "1e2180d7-ec7f-4c08-9f35-e39d66794b31",
+            "slug": "be",
+            "sha256": "4e173c84f321bac105d64a55560bf4376de31f5563bc240483bf9c0422cdf0f3"
+          },
+          {
+            "id": "1e823a97-6f7f-4b7c-a21a-371f42a102c0",
+            "slug": "dieu-70-56-vbhn-vpqh",
+            "sha256": "08eb31e68ffd6bbfdb5f34f7999ec2ee7d32e3e4cac6997d93b68d5a935506b1"
+          },
+          {
+            "id": "1f5e6ad3-3059-47cc-bf38-7f0000024e78",
+            "slug": "dieu-102-56-vbhn-vpqh",
+            "sha256": "8673e633655ba87aaf7cb6f03fafe96ab20460ebd4c1f734ce1eb776041bbf8c"
+          },
+          {
+            "id": "1f9a08ac-46ae-4257-a44c-c8ff4ad391c2",
+            "slug": "van-tai-hanh-khach-theo-tuyen-co-dinh",
+            "sha256": "c0085b5ca49faf4fcfe257028c4096b98cd1557f95fd30788fba51ebda46eb17"
+          },
+          {
+            "id": "258d3ee9-d49b-41c6-9c2f-0e81b1ef35f4",
+            "slug": "giay-chung-nhan-kha-nang-chuyen-mon",
+            "sha256": "808e53affe0a059b01cf2ee3c357d986ddb08b7d2f754686c0ffedf373067c5d"
+          },
+          {
+            "id": "25a45633-c87a-44bc-adbf-15e36b919ad4",
+            "slug": "phuong-tien-thuy-noi-dia",
+            "sha256": "0f103617db27f712b1082bf3161166c412e14d2125adf29ffba1a930d03c3b13"
+          },
+          {
+            "id": "2722125c-b7c2-4a27-a987-34a7b9b7c824",
+            "slug": "dieu-69-56-vbhn-vpqh",
+            "sha256": "e3d81bb13d1f9730d87bfffe05b42dd440d3eed828000891a21de8deb40a34ce"
+          },
+          {
+            "id": "2fa4497d-3875-475e-ab9d-fc3bfa95c858",
+            "slug": "dieu-55-56-vbhn-vpqh",
+            "sha256": "3fd3d73cfefb2e116d3d15e870f921559ae9f4516cca6de843ab398cc34ab4ac"
+          },
+          {
+            "id": "31341de5-1c97-4b5f-8f42-ff90a7218356",
+            "slug": "dieu-1-56-vbhn-vpqh",
+            "sha256": "23bda5908a675644d3dba2f5c9ec321259f518616d67100a07448c28f8d18ac9"
+          },
+          {
+            "id": "33051da2-439b-4188-9647-84b232415c99",
+            "slug": "phuong-tien-tho-sro",
+            "sha256": "ab611fb1d326688f154331c11c5d160319cb59331627e440e15eb7510f88b1b4"
+          },
+          {
+            "id": "339d1b59-d8f7-4015-9af3-97ac8b0348c1",
+            "slug": "he-dong-van-tai-hanh-khach",
+            "sha256": "39c6f61934d0d260f359dc84d93d17adbfc5a6f3b8188413112ee9b5cf97d5b5"
+          },
+          {
+            "id": "33d4a74f-a350-443a-aed8-15fb0c2b46c3",
+            "slug": "dieu-47-56-vbhn-vpqh",
+            "sha256": "512254b4ea650cc2d7dff96a257d9104f2f11d8c7fd7d4f1c572bdc3d7cc9ab6"
+          },
+          {
+            "id": "34e55f65-3842-4760-8923-858cabb1999a",
+            "slug": "dieu-62-56-vbhn-vpqh",
+            "sha256": "d77f848f75be4249ef777161d0afd2187f2b0182e59b062467b171f4e69a1a98"
+          },
+          {
+            "id": "354d7f0e-42a9-4872-8730-4727f65293b8",
+            "slug": "dieu-30-56-vbhn-vpqh",
+            "sha256": "7af92bddcb35838d348e1f62d6dbe89f054249de6e35916f2bda9c8b63b66a5b"
+          },
+          {
+            "id": "359e6b31-c1c4-4a07-9b1c-605a5ccade4d",
+            "slug": "truong-trach-quan-ly-nha-nuoc-ve-giao-thong-duong-thuy-noi-dia-cua-uy-ban-nhan-dan-cap-tinh",
+            "sha256": "8e673bce912215d29a477293048d40741940da519a285def625cf0e3221b65d7"
+          },
+          {
+            "id": "3625b2cd-459a-4843-9a1b-af8c4168690c",
+            "slug": "hanh-lang-bao-ve-luong",
+            "sha256": "315b5975a1e2762b04df6cce0c349a9358005004af1a9c4dcf3becb2297e51be"
+          },
+          {
+            "id": "36b2971a-5380-4026-b17f-011020103fd9",
+            "slug": "dieu-51-56-vbhn-vpqh",
+            "sha256": "651f6da6a3b79f8bff4e44875a931a1a03c39035299fa4539c90ff67b7b17173"
+          },
+          {
+            "id": "3822c72c-a1f2-4c8d-9364-4e847b512117",
+            "slug": "tai-nan-giao-thong-duong-thuy-noi-dia",
+            "sha256": "2e4d406133709d6bbc2cfa6fb81ee71c02d401a70d49c72a7c87829a5f82c72d"
+          },
+          {
+            "id": "38c071f8-655a-4c18-8c64-53a634e9e10f",
+            "slug": "van-tai-hanh-khach-ngang-song",
+            "sha256": "86dff575bebd9f197dc38d833ba7512ca59a1106380a0d04d229adac43d42aeb"
+          },
+          {
+            "id": "39d7cfbe-e87f-4a3b-bfd4-d59aa01aa8fb",
+            "slug": "ben-thuy-noi-dia",
+            "sha256": "1f0e98ddc76618aaf6978172aa7f0c40ad2c9fcdd0e6548668d24f6bef1e848a"
+          },
+          {
+            "id": "3c6a557e-c61b-45f0-b713-ba101cb75b48",
+            "slug": "dieu-38-56-vbhn-vpqh",
+            "sha256": "a3660822410a961ec68228497438a9643a5e49e318750b8d2f9b0bc0c68d3fab"
+          },
+          {
+            "id": "3f09a552-c0ac-46e8-9218-c949ce44ce9b",
+            "slug": "he-dong-van-tai-hang-hoa",
+            "sha256": "53bf17660e981b695bd8706d03852f12c341f346139735cba9fd3d75087ba56d"
+          },
+          {
+            "id": "4170bb91-6036-4f68-bfd4-184ee3980702",
+            "slug": "bao-ve-cong-trinh-thuoc-ket-cau-ha-duong-thuy-noi-dia",
+            "sha256": "aa41c7e2c58150993510c4d91704354cca66782525deef85bc2443643c9d05de"
+          },
+          {
+            "id": "453ebb08-8a36-4768-8e9a-7dc20c7d01ef",
+            "slug": "man-duoc-gio-cua-thuyen",
+            "sha256": "a7c9d12321289c9b6dbf4522a031c11b79542838098a07f0b41c34c6942ee416"
+          },
+          {
+            "id": "4a124d98-1caa-4586-9333-592e4e5c2ba4",
+            "slug": "dieu-2-56-vbhn-vpqh",
+            "sha256": "26b94de3cce3f7404fddf1f91616ba5c32deb0582d30d84b4396652c49b0e1ad"
+          },
+          {
+            "id": "4b6682f3-6805-4fca-9a49-080179f5b399",
+            "slug": "dieu-10a-56-vbhn-vpqh",
+            "sha256": "749f033c0c3b02f99dfaa9bcbd1fb134a7bcf81526a6717a864f8a897d63b81b"
+          },
+          {
+            "id": "4bb83883-2a86-4f05-92b9-5093cd3a2f2b",
+            "slug": "dieu-59-56-vbhn-vpqh",
+            "sha256": "d74690a432bd6539112b1642306d6c9ced60f01f859509366f6ab784d71eae82"
+          },
+          {
+            "id": "4cb0de18-4444-4c6e-bcde-3ce3d18df35b",
+            "slug": "chu-phuong-tien",
+            "sha256": "99a6fc2c2a64c8d0d1bce540e99ba0a40c0e47fb66ac0afbc459fa913b7cfdac"
+          },
+          {
+            "id": "4e59fb87-33bb-47c8-bb7a-68f1c4501368",
+            "slug": "doan-lai",
+            "sha256": "f64bbbac5021b6287cf59c1fb57c10b1986c1eca217ed3c83ee0d67b2b81cc91"
+          },
+          {
+            "id": "4f4531d2-6f5f-4277-ba4f-0d307241385d",
+            "slug": "bao-gui",
+            "sha256": "2050e2060a40bd5fd13b2954d985aef9a6b39afbfc97037b4ca8a01400f4f0e6"
+          },
+          {
+            "id": "4faff77d-7faf-4ad4-822f-e8786ea25bdb",
+            "slug": "dieu-63-56-vbhn-vpqh",
+            "sha256": "41fad2fc8c3bc24a451b57d6a6aa32cb46c47dc11e8547d523c45d81713fdb30"
+          },
+          {
+            "id": "52fd5cb7-5696-45d7-8863-05b397ec5fd5",
+            "slug": "loi-nang-quan-ly-nha-nuoc-ve-giao-thong-duong-thuy-noi-dia",
+            "sha256": "71fbc686c5ca35d05fd7799a45d5c90c8f2f1a6de0949435a64b2902e2a7983a"
+          },
+          {
+            "id": "54bd0d23-fee1-4ada-bd7f-dc7c97843df0",
+            "slug": "dieu-32-56-vbhn-vpqh",
+            "sha256": "d24a2914f363d31dc8432402ade9e3517bf1ec669f3da7598e2ec1f52fe94334"
+          },
+          {
+            "id": "55420655-220f-4334-957e-c0b5d86e5ed0",
+            "slug": "dieu-24-56-vbhn-vpqh",
+            "sha256": "f4e3100dcff0856c2877e50e607f64dfe9921292deeb537653f9c66daf93ed54"
+          },
+          {
+            "id": "5629b2da-fb78-4b77-9364-53a4a9f6531c",
+            "slug": "dieu-37-56-vbhn-vpqh",
+            "sha256": "796546428a19707bf3b48e306b3c6ede3539b0eeddb148bd5fc99d549370421e"
+          },
+          {
+            "id": "56dc1735-4712-43a4-9989-b8717514df18",
+            "slug": "doan-lai-hon-hop",
+            "sha256": "3fb71df7a2dabe3558b2638006ff043185c9e2042db30b88f4269cf3b4e6e60b"
+          },
+          {
+            "id": "578e7b35-dc33-4881-a31d-945a37ab9c7c",
+            "slug": "van-tai-hanh-khach-duong-thuy-noi-dia",
+            "sha256": "0fc2fac127121b70fe16c92883e892502e14bf77a69d4b22950141c891ca8ca5"
+          },
+          {
+            "id": "5796f451-5350-45b7-93ec-506ae3433cfb",
+            "slug": "vat-chuong-ngai",
+            "sha256": "4bf8991d59e85011e4d804dc70a1787918337e50a702c208431bb9b736f0e6c2"
+          },
+          {
+            "id": "57db97d9-b4f9-41ca-a71a-87075d1f0131",
+            "slug": "dieu-53-56-vbhn-vpqh",
+            "sha256": "23b89b7a95e724ef6fa3afb627d7b3c3da19f90d8e02cf97a88fdb92800d88e4"
+          },
+          {
+            "id": "57f2c814-4136-42cb-8cea-f96ad8ca7402",
+            "slug": "dieu-23-56-vbhn-vpqh",
+            "sha256": "a307a0a41031cd5ec053418b91d56b7a39cbd68128f6f089511b9051b7a6e8c3"
+          },
+          {
+            "id": "5809d1ec-aa4c-4b4b-a442-59454dc72c44",
+            "slug": "dieu-56-56-vbhn-vpqh",
+            "sha256": "f1e41f456ad9083b0f9927bff7c3604aaa353fa29c93ffb001d09c20913c753a"
+          },
+          {
+            "id": "5aea4b66-8fa6-4a17-a4bd-c26f4350aad4",
+            "slug": "dieu-40-56-vbhn-vpqh",
+            "sha256": "dd8ef7cb72e59524457008d1302f4a2f001cd8d3a158a7c83a5e6d058c472ab3"
+          },
+          {
+            "id": "5c2b8c31-fed8-48ee-a015-c383da341d07",
+            "slug": "dieu-87-56-vbhn-vpqh",
+            "sha256": "750fe6bc84b0f62a74a6ee56e71881dcbca319be5881e74efdcc13c3ba94f145"
+          },
+          {
+            "id": "5cee9d78-c3ef-4012-8ce6-3ecd21a46929",
+            "slug": "bao-ve-luong",
+            "sha256": "3a9bdcbb0f62bc524a432dd2ceec5e7fb450078526b6fdcc667c4650b55cc363"
+          },
+          {
+            "id": "5eae7468-afc7-483a-aa2d-97e9f7e1470f",
+            "slug": "dieu-29-56-vbhn-vpqh",
+            "sha256": "60c6f21cffdbdcf9de123bf42e59923b5a2143b248ec46633508460a270fe1c2"
+          },
+          {
+            "id": "632a300c-8e52-4835-8e70-6d0b3968386c",
+            "slug": "dieu-35-56-vbhn-vpqh",
+            "sha256": "0c556075d670b05fa1c0a2b7ff44b21f62cefd362ce9965dc66dfd4eed2f08b9"
+          },
+          {
+            "id": "65634ac7-af79-483b-a63c-1badb1fe084e",
+            "slug": "dieu-79-56-vbhn-vpqh",
+            "sha256": "89e7abcbb24790e68bc18a545a975418985283c88cecf3a38e129a5be4e32e2a"
+          },
+          {
+            "id": "66570c1d-9bcb-4b68-9d89-fc7f482405ac",
+            "slug": "dieu-11-56-vbhn-vpqh",
+            "sha256": "f463d2a3eed46296cbbd9f92e546a7799772851de935264a228dd45923d63479"
+          },
+          {
+            "id": "67136fd3-afab-4098-9cb6-56a9e1656c20",
+            "slug": "nguoi-van-tai",
+            "sha256": "1a87a3964a929dd500c8203b71c836c1e568a4676054ba226b2b70009a926525"
+          },
+          {
+            "id": "677c99aa-e43a-43d3-b234-7dbe4dcee161",
+            "slug": "dieu-81-56-vbhn-vpqh",
+            "sha256": "d07530dcf9c4344e3cd640fe414b0244122842a7307e1a6ad842aa08792a633e"
+          },
+          {
+            "id": "67a18a0b-d959-4d16-a908-ab13faef7f9b",
+            "slug": "dieu-57-56-vbhn-vpqh",
+            "sha256": "fca78b63d15be8f62d8d14440859043993dce0b0eb66ad151c84eafcb2b5bd0f"
+          },
+          {
+            "id": "67b6b6db-c8d8-4920-9273-50d8ca4d305b",
+            "slug": "dieu-8-56-vbhn-vpqh",
+            "sha256": "f13aa70c1aa763e70a502e043c6b1a46708b1a6bb32b962eef4fa0284946e519"
+          },
+          {
+            "id": "6871e6e6-71a6-4104-a3e0-eb57db9a5cb9",
+            "slug": "dieu-66-56-vbhn-vpqh",
+            "sha256": "744ba025b8121ce2489c9cda9affd271da615eaf38b8d40f357245c3bc3ff47f"
+          },
+          {
+            "id": "6be6a7bd-b783-4986-802b-14562c3dfa8d",
+            "slug": "dieu-20-56-vbhn-vpqh",
+            "sha256": "4038c518c719eedf72a49b4a883cae4d49e15450c8b7a735b03af7b3cb4733f1"
+          },
+          {
+            "id": "6c6a157c-42dc-4bfe-915f-22885501c1a8",
+            "slug": "nguoi-thue-van-tai",
+            "sha256": "75fd1458c78be423f8cf740f0bafd524479a9048765d430aa50aa86759eda6c8"
+          },
+          {
+            "id": "6d90b832-8ada-4215-8b75-bb2deac60406",
+            "slug": "truong-trach-quan-ly-nha-nuoc-ve-giao-thong-duong-thuy-noi-dia-cua-chinh-phu",
+            "sha256": "4f56a53e5e6cd30e243ee5119f57ffa44dd3b66684faae538c2a588da7d644de"
+          },
+          {
+            "id": "6f0bcda0-d8f2-40f4-83d1-654180eb2c61",
+            "slug": "dieu-95-56-vbhn-vpqh",
+            "sha256": "8c208b8e6db1a280b3881ebe3cda42db1e83579e4921e94daeb3eb029199edf5"
+          },
+          {
+            "id": "733f01f7-96d5-4bbf-aed1-738fd5ed1752",
+            "slug": "dieu-50-56-vbhn-vpqh",
+            "sha256": "42f41d4017a44b58369e754a48edf24bd13a4d6833b8ff04cdf79f183ed95374"
+          },
+          {
+            "id": "79537287-0a0e-4597-b0aa-6aba3d4ea398",
+            "slug": "dieu-97-56-vbhn-vpqh",
+            "sha256": "70fc08f5263a08ac20e43ddc4eadee597b954968bceb78d86aa9524fd42e9212"
+          },
+          {
+            "id": "7e3545a9-72db-4587-a12b-e16988fc0993",
+            "slug": "au-tau",
+            "sha256": "580b4327b131c740c3ae4fc20b99f3ff0688d2417d0db81ac3b7bc864d70beeb"
+          },
+          {
+            "id": "7f0f21f2-f90a-4721-a039-7aea3bba6dbf",
+            "slug": "dieu-6-56-vbhn-vpqh",
+            "sha256": "1be02ab89d9c1237778b6f1bd46749266ade88ccd7634a3d0f6fbde67c4d8d99"
+          },
+          {
+            "id": "7f5649db-89ee-42fa-b002-bb40db043f29",
+            "slug": "thoi-hien-gui-yeu-cau-boi-thuong",
+            "sha256": "6dbe362c35536bb98b0c4933c1a380ea1327753cc97c467b62058b7e6705d511"
+          },
+          {
+            "id": "80a5edcc-7967-4031-b506-1504bd7faea1",
+            "slug": "hoan-cai-phuong-tien",
+            "sha256": "bb7080ab0d4cb4a749aa95c0ed73682c4194155175fb2b6f85894beb0a0a2ad3"
+          },
+          {
+            "id": "84f70a64-6190-45b5-b190-0d7911e912fa",
+            "slug": "dieu-46-56-vbhn-vpqh",
+            "sha256": "fa00ad1d64b35a1250298cff89bcbc793ebba3c1f248af5cb655212d40618067"
+          },
+          {
+            "id": "874c5014-2849-44c0-8177-5dfd8098184d",
+            "slug": "dieu-94-56-vbhn-vpqh",
+            "sha256": "1122ffb3ee65d796dabdade561a081a7d95b739c751bc8ff6319692fa2ad4f03"
+          },
+          {
+            "id": "880c7b82-4752-475d-a25f-5cad3036fc65",
+            "slug": "dieu-64-56-vbhn-vpqh",
+            "sha256": "e801efe69afe4f81af8f6cb4327e10d199e3728efdab7ae95d3adcba8726239f"
+          },
+          {
+            "id": "8b9985df-399e-4ac2-bdcf-32efdf53e09d",
+            "slug": "dieu-101-56-vbhn-vpqh",
+            "sha256": "58c016423c50b001c354d18bf1f580f35cb2ac3695f9c32f710641d8086f196a"
+          },
+          {
+            "id": "8f5fd830-9772-4ec4-b7ff-aef37753cc13",
+            "slug": "phan-vi-bao-ve-cong-trinh-thuoc-ket-cau-ha-duong-thuy-noi-dia",
+            "sha256": "48673cbbb4535364961c2fee3f9000de94571137bfc638297bd42353946ed50d"
+          },
+          {
+            "id": "93b795a4-056c-407c-94e6-00ca8026921b",
+            "slug": "dieu-26-56-vbhn-vpqh",
+            "sha256": "1e3b2a0a73fcda15228d1f8ec4a1fc6a3f99430b222af619206c423bb91c5e1b"
+          },
+          {
+            "id": "93fe5dc9-ac52-40e0-91bd-303897829ea2",
+            "slug": "thoi-hieu-khoi-kien-doi-boi-thuong",
+            "sha256": "fda12a2b9bb6a0ea5b6d62ef1aa5b65a6ca9780eaca7f3e8dd06fe1788699cea"
+          },
+          {
+            "id": "942acbfe-a936-458b-9f81-ea6cb0841cd0",
+            "slug": "dieu-42-56-vbhn-vpqh",
+            "sha256": "23ec2123ae0a068bbe6a380b3c43b6c7f592461baac956229e349256d4260db8"
+          },
+          {
+            "id": "95a5261a-d3fa-454a-b7a8-2e09596c264b",
+            "slug": "dieu-31-56-vbhn-vpqh",
+            "sha256": "3e137aa17ac9220fe7522aef1614dc6f775c1955211fd9f73962bc5405f4859b"
+          },
+          {
+            "id": "95f893fa-39d1-4951-9214-8d861c5d224e",
+            "slug": "dieu-65-56-vbhn-vpqh",
+            "sha256": "d19f5779c6c3fccd2f7f510f3f5d3c9e5990bd8a6bff3e696a9761907913a4f2"
+          },
+          {
+            "id": "96c8a954-cdfc-4d18-a98f-43db9bf223ea",
+            "slug": "cang-thuy-noi-dia",
+            "sha256": "3a3a2e0d610d3072ba86bd269666e626b169b30be56a63ccebd04b759f516a87"
+          },
+          {
+            "id": "99b6a9da-12ee-4ac9-9a8c-5d27486d0967",
+            "slug": "dieu-73-56-vbhn-vpqh",
+            "sha256": "cf6984a4bda3268829258d8c0757f04041f7238b007412831bffc172f21483b5"
+          },
+          {
+            "id": "9cedd59c-ef4b-45d8-952f-f69c4f65a0ba",
+            "slug": "dieu-43-56-vbhn-vpqh",
+            "sha256": "4ec17e31dab93e918dbd6b40597ecc786326a24d1a4ac791821d496798c6c3bf"
+          },
+          {
+            "id": "9ec28fd7-60b4-4d2a-91dc-5250d8399c81",
+            "slug": "dieu-74-56-vbhn-vpqh",
+            "sha256": "c8d5beb49ec5d511ae692337f292b62a1f0c40f346b759d185984353aff9008d"
+          },
+          {
+            "id": "a15cd9ef-7b7d-48af-bbb1-4860900c181f",
+            "slug": "dieu-92-56-vbhn-vpqh",
+            "sha256": "90eeb1c7a72d81893d715290ed171f78d7634a8436c2174288453a9cf57fa761"
+          },
+          {
+            "id": "a25c514c-5706-4a4e-8992-465fea7d2a0c",
+            "slug": "dieu-54-56-vbhn-vpqh",
+            "sha256": "df2be3dc98324f8e6840df4c2e244441b43bef91866d120fbf77f51405357571"
+          },
+          {
+            "id": "a3487da7-7a27-4617-8a88-cd782a7c518e",
+            "slug": "dieu-19-56-vbhn-vpqh",
+            "sha256": "7dfc1640765f64cb679e2ed255604cf3ca0fa25b6b64a66aac9702adceffe6b4"
+          },
+          {
+            "id": "a49d7d05-2792-496f-ac33-592cdff52a3f",
+            "slug": "dieu-68-56-vbhn-vpqh",
+            "sha256": "774b69fac99b3d599a0e813e1709956d6de922951efee6c562b293143d0e4684"
+          },
+          {
+            "id": "a953e260-6617-4cc0-82ea-2804f7863003",
+            "slug": "hoa-tieu-duong-thuy-noi-dia",
+            "sha256": "e3de7d6d5bb1e73601bb1aee06592458dacd0aca5738a720912286ae6ea1b2dd"
+          },
+          {
+            "id": "aac6e5d6-2f31-4aae-9053-976962f7c6c4",
+            "slug": "dieu-9-56-vbhn-vpqh",
+            "sha256": "5268327018ffc5ec17f676c7f7134d589b798a2f873d7e70504f2f1a47c9c28f"
+          },
+          {
+            "id": "ab4a1e49-069a-4d99-906e-958947c963c9",
+            "slug": "dieu-63-56-vbhn-vpqh-hieu-luc-thi-hanh",
+            "sha256": "dcc3d3ef6e7cce3932b8f069d6177d6ddb6bb5834deb4a61fb69ca764cf99236"
+          },
+          {
+            "id": "adb69131-5799-47b0-b343-8244a5c76a0e",
+            "slug": "vach-dau-mon-nuoc-an-toan",
+            "sha256": "ac8f017805acb6a5bd1f949065a9e91d1537f35c8023c761222a96059556aa14"
+          },
+          {
+            "id": "af01beec-54de-438b-b989-969b70aaccc0",
+            "slug": "dieu-71-56-vbhn-vpqh",
+            "sha256": "69b495825167d7ef306e90ebebc629ac379e028f2d8333136051848315e32e7c"
+          },
+          {
+            "id": "b0d94a93-fa4b-4cfa-a870-1a9cfe856be6",
+            "slug": "dieu-13-56-vbhn-vpqh",
+            "sha256": "b0ef871166ee1c88dac07bafc59c2f6942ea2c5d94cad09d55aef1f50bb7c34c"
+          },
+          {
+            "id": "b213ee30-5455-444a-9201-a700e1bb6f9a",
+            "slug": "dieu-35a-56-vbhn-vpqh",
+            "sha256": "205c93f96107da0f7dc2c9fa1805afbd2f5c7717bc5ccb3b3f8e191c5f3b606f"
+          },
+          {
+            "id": "b260374d-3e17-44eb-90fe-181bb3f67f2a",
+            "slug": "luong-chay-tau-thuyen",
+            "sha256": "a40edd2709679222fc91deb7c37402900c724f2e7f9c75ad1a6268d1a37c3686"
+          },
+          {
+            "id": "b3481647-5bf0-4b4f-a999-44499d08d0d9",
+            "slug": "dieu-25-56-vbhn-vpqh",
+            "sha256": "8da60870edfbca6b9f7daa1ab3825712fa4958fa40c813ad5521fab2fa5b0ccc"
+          },
+          {
+            "id": "b4223cab-562b-49b2-90f5-f2c2ad5d4178",
+            "slug": "duong-thuy-noi-dia",
+            "sha256": "c58552e330084795a7e797364a8b4a9073dffe92cd0769adc2323248b5b30a51"
+          },
+          {
+            "id": "b4868597-5da7-4425-b2d8-8bb97fe825e4",
+            "slug": "dieu-75-56-vbhn-vpqh",
+            "sha256": "87656ee4f1468a9cea4791b334ed02fc7a040fc083d88ba29cf683044eff036a"
+          },
+          {
+            "id": "b554dfab-1cce-4725-9a30-890aad354b27",
+            "slug": "dieu-10-56-vbhn-vpqh",
+            "sha256": "3c20aeb4ae58cb74ab68600d2cdf5b085974a76c758a5d2700735b199d61956f"
+          },
+          {
+            "id": "b6d0baca-3ce9-401f-9f5e-a42719727551",
+            "slug": "dieu-86-56-vbhn-vpqh",
+            "sha256": "3e7984155b3061d02c7501f0767c09df77d03b5deb1a3c70b9b32fd07ad49e65"
+          },
+          {
+            "id": "b6e1351e-f629-4488-a511-81f462d9ebb4",
+            "slug": "dieu-34-56-vbhn-vpqh",
+            "sha256": "06d9d08adcff7f607cad34820b1c97eeed5f5ca756d620faf5507c88329a90db"
+          },
+          {
+            "id": "b711216a-fb64-4617-8564-cf4200ed3678",
+            "slug": "dieu-1-56-vbhn-vpqh-generated",
+            "sha256": "dc937cca13f4ee44c9a9ea1a3aa0358c86dfc96d9ea872001af6628402be72f2"
+          },
+          {
+            "id": "b91dbf3d-22c9-419c-a900-7d5a3c4f6c56",
+            "slug": "dieu-57-56-vbhn-vpqh-hieu-luc-thi-hanh",
+            "sha256": "ef35025df720bc2929f2ebf941057f2e99e34fd1d972622fd7448d27ffc8639a"
+          },
+          {
+            "id": "b91f7feb-c0c5-474b-806c-f67abdf84bba",
+            "slug": "dieu-78-56-vbhn-vpqh",
+            "sha256": "cabaa498686319acab41590d798fcd88a1fc87c4c54b2ad8a459c9916236a2d7"
+          },
+          {
+            "id": "b921fbea-edf3-4cfc-a81f-69dd1e41790f",
+            "slug": "dieu-48-56-vbhn-vpqh",
+            "sha256": "aef7738519e05d64dbfdd880c709674e7db0614a3500242db84a1e1469e04934"
+          },
+          {
+            "id": "bafabe65-a50c-4fb1-a8d6-1c80be721948",
+            "slug": "dieu-76-56-vbhn-vpqh",
+            "sha256": "78384c03159773e8c2f63b62dcd4eb2c13884d6acd8a7906356f744c375e9920"
+          },
+          {
+            "id": "c09acae7-4d61-4e76-ac7b-581ee90ab64f",
+            "slug": "thuyen-vien",
+            "sha256": "ea4ff903caa1dbe41630f8a793c898b0193f0861f5d30077fe725e0d62ff42b7"
+          },
+          {
+            "id": "c2475060-0f8e-47d1-a762-e13d77606b7b",
+            "slug": "dieu-45-56-vbhn-vpqh",
+            "sha256": "b3910b411354e5fa42dd7a239b64d7fad009dd5ca7035b7d377692dbc493fd46"
+          },
+          {
+            "id": "c27f022e-5c28-4ec2-a3d9-9223b39ea0ff",
+            "slug": "chuc-danh-thuyen-vien",
+            "sha256": "f3ab489c7435295f7430063e5de238add28acdf49438749e44db15ededf7b1ac"
+          },
+          {
+            "id": "c2e6fdf1-e30f-4b80-8b71-fa71e10ca187",
+            "slug": "dieu-98c-56-vbhn-vpqh",
+            "sha256": "2fbbb01f8829a81f8a8df2f12a298bffe4d94b06e538028957e79b1a1fe387ef"
+          },
+          {
+            "id": "c2effeb9-40b1-434e-8445-027b58d39095",
+            "slug": "dieu-98-56-vbhn-vpqh",
+            "sha256": "8009ce5a3d4a521c986bef306f9eb32eab2bb521dcb7a6f042a43ec1082d7b83"
+          },
+          {
+            "id": "c60440a0-07c5-4375-a8af-a7ecde8544b2",
+            "slug": "dieu-80-56-vbhn-vpqh",
+            "sha256": "671f9f3d3ffb1a3709aae1b3cc9f986128c3793599ac1c57edcfe29e21dc146d"
+          },
+          {
+            "id": "c65d85f0-52bd-4a9b-b44a-f9329b8435f8",
+            "slug": "nguoi-nhan-hang",
+            "sha256": "5bde66734db39d9418232ba947851e3a3ebb728f93937fce1aea176e78a852b8"
+          },
+          {
+            "id": "cc600b98-b2fa-48fe-a271-7a636f40faec",
+            "slug": "dang-kiem-phuong-tien",
+            "sha256": "ed127f55592950e178c5f4d77554ce0f9c41543e4176ead29799b06c2b6a854e"
+          },
+          {
+            "id": "ccd93e9f-e0c1-401d-b849-ee5190c28c92",
+            "slug": "dieu-67-56-vbhn-vpqh",
+            "sha256": "449a26b96057f94cd73c12ce617254338b62f19058f80bb2cc24f75e53ca6242"
+          },
+          {
+            "id": "cd5694ad-37a0-4382-bc18-9fc72381d301",
+            "slug": "hanh-ly",
+            "sha256": "85efd19b6421f0ade2c53857bd4385aa6ef816bec656e03f4831529fcd10d1ad"
+          },
+          {
+            "id": "cd8305a9-4366-4a7c-9594-037b7c20f42a",
+            "slug": "dieu-100-56-vbhn-vpqh",
+            "sha256": "52523570cbec1ac7ac523f865144528ad9511cc6204c91494e2266112b514a9f"
+          },
+          {
+            "id": "cda89520-0a2c-4c6a-a383-7c66255ead6b",
+            "slug": "dieu-15-56-vbhn-vpqh",
+            "sha256": "ed1890bd40d56fae0c4de6dc4da99a7cf5c2d5abc9d2e8b766e5910bd9397b78"
+          },
+          {
+            "id": "ce6406dc-672a-4e22-a6a5-3fd81b0f60ab",
+            "slug": "dieu-33-56-vbhn-vpqh",
+            "sha256": "a936f94a05a422869483c3604074048a089cd431bdea8021c005c12b8556fdbc"
+          },
+          {
+            "id": "d210c4cf-b314-4aaf-9a61-d2521c13c19e",
+            "slug": "dieu-72-56-vbhn-vpqh",
+            "sha256": "63d1a7b812cf3161186b28990728e44a4202b70518b4d7b94c6e5645f6b26212"
+          },
+          {
+            "id": "d4802556-0f52-474a-b6d0-7de1b16b1dbd",
+            "slug": "giay-gui-hang-hoa",
+            "sha256": "6ae127a0eff3ca67206b07897e7e3040930e17de7d54a07402e862d8410676ea"
+          },
+          {
+            "id": "d5bc6222-4242-4ab2-8418-4255c685b5d0",
+            "slug": "dieu-12-56-vbhn-vpqh",
+            "sha256": "df872d4ae5aeec7437fc2fcd09d07ad9f3df58fab50be2a9344c48cf1759e376"
+          },
+          {
+            "id": "d5ed6350-5cbd-49cf-9e2b-28ccc2c33b8a",
+            "slug": "dieu-58-56-vbhn-vpqh",
+            "sha256": "c4fe68212b9e03e04965a0f72aee326ba6b12371b20ba5a67a912fb0c9c24926"
+          },
+          {
+            "id": "d60c0f09-548d-495a-a62e-51e2a8222c4d",
+            "slug": "dieu-98e-56-vbhn-vpqh",
+            "sha256": "fad6e14bff31bc282bc4d999080150d4f1fe816d850327a0c3a9848648c5b1d3"
+          },
+          {
+            "id": "d6e043a5-3d9c-419c-9572-5b4c6b401ee3",
+            "slug": "dieu-99-56-vbhn-vpqh",
+            "sha256": "440f97a3e41b2f88c2d990fa2f4376c65234de563908610eecae6e0d7ef537ad"
+          },
+          {
+            "id": "da62ac5a-12c6-4077-9ca9-37c62f8cdb6b",
+            "slug": "bao-hieu-duong-thuy-noi-dia",
+            "sha256": "599f50b1fc8add81ff7bc333f699ab938c339884dde7e0f16ac4bbedb9915fa4"
+          },
+          {
+            "id": "da700fdf-5612-4a6a-bbcc-8e0f88f6c1a1",
+            "slug": "luat-giao-thong-duong-thuy-noi-dia",
+            "sha256": "aec550b58eb7565b269f366e24ecf9829079ed3f347f31527fda10519cc823b1"
+          },
+          {
+            "id": "da884686-3464-41bb-b34e-26824dc84953",
+            "slug": "dieu-21-56-vbhn-vpqh",
+            "sha256": "3558bcfe639c3a0e6e8c2fef8e2ae2991affa360efc994838d751258584bcdf2"
+          },
+          {
+            "id": "dab71d0a-a81c-436c-885e-1decbebedeae",
+            "slug": "dieu-4-56-vbhn-vpqh",
+            "sha256": "6e1d23a66e22e9502f50fa89f09afca51273c1340da267b181484566f73ffbb7"
+          },
+          {
+            "id": "db1ecf11-d56e-4954-9746-72c09766c0eb",
+            "slug": "dieu-85-56-vbhn-vpqh",
+            "sha256": "78ea6b767c10cb7cb4e03fdf75abcb10b3859ad39c3be9ee979e2487a77ae70c"
+          },
+          {
+            "id": "dc55a86e-9d1e-4dd6-b4d9-4608b02035b4",
+            "slug": "dieu-5-56-vbhn-vpqh",
+            "sha256": "87504583a6712c250244357cd72b95342887c4f1d582c32c4d5ea8b5dda0064b"
+          },
+          {
+            "id": "dcce0663-7781-4a5f-8323-12057d84498c",
+            "slug": "dieu-17-56-vbhn-vpqh",
+            "sha256": "b07d0723c698d6f68c8da9ed4e84e2a9cc765ad0f085dfc8850707fb13776290"
+          },
+          {
+            "id": "de15b7e3-515a-446a-8054-f6562dd2d479",
+            "slug": "dieu-90-56-vbhn-vpqh",
+            "sha256": "df08be6b1783dc0d31ea10482e3e541f1515e13067e8440bdcd695a809233935"
+          },
+          {
+            "id": "de61ccac-c158-4368-996f-a6d9732a0ac0",
+            "slug": "dieu-98d-56-vbhn-vpqh",
+            "sha256": "4b81f04f9e53d14948ad20b34362aa58e15a5fff17c1e1beabecc7fc6564524c"
+          },
+          {
+            "id": "e11b2c4a-a209-4400-8d23-c57a27dbfed8",
+            "slug": "dieu-41-56-vbhn-vpqh",
+            "sha256": "3e4a71c05b6ea25e0b88e851ae645d6f31e952dfb2c1f85812135729f778af91"
+          },
+          {
+            "id": "e12962b6-d60d-4bce-a507-917c8afb45e0",
+            "slug": "truong-trach-quan-ly-nha-nuoc-ve-giao-thong-duong-thuy-noi-dia-cua-bo-cong-an",
+            "sha256": "c69e82e1d3bb3389bce48c468ceba8b9191231f0480158eeb3b1f8fd6c585708"
+          },
+          {
+            "id": "e1611f1d-f7c0-49cd-9761-82850b519d74",
+            "slug": "dieu-3-56-vbhn-vpqh",
+            "sha256": "64c563939183dee508d8ce8d0d0021dd79725e3a42b889bc4f87b323f67f96f3"
+          },
+          {
+            "id": "e197d9ca-972d-4f95-8e7b-f788349b7745",
+            "slug": "dieu-22-56-vbhn-vpqh",
+            "sha256": "c4977c1a911b205bdcdf2053812ce00911ea189b0c84ff301223b9e89e19fe84"
+          },
+          {
+            "id": "e25801f7-4552-4c2f-956a-eeb6e69a1c67",
+            "slug": "van-tai-hang-hoa-duong-thuy-noi-dia",
+            "sha256": "41fc4907bd7095d935e1e61f79b4a3b4767f4b27b5eb613f03bd0d212d585c06"
+          },
+          {
+            "id": "e2992ebf-0899-4486-8df7-a2100e6da8a6",
+            "slug": "dieu-82-56-vbhn-vpqh",
+            "sha256": "36c5faa24e87c91fbef17bc355b8771b177cf361960285b00e5f39d3a1a62c2f"
+          },
+          {
+            "id": "e8745802-3ff1-420e-b581-8010ba6ea917",
+            "slug": "dieu-16-56-vbhn-vpqh",
+            "sha256": "7c8fe12026b75ec442d27293415319a8a05b5a2069ebace57e9a266fb7dcc03a"
+          },
+          {
+            "id": "e94fe03e-b463-474d-9b13-f1a1865b881d",
+            "slug": "suc-chore-nguoi-cua-phuong-tien",
+            "sha256": "5d5205d0155ee6027f4cd645464b3e30e9ffac183b9a5035d89ecd0b96b89441"
+          },
+          {
+            "id": "ec56c5c7-f484-4870-b305-0e4f4f44b4d3",
+            "slug": "ket-cau-ha-duong-thuy-noi-dia",
+            "sha256": "31fffc9ae952e541b4345ea6a37ed4c69261008dc8b33de79d33145167fc208c"
+          },
+          {
+            "id": "ef7fff3d-b274-4ec0-ab08-9bf7a00bf503",
+            "slug": "56-vbhn-vpqh",
+            "sha256": "25b7b78017ff3c21fea45290d5837795a4c496fe483d731d115a698da2bccc1e"
+          },
+          {
+            "id": "f04ee477-cca7-4c7e-a16c-5946b3a393e1",
+            "slug": "dieu-49-56-vbhn-vpqh",
+            "sha256": "543bbf31db7f9f32d995ceb25fda483c80a3f2d24494c07191eb057d7c2f7c44"
+          },
+          {
+            "id": "f25cebfe-de0a-40e9-9890-151c9a8d6ad6",
+            "slug": "phuong-tien-di-doi-huong-nhau",
+            "sha256": "39c1781408e55b1c781e9dff28348126fb8f623bd022a1afae5fa6322df94ded"
+          },
+          {
+            "id": "f5afcb13-8eb6-46a1-8d58-8d7d25d680d2",
+            "slug": "dieu-89-56-vbhn-vpqh",
+            "sha256": "0107b4a39f46da74c0f2ba01a1fe29d328aca420ee1e2bb33ea1a6016a4ff624"
+          },
+          {
+            "id": "f6b4805a-e0ee-4d23-8db7-e1e8bcba285b",
+            "slug": "dieu-98h-56-vbhn-vpqh",
+            "sha256": "18c9461dfcb30397e9426a3a233536c4bee9beaacc1e403640f778f5ef986a1e"
+          },
+          {
+            "id": "f72a4894-9f79-478a-b724-6e89701a131f",
+            "slug": "van-tai-hanh-khach-theo-hop-dong-chuyen",
+            "sha256": "cf410a8fe7c92e56a922b252787c7e35f9c0693bcbbebc5d3798c5ae87536aa1"
+          },
+          {
+            "id": "f91a0a59-553f-4385-89fa-be4604542a37",
+            "slug": "dieu-27-56-vbhn-vpqh",
+            "sha256": "94e1bdb783b2fc6e643d74a198dcc88ed6bfb6eb839c314b483ffd6f2164fead"
+          },
+          {
+            "id": "fbcb6df3-0932-4069-85e6-990447c51fa7",
+            "slug": "thuyen-truong",
+            "sha256": "aa4aaeb2c80407f1f4e300bac6a0c4e8f6f3b7dfb6d15e61328ce1d3d5e863b9"
+          },
+          {
+            "id": "fc427b8a-e49a-4797-b41f-7eb64e63b3c7",
+            "slug": "nguoi-lai-phuong-tien",
+            "sha256": "9fdfcf5199a547aeb99f4319c186f2bbb5a176112bea70104b8871729fc54c0e"
+          },
+          {
+            "id": "fcf5d9ab-bd2f-4759-8c77-2b281b8ea003",
+            "slug": "dieu-84-56-vbhn-vpqh",
+            "sha256": "749887544ed546b9f6a5a0d9dcc44ee1b784ebe76e08bfc642e92778a28144ee"
+          },
+          {
+            "id": "fd664e8f-7408-4632-a2fc-b5e4ce783fe6",
+            "slug": "dieu-28-56-vbhn-vpqh",
+            "sha256": "fb517a6dee579f6dd4451642cac885e9fc2ce121b6a6e26adc2799478ae5bc22"
+          },
+          {
+            "id": "feef79c3-058e-4639-bcda-ca4bead99471",
+            "slug": "dieu-61-56-vbhn-vpqh",
+            "sha256": "094b787f007ce22ae2fc0ccd92eaed7bfa15284207bfadd4827ed2e89aee77e1"
+          }
+        ]
+      }
+    },
+    {
+      "id": "b1372cdc-5cc5-423b-8a1b-1c965ba58889",
+      "before": {
+        "id": "b1372cdc-5cc5-423b-8a1b-1c965ba58889",
+        "status": "partial",
+        "wiki_status": "error",
+        "chunk_status": "ready",
+        "phase": "commit",
+        "raw_text_sha256": "257646dc3c19b5e24dedf30462dd3a9f66dfbc1eea6acec9110a955e577d9288",
+        "plan_pages": 79,
+        "draft_count": 79,
+        "pages": [
+          {
+            "id": "02758538-d8c7-42c4-a831-543eb4c06f78",
+            "slug": "dieu-32-22-vbhn-vpqh",
+            "sha256": "a3775d95ceb841e73916bc03f3d4d115ea10b074e51bdc88863b28d53932b393"
+          },
+          {
+            "id": "0502cb13-1271-46b5-bd55-0c06206de8a6",
+            "slug": "duy-tri-bao-hieu",
+            "sha256": "2d13a827c7a083bf19263130dd0c8c0ecdff25f380f6fdf2afe0ce724e3f727d"
+          },
+          {
+            "id": "059b0a55-c258-4c9d-bfd7-24c243b2ce5c",
+            "slug": "chung-chi-chuyen-mon-may-truong-hang-nhat",
+            "sha256": "81cb9a0d67e6c51d763306f6f8c9321cd4b052890982975e173b96049f65ec1f"
+          },
+          {
+            "id": "079c8389-03c4-4f35-93af-b67efe9b4c4d",
+            "slug": "dieu-8-22-vbhn-vpqh",
+            "sha256": "701dc98a05f01f344a3304a20ad3e96132968b3ed837caf6a5117f86027a9702"
+          },
+          {
+            "id": "0954f60b-9f38-43ad-a987-dc7a12ae355f",
+            "slug": "dieu-29-22-vbhn-vpqh",
+            "sha256": "d43996780ed29a4945512e06f0985f08024fa42905ef9172353848e669a5f933"
+          },
+          {
+            "id": "0a97d03f-89a7-4a1a-8df1-8a5c9d4259aa",
+            "slug": "dieu-16-22-vbhn-vpqh",
+            "sha256": "15629b7299d87fc03a8ddce1f8c8f95cca20025605d95ed65a44ce137291aba4"
+          },
+          {
+            "id": "0bf977f0-a0d7-4b89-a66a-aff0a52e689d",
+            "slug": "dieu-13-22-vbhn-vpqh",
+            "sha256": "2a622a3f734b904d8f71b030d53b39ac62b351d50d9939972e77d29c9853c92f"
+          },
+          {
+            "id": "0dd895fa-5658-475c-88b8-f685e69c14e9",
+            "slug": "dieu-21-22-vbhn-vpqh",
+            "sha256": "c42ad1eb256cf117eaa5d7a17660b886b2855b404739af23127d6857a760994e"
+          },
+          {
+            "id": "191f6194-b28e-4541-bf8d-fcee51667c83",
+            "slug": "khu-neo-dau",
+            "sha256": "063bcaf109357cc0193d697abf5d53caa1c4ad7e5070e2ebc3969f2208a54d0e"
+          },
+          {
+            "id": "19bbc54e-ff85-4ab8-b406-8e1de378613b",
+            "slug": "dieu-39-22-vbhn-vpqh",
+            "sha256": "4f69dce8bcb5f174dc4939371847ea075e83bc80de6adc74e143bb70977755a9"
+          },
+          {
+            "id": "1cceb900-b2b6-440a-803f-43ced13d602b",
+            "slug": "vi-pham-quy-dinh-xay-dung-ke-dap-thuy-loi-cau-ben-pha-phong-dien-nhiet-dien-thuy-dien-cong-trinh-vuot-qua-luong-tren-khong-duoi-day-luong-cac-cong-trinh-khac-anh-huong-den-an-toan-giao-thong-duong-thuy-noi-dia",
+            "sha256": "ef623e738a7bb4a3eaf0cd4efb88309dd26bc2fe7cd52d36985a6afe246cb2c7"
+          },
+          {
+            "id": "1d122673-f183-4a3e-9652-71d35fa5bdc6",
+            "slug": "quan-ly-khai-thac-cang-thuy-noi-dia",
+            "sha256": "ea29f379c76d483feed53af3c2464540314f153613c1b8e6f477ecac1257638c"
+          },
+          {
+            "id": "1eddfedf-99c8-4f27-8968-6a6db6a49ae7",
+            "slug": "vi-pham-quy-dinh-nao-vet-vung-nuoc-duong-thuy-noi-dia",
+            "sha256": "0f513e60aed55639dc81df55a0f90efbd4155b0f167d82e586283037888a2bae"
+          },
+          {
+            "id": "258d3ee9-d49b-41c6-9c2f-0e81b1ef35f4",
+            "slug": "giay-chung-nhan-kha-nang-chuyen-mon",
+            "sha256": "808e53affe0a059b01cf2ee3c357d986ddb08b7d2f754686c0ffedf373067c5d"
+          },
+          {
+            "id": "2616521d-527a-4da4-a947-173521e42c78",
+            "slug": "chung-chi-chuyen-mon-may-truong-hang-tu",
+            "sha256": "a9a9522b3c7c483636f87a691f79cac25b4a028f6310d50a5e7d3a33ce09a497"
+          },
+          {
+            "id": "2661e438-1aad-4fa0-a547-26c2b4daf867",
+            "slug": "thoi-hieu-xu-pha-vi-pham-hanh-chinh",
+            "sha256": "08f82b842ba52794899c7c9e1e5ac5f451746a64d84858379a7408f37a15c3ca"
+          },
+          {
+            "id": "2961a560-d9d8-4f0f-8fa9-d899aa95044d",
+            "slug": "phuong-tien-thuy-nuoc-ngoai",
+            "sha256": "6dd764db0c0cbca8a49d5a9f9378837f583baf6ad1789ed16257adde8c03ec92"
+          },
+          {
+            "id": "29dba53e-3ff9-40d7-80c1-3fa8ff7744fc",
+            "slug": "dieu-45-22-vbhn-vpqh",
+            "sha256": "5a469f7cee1ceb3611430937ed8acbf7abc9c19582554ec08f2893813f56d0c1"
+          },
+          {
+            "id": "2a440bc5-cd2c-4125-a4fc-7d585db65330",
+            "slug": "dieu-40-22-vbhn-vpqh",
+            "sha256": "2978746422280338b70cad5a49de4c9e2feb7852b26c143c610883875399cbc3"
+          },
+          {
+            "id": "2a845d13-a167-48ee-837d-141b361dd383",
+            "slug": "dieu-25-22-vbhn-vpqh",
+            "sha256": "f4de45e4543eb094d655722bbbe686e9d56c4a6e4a372266d3120e2e76eb36b4"
+          },
+          {
+            "id": "2c6a0123-5f8c-4466-9d3b-99abede678ff",
+            "slug": "dieu-15-22-vbhn-vpqh",
+            "sha256": "c79f89fed747a810a1127a9a698fd6924c5525718ddafcff32350352a8e77e8b"
+          },
+          {
+            "id": "2f6a8458-9cd1-4a34-b71f-f94cc6755a11",
+            "slug": "dieu-48-22-vbhn-vpqh",
+            "sha256": "49e566cd2117e5a6b8fb96ea38ce3980ab510e90faa7c8056cb1d7a1f72fd58e"
+          },
+          {
+            "id": "30067482-81b7-4b36-a9d0-98a8f169e5e6",
+            "slug": "dieu-56a-22-vbhn-vpqh",
+            "sha256": "48a298a6764a2ed73072a4aee1227209a78d9fda940776550bb9bb222f3cb2d4"
+          },
+          {
+            "id": "313c1f42-5344-4d2e-97d4-42fc97dfba16",
+            "slug": "chung-chi-chuyen-mon-thuyen-truong-hang-ba",
+            "sha256": "a4c89c68251610f6c7060478644dd4f09f037c3ec81c817286c67d4109cd42ac"
+          },
+          {
+            "id": "31b21bba-bd17-4af4-8eb3-63503e318104",
+            "slug": "phuong-tien-co-dong-co",
+            "sha256": "620a6834b550283d81161bc8fc58f6ea5e1b73fc15787b5cd3302a046bba5486"
+          },
+          {
+            "id": "333f9465-f1e8-4416-80ec-63d081b5d518",
+            "slug": "tau-cuoc-tau-hut",
+            "sha256": "075ce6b0dd2aee4f2ee2ab847c58d67a6a73914463e68e44752a2c9ca89b85cc"
+          },
+          {
+            "id": "34fa3ce7-9486-4e6e-9594-a99c49d217ad",
+            "slug": "duy-tu-kiem-dinh-chat-luong",
+            "sha256": "bc914639dc72998311bb869fc158cefe7bb20fd639e764bd236d8b6eaa076812"
+          },
+          {
+            "id": "361b4a7b-6969-4620-be4a-cd2878df3bb0",
+            "slug": "quyet-dinh-cong-bo",
+            "sha256": "1aa127d58a1df1ffe2b3bdfd8f6f760364e240ed182372e2bf76aff1a832b06a"
+          },
+          {
+            "id": "3818879a-3fe9-496e-a284-1c6315fdf5f9",
+            "slug": "thoi-gian-bi-dinh-chi-hoat-dong",
+            "sha256": "e309b8d1e751c65295ca1a8cf457bc123858f98b060aa92014110d0875cc63e4"
+          },
+          {
+            "id": "39d7cfbe-e87f-4a3b-bfd4-d59aa01aa8fb",
+            "slug": "ben-thuy-noi-dia",
+            "sha256": "1f0e98ddc76618aaf6978172aa7f0c40ad2c9fcdd0e6548668d24f6bef1e848a"
+          },
+          {
+            "id": "3dd009ae-fbe7-496d-8cb3-b4598c962087",
+            "slug": "dieu-37-22-vbhn-vpqh",
+            "sha256": "c04744b930056f69de7577be374079349b416eb0520ce2a518709c0da676c366"
+          },
+          {
+            "id": "3f56e08f-0999-4c4d-912f-12bb1011b37c",
+            "slug": "dieu-28-22-vbhn-vpqh",
+            "sha256": "30fad95df2ad2d08d8c55f982f3ed116b86983e569489d6985e6f5530ee2d9f9"
+          },
+          {
+            "id": "41b38bbc-5c79-4f05-bc64-bc98d42759ca",
+            "slug": "dieu-36-22-vbhn-vpqh",
+            "sha256": "1fc1d934d8a8ccdf56212feb005454bd92364a1caf85f95fbdfec6a0480c07c6"
+          },
+          {
+            "id": "42fddcd0-ad1f-4364-bfae-60c42ec780d2",
+            "slug": "dieu-31-22-vbhn-vpqh",
+            "sha256": "163244657f2478a42b09662d01bf2ae8510bdcb8e039122debf117472c10b180"
+          },
+          {
+            "id": "4683ab4c-c650-4a8a-8078-390d4f16bc3f",
+            "slug": "nguoi-lam-cong-tac-an-ninh-cang-thuy-noi-dia",
+            "sha256": "0f06a0129c90def183fd8c0104878cc025b1e8edab9ff3c78ca6cf1d80452ec0"
+          },
+          {
+            "id": "4c4fa831-1637-4013-afd0-785f06cc76f9",
+            "slug": "van-ban-thoa-thuan",
+            "sha256": "1329da9617942dd46425110ae316f077845ee557a72b889c483d20eb675b5f10"
+          },
+          {
+            "id": "4e59fb87-33bb-47c8-bb7a-68f1c4501368",
+            "slug": "doan-lai",
+            "sha256": "f64bbbac5021b6287cf59c1fb57c10b1986c1eca217ed3c83ee0d67b2b81cc91"
+          },
+          {
+            "id": "4e8077fc-e7bc-4ea9-b605-a7fe525c7a05",
+            "slug": "dieu-44a-22-vbhn-vpqh",
+            "sha256": "6122c5f463045e106131d879ee175b1d579eae6e86286aa39930ecae1926f010"
+          },
+          {
+            "id": "5007b8b3-bf70-42bb-9c16-2b81b1e680c1",
+            "slug": "chung-chi-chuyen-mon-thuyen-truong-hang-nhi",
+            "sha256": "608f28b93d267059d6fb720e418a75c6dec69dbe57d7b5c172a3681be5c7b1c4"
+          },
+          {
+            "id": "502e2a38-8974-42ce-99f9-af1d65179da1",
+            "slug": "dieu-23-22-vbhn-vpqh",
+            "sha256": "95a6768779e5829baed51b3b57ad09fbeadada48a6bf429e52c2e3baedb3374e"
+          },
+          {
+            "id": "51c601d6-ae25-4955-a529-8c54fafbd86d",
+            "slug": "ke-hoach-an-ninh-cang-thuy-noi-dia",
+            "sha256": "afe9fcbddf22624c4425227400d4dd120d1908f4803926acdea0e55729e050b6"
+          },
+          {
+            "id": "51fabca0-b4bb-4db9-aa0b-b18206515a80",
+            "slug": "dieu-56-22-vbhn-vpqh",
+            "sha256": "1c3115489afb40841de5933e412ae2876b9a769c031872371436b88cd166e03e"
+          },
+          {
+            "id": "52773fb8-26a9-4f90-b28e-fe9bd02edcef",
+            "slug": "vi-pham-quy-dinh-an-toan-giao-thong-cua-nguoi-hanh-khach",
+            "sha256": "269d40d0f5365dac654d40b5ecad6c47241642952f009ce78d51cc36a0648d95"
+          },
+          {
+            "id": "53235418-9e1a-402e-a596-923f093aa586",
+            "slug": "dieu-46-22-vbhn-vpqh",
+            "sha256": "3a0badc5eeabb6392fce010889f0e2bfc988315810058a1295bc1a7f6101df19"
+          },
+          {
+            "id": "573b64da-b81f-4325-acf3-e9eb2c42e606",
+            "slug": "dieu-27-22-vbhn-vpqh",
+            "sha256": "63e4433e0bb65f6836356d5cd89f9766fafdc0c3b999e5f7766674c512f787b0"
+          },
+          {
+            "id": "5c2fcdea-23a6-435f-80f4-b0893777b7f2",
+            "slug": "vi-pham-quy-dinh-truc-vot-thanh-thai-vat-chuong-ngai",
+            "sha256": "d59ebe2bbc0a285a253f02156e26a2d98c7428c20afd45dc21fe8e238359a263"
+          },
+          {
+            "id": "5cdb0224-f603-46e8-a577-7688b810bfb6",
+            "slug": "dieu-3-22-vbhn-vpqh",
+            "sha256": "32c9f0ed1a2ad369e3a5cd9c8bbadce0b854cf8d73aa272b8e26450dbdb5d981"
+          },
+          {
+            "id": "60781da8-ac5a-4223-bf33-d6a1e8fc4be4",
+            "slug": "dieu-4633-22-vbhn-vpqh",
+            "sha256": "6933c9e0acf3a670605d75fe5599088b153b8696f87da7d0129a6caf45bb69f4"
+          },
+          {
+            "id": "6127ea43-996a-4fa9-8144-62c78bcc6faf",
+            "slug": "dieu-6-22-vbhn-vpqh",
+            "sha256": "1809d6a6a36e483f7a7e4da7a590009b9949be052dcb9966c346fcdacda0fa0f"
+          },
+          {
+            "id": "64550c86-a34d-45b8-81be-ad3b60c5f4a0",
+            "slug": "dieu-57-22-vbhn-vpqh",
+            "sha256": "ccc6285accd3f6987c426812aa5f800ae381094840c0b4c920500b7233df3127"
+          },
+          {
+            "id": "6a3186cf-9696-43d1-9b39-82620c36d939",
+            "slug": "dieu-42-22-vbhn-vpqh",
+            "sha256": "c90b6f2b72ea3e1838e7bf05ca071fef1f12dd34d2d96d5a18a6ec0832b1ec8e"
+          },
+          {
+            "id": "6ad49a62-59ba-4f61-a150-8fb975e83354",
+            "slug": "dieu-44-22-vbhn-vpqh",
+            "sha256": "5e07be54e1b7436806fad336b37e50fae721e0255442e3d087c2fcb34125c218"
+          },
+          {
+            "id": "6ae75562-c1d8-43e4-a649-3c150e09bf02",
+            "slug": "chu-tich-uy-ban-nhan-dan-cap-xa",
+            "sha256": "c0c40f6dea13ee2b83539870e8e662e68668c343e167085e2dc2afc2c1fd7453"
+          },
+          {
+            "id": "6bac676a-d9ce-46dc-a3b4-84d4e8240c60",
+            "slug": "dieu-26-22-vbhn-vpqh",
+            "sha256": "89868de20ba35af2ca4e86dedccb0ace5e699b71351b2e5110096477bea1a168"
+          },
+          {
+            "id": "6c060a7a-634f-45dc-b257-89bba26a6e4a",
+            "slug": "tau-can-cau",
+            "sha256": "798467a3e634ef1ded3fb6ca62c221946ced323ae138d5329e00d9ac08748bce"
+          },
+          {
+            "id": "6d308e49-472e-41f0-a6d1-d5fe58d7df3b",
+            "slug": "dieu-33-22-vbhn-vpqh",
+            "sha256": "0ec7c50f2aa21d054da7731fa8be95b15182f8c09acee208ae58229e0b3462d9"
+          },
+          {
+            "id": "700bb88f-634e-4ebb-bf9c-f21065ddfe30",
+            "slug": "dieu-51-22-vbhn-vpqh",
+            "sha256": "c4703aeeb7da43375e89aab4c2f7f28a2efa6031e45c4af5da3654d462a580ee"
+          },
+          {
+            "id": "73c46510-be33-4993-92f0-cd4001de1c0f",
+            "slug": "thiet-lap-bao-hieu",
+            "sha256": "28275449fa20a6921b4108a4691e50fc4e000a144fca489f45171ea6149eb287"
+          },
+          {
+            "id": "75713bf0-f3ac-42ad-8df6-12a227b59342",
+            "slug": "vi-pham-quy-dinh-quan-ly-bao-tri-ket-cau-ha-tang-duong-thuy-noi-dia",
+            "sha256": "8706bbba9b93d3a3169cfbe411c6f2b558dd411d349719b58ad9d6c6f88e3281"
+          },
+          {
+            "id": "79eef8d0-c770-4a87-8b0e-40b8c0952275",
+            "slug": "vi-pham-quy-tac-giao-thong",
+            "sha256": "c773552ce29973f707038c2a334f10c903287959695e52aafec8343c6970ee69"
+          },
+          {
+            "id": "7d333f8b-e394-416e-9783-103e8d95db53",
+            "slug": "chung-chi-chuyen-mon",
+            "sha256": "1568cbc0120fb383e6bd54f9349b2e06b810ed173a935a4b7e3c739393a96258"
+          },
+          {
+            "id": "7d8c6f49-c7fa-4278-a945-7e935c07e8f9",
+            "slug": "dieu-12-22-vbhn-vpqh",
+            "sha256": "4f9e2e82444acc25304712c86bb04baa5ac91d7d8462c9d48b3179f62295b760"
+          },
+          {
+            "id": "854f3d07-ed60-428c-a3d2-f21a3b6fd955",
+            "slug": "dieu-7-14-nghi-dinh-139-2021-xlvphc-giao-thong-2fbe6ea8-generated",
+            "sha256": "7f89f086569260792b395dda4b615dbcbfdfd587c5e76b80a277b82ffb9f6d70"
+          },
+          {
+            "id": "88bdd7ff-d5ed-41b7-94a8-3a8eb3be258c",
+            "slug": "dieu-50-22-vbhn-vpqh",
+            "sha256": "d4d3b37afcc68e2f79f4b7baec8dd3d1b5d8ea14b9a55d3d429fe6d2220a451a"
+          },
+          {
+            "id": "898f2554-98f0-4367-81d8-14fcf2d3bdbf",
+            "slug": "dieu-47-22-vbhn-vpqh",
+            "sha256": "1841f297fa99379bc059b810c0fec92084cdc64cd407b746a9bc2c3005afed12"
+          },
+          {
+            "id": "8ffbb89d-9e48-476f-a85c-b56f6ee3ba44",
+            "slug": "dieu-1-22-vbhn-vpqh",
+            "sha256": "c3908fbca3d2a26e2792778110230b3f040fd2585abea5f2af6453a697779072"
+          },
+          {
+            "id": "9124d3ca-eb90-47d5-b203-ff3940a85bdf",
+            "slug": "chung-chi-chuyen-mon-thuyen-truong-hang-tu",
+            "sha256": "0197118e93d0825c5d16ea3b46b7c3b68bd8fcb7022dba896b2ee252057950ae"
+          },
+          {
+            "id": "914d64f2-522c-4fb5-a431-45416464eea8",
+            "slug": "chung-chi-chuyen-mon-may-truong-hang-nhi",
+            "sha256": "7a18ca6912b3ea635acff3b023743e1b20387e7c6704b86aaab672fbe8db8adf"
+          },
+          {
+            "id": "94bc3ac8-da92-4bdc-9b3e-ce25bf7a8cc1",
+            "slug": "tin-hieu-cua-phuong-tien",
+            "sha256": "92f5a9f7d0f43da0fb3c5532e6dbba71bbbfb90ff4d77562bb881db045bd8ef8"
+          },
+          {
+            "id": "94ccb498-59f7-434f-ad33-2e28290e082f",
+            "slug": "phuong-tien-khong-co-dong-co",
+            "sha256": "e0e0cfb8fc1b43c3a0c6d93f4bdba06dcc09a0fab9edf59234c0b86ba2f2a6d3"
+          },
+          {
+            "id": "962f6507-6e25-44e2-ae62-f20ec6594985",
+            "slug": "22-vbhn-vpqh",
+            "sha256": "c4b55ba161452e71e714969dba40e7c39624569301496138577979c1f39b5627"
+          },
+          {
+            "id": "96c8a954-cdfc-4d18-a98f-43db9bf223ea",
+            "slug": "cang-thuy-noi-dia",
+            "sha256": "3a3a2e0d610d3072ba86bd269666e626b169b30be56a63ccebd04b759f516a87"
+          },
+          {
+            "id": "999ecf8b-ed7f-40b1-ad15-8c196be2e417",
+            "slug": "thiet-bi-xep-do-hang-hoa",
+            "sha256": "15c6054ca52fbb3965b92b4a118ace7f91442f4df3fa3227f5eb746b985faa91"
+          },
+          {
+            "id": "9a27d155-9c4f-43ff-b6fa-c45988b74ce8",
+            "slug": "dieu-41-22-vbhn-vpqh",
+            "sha256": "d76e9f2385453a1160698e622ab7711796284bfe5d0f70c0be554cf3b3bbe74b"
+          },
+          {
+            "id": "a0e656d7-04f2-4669-b94e-1d0808888575",
+            "slug": "tham-quyen-xu-pha-142-2017-nd-cp",
+            "sha256": "ac4311b4665d762d5ab63350d034e98b3efac241457fc31e2e9093f5bf1c03de"
+          },
+          {
+            "id": "a1540e17-9a6c-4755-b098-b7b7bf3f50c5",
+            "slug": "dieu-19-22-vbhn-vpqh",
+            "sha256": "842e2a6d0cc5eca1053b0592ffbbdadcaeb79c202c8ec13914e28252169a05aa"
+          },
+          {
+            "id": "a29fff39-2bef-4218-ac96-07805eaf8b5b",
+            "slug": "dieu-34-22-vbhn-vpqh",
+            "sha256": "424be7457c11fc6f61c083b7658eb2707072fe2621e6811a8eb38f63eda7407a"
+          },
+          {
+            "id": "a2a0e807-4dfd-4eae-8e3c-1e8a0c5926be",
+            "slug": "dieu-52-22-vbhn-vpqh",
+            "sha256": "417e61ef0be9812de50679fefbf40d8e25637153788df0a1c5f4b628b9b80d0d"
+          },
+          {
+            "id": "a36b3c82-595b-4798-adcc-a439fc2e8477",
+            "slug": "giay-phep-hoat-dong",
+            "sha256": "b3ce3701db96a7ef03dbcce5c8623ef82082d6a21620541d19d144ea43ae54f5"
+          },
+          {
+            "id": "a41045f9-cae2-4e94-920e-d3fca197cf0f",
+            "slug": "dieu-4835-22-vbhn-vpqh",
+            "sha256": "78101f30db19523d317599397d13114ee5290b227320ecca0ff88ab8c6ef5f8f"
+          },
+          {
+            "id": "a80ef64b-3562-4884-996e-fb4687ac7262",
+            "slug": "dieu-24-22-vbhn-vpqh",
+            "sha256": "2d6e3b7690df46cf20243368332c3cde6b44910a3eb6c7a2050b379df493f41f"
+          },
+          {
+            "id": "ab1a3a2b-195e-47bb-be20-11c075e04a87",
+            "slug": "thuyen-truong-thuyen-pho-thuyen-vien-nguoi-lai-phuong-tien",
+            "sha256": "a4f71babd600099953a1e7e3ee04e5bdf7c6d0d8c11cf92e40a5bd323621192e"
+          },
+          {
+            "id": "adbf2bf1-53e4-4ff2-8560-617712da102c",
+            "slug": "dieu-14-22-vbhn-vpqh",
+            "sha256": "e12a26397b7da908e8a8c268e5366e8bf15bcfae244528db99073b2c49c5d964"
+          },
+          {
+            "id": "ae05618e-cdec-4602-baa1-960306df2819",
+            "slug": "dieu-30-22-vbhn-vpqh",
+            "sha256": "82987fe9b79e620cabc52b36b093a83f3a1c85458eafd9838c4ea336f7705733"
+          },
+          {
+            "id": "ae5cae87-1fdd-4f32-a041-2d9ae87dc9e9",
+            "slug": "dieu-42-22-vbhn-vpqh-nghi-dinh-nay",
+            "sha256": "9fd931e9f863225f72412c5946fc5b31487b2b1cb4bd77f35c0b62800f00a356"
+          },
+          {
+            "id": "b3974f82-2994-458e-9068-0efcfe2392bf",
+            "slug": "dieu-7-22-vbhn-vpqh",
+            "sha256": "907e4aff5d67e09f4129b28e9cf68d84f8fa1fd6fe4d8775d1d88218a54c9469"
+          },
+          {
+            "id": "b3bbf2f0-1e4e-4d3b-a846-223a3d6e8d29",
+            "slug": "dieu-43-22-vbhn-vpqh",
+            "sha256": "ff033ecb12bd613e76cf7f2a49d1f9ecc5936c8bb769320d224bdacb7c407b33"
+          },
+          {
+            "id": "b3e533f5-6b09-4048-9b71-2285c9c4547e",
+            "slug": "dieu-11-22-vbhn-vpqh",
+            "sha256": "269b6f2efc35fed8a20993cbca34004b60ce8a139f6d40ceda71ed6910e4b46e"
+          },
+          {
+            "id": "b6f88ecb-70f7-45ed-bed1-9da263069e0f",
+            "slug": "dieu-55-22-vbhn-vpqh",
+            "sha256": "7854829f0961b48bda92897dc34e9ccc49f38476189d083963209a2f73c5b49c"
+          },
+          {
+            "id": "b707044d-479e-42ef-b4ca-cc429eeede15",
+            "slug": "dieu-49-22-vbhn-vpqh",
+            "sha256": "9749014a3be0d6110b7cdac57a0a8669a5c37178a75a30a788a6d06bb2257340"
+          },
+          {
+            "id": "b908e9a5-98ab-4396-a82a-59b1be0d9abd",
+            "slug": "dieu-10-22-vbhn-vpqh",
+            "sha256": "3e7857015e8624db6c84f0f64455904b225c387514503b1f4eaff1f73b3ad026"
+          },
+          {
+            "id": "bc63cb38-05aa-4d1c-8dc9-179111f99a89",
+            "slug": "hanh-vi-gay-tai-nan-giao-thong-duong-thuy-noi-dia",
+            "sha256": "0949c3a8706d698ea22a2b31fcc32acfc333bff3f65885cbeb3deda14d670338"
+          },
+          {
+            "id": "bfa2ff16-a9ca-4424-901f-7b1ed4402968",
+            "slug": "pham-vi-dieu-chinh-22-vbhn-vpqh",
+            "sha256": "d9670ce9b2057abe951903dd631b1311932df73560f64ac21ca13a1ff742120c"
+          },
+          {
+            "id": "c1f7af0a-7591-410c-b1cd-85a6e3bd4757",
+            "slug": "dieu-17-22-vbhn-vpqh",
+            "sha256": "601d5c6665d5dfe5d886a70a080fc5b3f6ebc629b605dad27138eb67077ca225"
+          },
+          {
+            "id": "c3e20293-a228-4a49-8a9f-d036b56dde93",
+            "slug": "dieu-18-22-vbhn-vpqh",
+            "sha256": "789c4cb67cd663e80c2c0f80e93f5a1af44960193a214ba4c077f0535260e889"
+          },
+          {
+            "id": "c7230757-970a-4ae4-96d9-cc673a182bdc",
+            "slug": "dieu-20-22-vbhn-vpqh",
+            "sha256": "95b93470789f6d286b86b68bd97b294db5343662f9e09331a8672a0839869b7b"
+          },
+          {
+            "id": "c734f00b-8658-4210-8a7e-5b3719f8817b",
+            "slug": "dieu-59-22-vbhn-vpqh",
+            "sha256": "a3603610aa26673a7db96a3dff80ebd770d68a7d54266b9e00b06cbf1ac14760"
+          },
+          {
+            "id": "ce083c3b-15d6-45bf-9771-24057fe460a7",
+            "slug": "dieu-54-22-vbhn-vpqh",
+            "sha256": "d9d25edbfefbc9f7e8c485d4b39ef7df2331f1c55d7b55e0f02364dddae959a7"
+          },
+          {
+            "id": "cf398365-1f9e-48eb-9993-4e20ccbe16dd",
+            "slug": "dieu-35-22-vbhn-vpqh",
+            "sha256": "77507dc625020d89049392c4a024f7288e889994f8a3349a3ff71f86fba1c3d7"
+          },
+          {
+            "id": "d2d740cb-6180-4f9c-b417-fe2e821f08d7",
+            "slug": "dieu-38-22-vbhn-vpqh",
+            "sha256": "cafc220293d0ce747b8fc61594229cdb848edbcbeec71cdeadcec9fa4cdb32bc"
+          },
+          {
+            "id": "da62ac5a-12c6-4077-9ca9-37c62f8cdb6b",
+            "slug": "bao-hieu-duong-thuy-noi-dia",
+            "sha256": "599f50b1fc8add81ff7bc333f699ab938c339884dde7e0f16ac4bbedb9915fa4"
+          },
+          {
+            "id": "de21affe-bfce-423f-a573-6f00eaf79f2c",
+            "slug": "chung-chi-chuyen-mon-thuyen-truong-hang-nhat",
+            "sha256": "e53720979cfeb0629124cc0fa0e04a52c7065d574f044e3ed0c0e71ed6985dd1"
+          },
+          {
+            "id": "df159238-2435-452c-a1c3-46bea37ba358",
+            "slug": "dieu-4a-22-vbhn-vpqh",
+            "sha256": "67b10711a87c14474886c85f785b7fec817e1a8052f8d3118a1827e42c1ae3ac"
+          },
+          {
+            "id": "e06438e6-15c7-4942-8573-17319cb0bd76",
+            "slug": "dieu-2-22-vbhn-vpqh",
+            "sha256": "7c57b342ca205257684f2901cca4f3360c59b47dfccd26c97241b9e2c8b2d95f"
+          },
+          {
+            "id": "e3baa21e-0fec-4a2f-a7a8-7bbc2572abe4",
+            "slug": "dieu-41-22-vbhn-vpqh-2",
+            "sha256": "db0a6b815372011e51042d88092e5d5c86cca9706e7d193db81050c6ebc7c629"
+          },
+          {
+            "id": "e3da4a4f-62ef-42b2-8685-96d16b684d7d",
+            "slug": "dieu-22-22-vbhn-vpqh",
+            "sha256": "1cbc0bb352ccd680f1a8ea5cdf166c375829e254acb8a4e34b88ba180ec993ff"
+          },
+          {
+            "id": "e432dfa5-1f72-4841-a990-38fa040010ae",
+            "slug": "dieu-44b-22-vbhn-vpqh",
+            "sha256": "2ebf17a5af501437019e976743000b440e8ff4413da40d87068a63c1e751d812"
+          },
+          {
+            "id": "e4b7cd01-8230-4f5b-9cca-a2cd509db831",
+            "slug": "dieu-58-22-vbhn-vpqh",
+            "sha256": "766aed41131680dcbaf4db631f0e0abdcc174659fd94acff7030e3a174fa6fec"
+          },
+          {
+            "id": "e534b0aa-78f7-432d-b473-69556b1374a4",
+            "slug": "cong-bo-lai-hoat-dong",
+            "sha256": "1ecb34f8ee58dee9b27b701f5a83cd9468793e71c99c3f57833dfb6612fa0ddf"
+          },
+          {
+            "id": "e60f5a29-ff34-4ced-affb-882ba5cf0a0a",
+            "slug": "dieu-10-22-vbhn-vpqh-nghi-dinh-nay",
+            "sha256": "51a6c10b34ff1b034f8bc48b256cf16b46a0c4b2413656d9576e8dca8c199ff5"
+          },
+          {
+            "id": "e92cfc45-5858-4da3-8929-a246c59c4cab",
+            "slug": "dieu-2-22-vbhn-vpqh-generated",
+            "sha256": "b4b4e473965301b55109e52031cfcac6caa77df15cccaad1652f02f4a7d68ffe"
+          },
+          {
+            "id": "e9d4977d-3fcf-40fe-ac60-a5a17f625b6e",
+            "slug": "vi-pham-quy-dinh-dieu-tiet-khong-che-bao-dam-an-toan-giao-thong-va-chong-va-troi-tren-duong-thuy-noi-dia",
+            "sha256": "220ceb976855b659e2bd47848cdbf7733edbcbfaeb1a397f6e79e4a517df1a9c"
+          },
+          {
+            "id": "ebd0f565-ce62-4956-8288-9decaf2c4236",
+            "slug": "cuc-truong-cuc-hang-hai-va-duong-thuy-viet-nam",
+            "sha256": "6b3ae9181c053382a57e57b88ea4b8ba27f486e79bf6dcc4c85221129c792321"
+          },
+          {
+            "id": "ef44f0ee-bd3c-43cc-badc-cab06fd6a1b5",
+            "slug": "dieu-53-22-vbhn-vpqh",
+            "sha256": "790b63d57ca495feb1a62dd3bdde740f8be712b714f7285c374fcb6c80edb285"
+          },
+          {
+            "id": "eff610f8-95cb-4aef-b948-bf1426dd8f22",
+            "slug": "vung-nuoc",
+            "sha256": "ea64202a62d130906793c7705a1993d463b83c1bb835fe99842caee145e7c9ca"
+          },
+          {
+            "id": "f0553aaa-5a16-42ef-98ad-8618efb714aa",
+            "slug": "giay-chung-nhan-an-ninh-cang-thuy-noi-dia",
+            "sha256": "350c819c047b4837a6918302b5efc9c658c6c8701513773b2dabd1fe894ec153"
+          },
+          {
+            "id": "f14466dd-3af5-436f-8499-9a31c47e8d48",
+            "slug": "chung-chi-chuyen-mon-may-truong-hang-ba",
+            "sha256": "3f7ec5b3546df46af79a7bf17a0da8a2ebc65013014e4fdf471a0ed0fc66aa8b"
+          },
+          {
+            "id": "f2fc6032-0dac-4a4c-b3b2-24b0c88b006d",
+            "slug": "dieu-5-14-nghi-dinh-139-2021-xlvphc-giao-thong-2fbe6ea8-generated",
+            "sha256": "924a0e3169e7943f9f29626adb3b65071a992f19cec3bb33d5ee74d6b453b1c0"
+          },
+          {
+            "id": "f558cb06-d7ac-44d9-a29c-63c4c52c350c",
+            "slug": "dieu-5-22-vbhn-vpqh",
+            "sha256": "69c73c6acc6b1109ebb4f3776d8e2fb8c57d07c90e5f4a27498b762fd9115333"
+          },
+          {
+            "id": "f5c9e65a-a664-47e2-9c92-134c349e9104",
+            "slug": "hinh-thuc-xu-pha-vi-pham-hanh-chinh",
+            "sha256": "498ee7dc58c329f29c8a00925a02b8aa83de29d9708b4480bbeddc7767baec2a"
+          },
+          {
+            "id": "f79beb37-ce54-48ec-899e-a145cddc2e50",
+            "slug": "vi-pham-quy-dinh-trach-nhiem-mua-bao-hiem",
+            "sha256": "d51e9f2f628575b89a42339265966237fd6883cef7b30eff365645803ca5267d"
+          },
+          {
+            "id": "fa8cbb0b-e6ce-4cfb-9544-c1f4c4cb3eb9",
+            "slug": "dieu-9-22-vbhn-vpqh",
+            "sha256": "3bde7b965fbfc5afb813ee286bdaf48299af7f5a49254e3c27409ed647d68921"
+          },
+          {
+            "id": "fbac8434-1516-428e-aa70-aee97f497462",
+            "slug": "dieu-4-22-vbhn-vpqh",
+            "sha256": "58b48ea9e1d1df660692de084b5145331e60601395b2080833a0ff1d6a9032a1"
+          }
+        ]
+      },
+      "action": "wiki_requeued",
+      "job_id": "6f2dcddd1d0745cdbb22880569928ae3",
+      "after": {
+        "id": "b1372cdc-5cc5-423b-8a1b-1c965ba58889",
+        "status": "processing",
+        "wiki_status": "queued",
+        "chunk_status": "ready",
+        "phase": "commit",
+        "raw_text_sha256": "257646dc3c19b5e24dedf30462dd3a9f66dfbc1eea6acec9110a955e577d9288",
+        "plan_pages": 79,
+        "draft_count": 79,
+        "pages": [
+          {
+            "id": "02758538-d8c7-42c4-a831-543eb4c06f78",
+            "slug": "dieu-32-22-vbhn-vpqh",
+            "sha256": "a3775d95ceb841e73916bc03f3d4d115ea10b074e51bdc88863b28d53932b393"
+          },
+          {
+            "id": "0502cb13-1271-46b5-bd55-0c06206de8a6",
+            "slug": "duy-tri-bao-hieu",
+            "sha256": "2d13a827c7a083bf19263130dd0c8c0ecdff25f380f6fdf2afe0ce724e3f727d"
+          },
+          {
+            "id": "059b0a55-c258-4c9d-bfd7-24c243b2ce5c",
+            "slug": "chung-chi-chuyen-mon-may-truong-hang-nhat",
+            "sha256": "81cb9a0d67e6c51d763306f6f8c9321cd4b052890982975e173b96049f65ec1f"
+          },
+          {
+            "id": "079c8389-03c4-4f35-93af-b67efe9b4c4d",
+            "slug": "dieu-8-22-vbhn-vpqh",
+            "sha256": "701dc98a05f01f344a3304a20ad3e96132968b3ed837caf6a5117f86027a9702"
+          },
+          {
+            "id": "0954f60b-9f38-43ad-a987-dc7a12ae355f",
+            "slug": "dieu-29-22-vbhn-vpqh",
+            "sha256": "d43996780ed29a4945512e06f0985f08024fa42905ef9172353848e669a5f933"
+          },
+          {
+            "id": "0a97d03f-89a7-4a1a-8df1-8a5c9d4259aa",
+            "slug": "dieu-16-22-vbhn-vpqh",
+            "sha256": "15629b7299d87fc03a8ddce1f8c8f95cca20025605d95ed65a44ce137291aba4"
+          },
+          {
+            "id": "0bf977f0-a0d7-4b89-a66a-aff0a52e689d",
+            "slug": "dieu-13-22-vbhn-vpqh",
+            "sha256": "2a622a3f734b904d8f71b030d53b39ac62b351d50d9939972e77d29c9853c92f"
+          },
+          {
+            "id": "0dd895fa-5658-475c-88b8-f685e69c14e9",
+            "slug": "dieu-21-22-vbhn-vpqh",
+            "sha256": "c42ad1eb256cf117eaa5d7a17660b886b2855b404739af23127d6857a760994e"
+          },
+          {
+            "id": "191f6194-b28e-4541-bf8d-fcee51667c83",
+            "slug": "khu-neo-dau",
+            "sha256": "063bcaf109357cc0193d697abf5d53caa1c4ad7e5070e2ebc3969f2208a54d0e"
+          },
+          {
+            "id": "19bbc54e-ff85-4ab8-b406-8e1de378613b",
+            "slug": "dieu-39-22-vbhn-vpqh",
+            "sha256": "4f69dce8bcb5f174dc4939371847ea075e83bc80de6adc74e143bb70977755a9"
+          },
+          {
+            "id": "1cceb900-b2b6-440a-803f-43ced13d602b",
+            "slug": "vi-pham-quy-dinh-xay-dung-ke-dap-thuy-loi-cau-ben-pha-phong-dien-nhiet-dien-thuy-dien-cong-trinh-vuot-qua-luong-tren-khong-duoi-day-luong-cac-cong-trinh-khac-anh-huong-den-an-toan-giao-thong-duong-thuy-noi-dia",
+            "sha256": "ef623e738a7bb4a3eaf0cd4efb88309dd26bc2fe7cd52d36985a6afe246cb2c7"
+          },
+          {
+            "id": "1d122673-f183-4a3e-9652-71d35fa5bdc6",
+            "slug": "quan-ly-khai-thac-cang-thuy-noi-dia",
+            "sha256": "ea29f379c76d483feed53af3c2464540314f153613c1b8e6f477ecac1257638c"
+          },
+          {
+            "id": "1eddfedf-99c8-4f27-8968-6a6db6a49ae7",
+            "slug": "vi-pham-quy-dinh-nao-vet-vung-nuoc-duong-thuy-noi-dia",
+            "sha256": "0f513e60aed55639dc81df55a0f90efbd4155b0f167d82e586283037888a2bae"
+          },
+          {
+            "id": "258d3ee9-d49b-41c6-9c2f-0e81b1ef35f4",
+            "slug": "giay-chung-nhan-kha-nang-chuyen-mon",
+            "sha256": "808e53affe0a059b01cf2ee3c357d986ddb08b7d2f754686c0ffedf373067c5d"
+          },
+          {
+            "id": "2616521d-527a-4da4-a947-173521e42c78",
+            "slug": "chung-chi-chuyen-mon-may-truong-hang-tu",
+            "sha256": "a9a9522b3c7c483636f87a691f79cac25b4a028f6310d50a5e7d3a33ce09a497"
+          },
+          {
+            "id": "2661e438-1aad-4fa0-a547-26c2b4daf867",
+            "slug": "thoi-hieu-xu-pha-vi-pham-hanh-chinh",
+            "sha256": "08f82b842ba52794899c7c9e1e5ac5f451746a64d84858379a7408f37a15c3ca"
+          },
+          {
+            "id": "2961a560-d9d8-4f0f-8fa9-d899aa95044d",
+            "slug": "phuong-tien-thuy-nuoc-ngoai",
+            "sha256": "6dd764db0c0cbca8a49d5a9f9378837f583baf6ad1789ed16257adde8c03ec92"
+          },
+          {
+            "id": "29dba53e-3ff9-40d7-80c1-3fa8ff7744fc",
+            "slug": "dieu-45-22-vbhn-vpqh",
+            "sha256": "5a469f7cee1ceb3611430937ed8acbf7abc9c19582554ec08f2893813f56d0c1"
+          },
+          {
+            "id": "2a440bc5-cd2c-4125-a4fc-7d585db65330",
+            "slug": "dieu-40-22-vbhn-vpqh",
+            "sha256": "2978746422280338b70cad5a49de4c9e2feb7852b26c143c610883875399cbc3"
+          },
+          {
+            "id": "2a845d13-a167-48ee-837d-141b361dd383",
+            "slug": "dieu-25-22-vbhn-vpqh",
+            "sha256": "f4de45e4543eb094d655722bbbe686e9d56c4a6e4a372266d3120e2e76eb36b4"
+          },
+          {
+            "id": "2c6a0123-5f8c-4466-9d3b-99abede678ff",
+            "slug": "dieu-15-22-vbhn-vpqh",
+            "sha256": "c79f89fed747a810a1127a9a698fd6924c5525718ddafcff32350352a8e77e8b"
+          },
+          {
+            "id": "2f6a8458-9cd1-4a34-b71f-f94cc6755a11",
+            "slug": "dieu-48-22-vbhn-vpqh",
+            "sha256": "49e566cd2117e5a6b8fb96ea38ce3980ab510e90faa7c8056cb1d7a1f72fd58e"
+          },
+          {
+            "id": "30067482-81b7-4b36-a9d0-98a8f169e5e6",
+            "slug": "dieu-56a-22-vbhn-vpqh",
+            "sha256": "48a298a6764a2ed73072a4aee1227209a78d9fda940776550bb9bb222f3cb2d4"
+          },
+          {
+            "id": "313c1f42-5344-4d2e-97d4-42fc97dfba16",
+            "slug": "chung-chi-chuyen-mon-thuyen-truong-hang-ba",
+            "sha256": "a4c89c68251610f6c7060478644dd4f09f037c3ec81c817286c67d4109cd42ac"
+          },
+          {
+            "id": "31b21bba-bd17-4af4-8eb3-63503e318104",
+            "slug": "phuong-tien-co-dong-co",
+            "sha256": "620a6834b550283d81161bc8fc58f6ea5e1b73fc15787b5cd3302a046bba5486"
+          },
+          {
+            "id": "333f9465-f1e8-4416-80ec-63d081b5d518",
+            "slug": "tau-cuoc-tau-hut",
+            "sha256": "075ce6b0dd2aee4f2ee2ab847c58d67a6a73914463e68e44752a2c9ca89b85cc"
+          },
+          {
+            "id": "34fa3ce7-9486-4e6e-9594-a99c49d217ad",
+            "slug": "duy-tu-kiem-dinh-chat-luong",
+            "sha256": "bc914639dc72998311bb869fc158cefe7bb20fd639e764bd236d8b6eaa076812"
+          },
+          {
+            "id": "361b4a7b-6969-4620-be4a-cd2878df3bb0",
+            "slug": "quyet-dinh-cong-bo",
+            "sha256": "1aa127d58a1df1ffe2b3bdfd8f6f760364e240ed182372e2bf76aff1a832b06a"
+          },
+          {
+            "id": "3818879a-3fe9-496e-a284-1c6315fdf5f9",
+            "slug": "thoi-gian-bi-dinh-chi-hoat-dong",
+            "sha256": "e309b8d1e751c65295ca1a8cf457bc123858f98b060aa92014110d0875cc63e4"
+          },
+          {
+            "id": "39d7cfbe-e87f-4a3b-bfd4-d59aa01aa8fb",
+            "slug": "ben-thuy-noi-dia",
+            "sha256": "1f0e98ddc76618aaf6978172aa7f0c40ad2c9fcdd0e6548668d24f6bef1e848a"
+          },
+          {
+            "id": "3dd009ae-fbe7-496d-8cb3-b4598c962087",
+            "slug": "dieu-37-22-vbhn-vpqh",
+            "sha256": "c04744b930056f69de7577be374079349b416eb0520ce2a518709c0da676c366"
+          },
+          {
+            "id": "3f56e08f-0999-4c4d-912f-12bb1011b37c",
+            "slug": "dieu-28-22-vbhn-vpqh",
+            "sha256": "30fad95df2ad2d08d8c55f982f3ed116b86983e569489d6985e6f5530ee2d9f9"
+          },
+          {
+            "id": "41b38bbc-5c79-4f05-bc64-bc98d42759ca",
+            "slug": "dieu-36-22-vbhn-vpqh",
+            "sha256": "1fc1d934d8a8ccdf56212feb005454bd92364a1caf85f95fbdfec6a0480c07c6"
+          },
+          {
+            "id": "42fddcd0-ad1f-4364-bfae-60c42ec780d2",
+            "slug": "dieu-31-22-vbhn-vpqh",
+            "sha256": "163244657f2478a42b09662d01bf2ae8510bdcb8e039122debf117472c10b180"
+          },
+          {
+            "id": "4683ab4c-c650-4a8a-8078-390d4f16bc3f",
+            "slug": "nguoi-lam-cong-tac-an-ninh-cang-thuy-noi-dia",
+            "sha256": "0f06a0129c90def183fd8c0104878cc025b1e8edab9ff3c78ca6cf1d80452ec0"
+          },
+          {
+            "id": "4c4fa831-1637-4013-afd0-785f06cc76f9",
+            "slug": "van-ban-thoa-thuan",
+            "sha256": "1329da9617942dd46425110ae316f077845ee557a72b889c483d20eb675b5f10"
+          },
+          {
+            "id": "4e59fb87-33bb-47c8-bb7a-68f1c4501368",
+            "slug": "doan-lai",
+            "sha256": "f64bbbac5021b6287cf59c1fb57c10b1986c1eca217ed3c83ee0d67b2b81cc91"
+          },
+          {
+            "id": "4e8077fc-e7bc-4ea9-b605-a7fe525c7a05",
+            "slug": "dieu-44a-22-vbhn-vpqh",
+            "sha256": "6122c5f463045e106131d879ee175b1d579eae6e86286aa39930ecae1926f010"
+          },
+          {
+            "id": "5007b8b3-bf70-42bb-9c16-2b81b1e680c1",
+            "slug": "chung-chi-chuyen-mon-thuyen-truong-hang-nhi",
+            "sha256": "608f28b93d267059d6fb720e418a75c6dec69dbe57d7b5c172a3681be5c7b1c4"
+          },
+          {
+            "id": "502e2a38-8974-42ce-99f9-af1d65179da1",
+            "slug": "dieu-23-22-vbhn-vpqh",
+            "sha256": "95a6768779e5829baed51b3b57ad09fbeadada48a6bf429e52c2e3baedb3374e"
+          },
+          {
+            "id": "51c601d6-ae25-4955-a529-8c54fafbd86d",
+            "slug": "ke-hoach-an-ninh-cang-thuy-noi-dia",
+            "sha256": "afe9fcbddf22624c4425227400d4dd120d1908f4803926acdea0e55729e050b6"
+          },
+          {
+            "id": "51fabca0-b4bb-4db9-aa0b-b18206515a80",
+            "slug": "dieu-56-22-vbhn-vpqh",
+            "sha256": "1c3115489afb40841de5933e412ae2876b9a769c031872371436b88cd166e03e"
+          },
+          {
+            "id": "52773fb8-26a9-4f90-b28e-fe9bd02edcef",
+            "slug": "vi-pham-quy-dinh-an-toan-giao-thong-cua-nguoi-hanh-khach",
+            "sha256": "269d40d0f5365dac654d40b5ecad6c47241642952f009ce78d51cc36a0648d95"
+          },
+          {
+            "id": "53235418-9e1a-402e-a596-923f093aa586",
+            "slug": "dieu-46-22-vbhn-vpqh",
+            "sha256": "3a0badc5eeabb6392fce010889f0e2bfc988315810058a1295bc1a7f6101df19"
+          },
+          {
+            "id": "573b64da-b81f-4325-acf3-e9eb2c42e606",
+            "slug": "dieu-27-22-vbhn-vpqh",
+            "sha256": "63e4433e0bb65f6836356d5cd89f9766fafdc0c3b999e5f7766674c512f787b0"
+          },
+          {
+            "id": "5c2fcdea-23a6-435f-80f4-b0893777b7f2",
+            "slug": "vi-pham-quy-dinh-truc-vot-thanh-thai-vat-chuong-ngai",
+            "sha256": "d59ebe2bbc0a285a253f02156e26a2d98c7428c20afd45dc21fe8e238359a263"
+          },
+          {
+            "id": "5cdb0224-f603-46e8-a577-7688b810bfb6",
+            "slug": "dieu-3-22-vbhn-vpqh",
+            "sha256": "32c9f0ed1a2ad369e3a5cd9c8bbadce0b854cf8d73aa272b8e26450dbdb5d981"
+          },
+          {
+            "id": "60781da8-ac5a-4223-bf33-d6a1e8fc4be4",
+            "slug": "dieu-4633-22-vbhn-vpqh",
+            "sha256": "6933c9e0acf3a670605d75fe5599088b153b8696f87da7d0129a6caf45bb69f4"
+          },
+          {
+            "id": "6127ea43-996a-4fa9-8144-62c78bcc6faf",
+            "slug": "dieu-6-22-vbhn-vpqh",
+            "sha256": "1809d6a6a36e483f7a7e4da7a590009b9949be052dcb9966c346fcdacda0fa0f"
+          },
+          {
+            "id": "64550c86-a34d-45b8-81be-ad3b60c5f4a0",
+            "slug": "dieu-57-22-vbhn-vpqh",
+            "sha256": "ccc6285accd3f6987c426812aa5f800ae381094840c0b4c920500b7233df3127"
+          },
+          {
+            "id": "6a3186cf-9696-43d1-9b39-82620c36d939",
+            "slug": "dieu-42-22-vbhn-vpqh",
+            "sha256": "c90b6f2b72ea3e1838e7bf05ca071fef1f12dd34d2d96d5a18a6ec0832b1ec8e"
+          },
+          {
+            "id": "6ad49a62-59ba-4f61-a150-8fb975e83354",
+            "slug": "dieu-44-22-vbhn-vpqh",
+            "sha256": "5e07be54e1b7436806fad336b37e50fae721e0255442e3d087c2fcb34125c218"
+          },
+          {
+            "id": "6ae75562-c1d8-43e4-a649-3c150e09bf02",
+            "slug": "chu-tich-uy-ban-nhan-dan-cap-xa",
+            "sha256": "c0c40f6dea13ee2b83539870e8e662e68668c343e167085e2dc2afc2c1fd7453"
+          },
+          {
+            "id": "6bac676a-d9ce-46dc-a3b4-84d4e8240c60",
+            "slug": "dieu-26-22-vbhn-vpqh",
+            "sha256": "89868de20ba35af2ca4e86dedccb0ace5e699b71351b2e5110096477bea1a168"
+          },
+          {
+            "id": "6c060a7a-634f-45dc-b257-89bba26a6e4a",
+            "slug": "tau-can-cau",
+            "sha256": "798467a3e634ef1ded3fb6ca62c221946ced323ae138d5329e00d9ac08748bce"
+          },
+          {
+            "id": "6d308e49-472e-41f0-a6d1-d5fe58d7df3b",
+            "slug": "dieu-33-22-vbhn-vpqh",
+            "sha256": "0ec7c50f2aa21d054da7731fa8be95b15182f8c09acee208ae58229e0b3462d9"
+          },
+          {
+            "id": "700bb88f-634e-4ebb-bf9c-f21065ddfe30",
+            "slug": "dieu-51-22-vbhn-vpqh",
+            "sha256": "c4703aeeb7da43375e89aab4c2f7f28a2efa6031e45c4af5da3654d462a580ee"
+          },
+          {
+            "id": "73c46510-be33-4993-92f0-cd4001de1c0f",
+            "slug": "thiet-lap-bao-hieu",
+            "sha256": "28275449fa20a6921b4108a4691e50fc4e000a144fca489f45171ea6149eb287"
+          },
+          {
+            "id": "75713bf0-f3ac-42ad-8df6-12a227b59342",
+            "slug": "vi-pham-quy-dinh-quan-ly-bao-tri-ket-cau-ha-tang-duong-thuy-noi-dia",
+            "sha256": "8706bbba9b93d3a3169cfbe411c6f2b558dd411d349719b58ad9d6c6f88e3281"
+          },
+          {
+            "id": "79eef8d0-c770-4a87-8b0e-40b8c0952275",
+            "slug": "vi-pham-quy-tac-giao-thong",
+            "sha256": "c773552ce29973f707038c2a334f10c903287959695e52aafec8343c6970ee69"
+          },
+          {
+            "id": "7d333f8b-e394-416e-9783-103e8d95db53",
+            "slug": "chung-chi-chuyen-mon",
+            "sha256": "1568cbc0120fb383e6bd54f9349b2e06b810ed173a935a4b7e3c739393a96258"
+          },
+          {
+            "id": "7d8c6f49-c7fa-4278-a945-7e935c07e8f9",
+            "slug": "dieu-12-22-vbhn-vpqh",
+            "sha256": "4f9e2e82444acc25304712c86bb04baa5ac91d7d8462c9d48b3179f62295b760"
+          },
+          {
+            "id": "854f3d07-ed60-428c-a3d2-f21a3b6fd955",
+            "slug": "dieu-7-14-nghi-dinh-139-2021-xlvphc-giao-thong-2fbe6ea8-generated",
+            "sha256": "7f89f086569260792b395dda4b615dbcbfdfd587c5e76b80a277b82ffb9f6d70"
+          },
+          {
+            "id": "88bdd7ff-d5ed-41b7-94a8-3a8eb3be258c",
+            "slug": "dieu-50-22-vbhn-vpqh",
+            "sha256": "d4d3b37afcc68e2f79f4b7baec8dd3d1b5d8ea14b9a55d3d429fe6d2220a451a"
+          },
+          {
+            "id": "898f2554-98f0-4367-81d8-14fcf2d3bdbf",
+            "slug": "dieu-47-22-vbhn-vpqh",
+            "sha256": "1841f297fa99379bc059b810c0fec92084cdc64cd407b746a9bc2c3005afed12"
+          },
+          {
+            "id": "8ffbb89d-9e48-476f-a85c-b56f6ee3ba44",
+            "slug": "dieu-1-22-vbhn-vpqh",
+            "sha256": "c3908fbca3d2a26e2792778110230b3f040fd2585abea5f2af6453a697779072"
+          },
+          {
+            "id": "9124d3ca-eb90-47d5-b203-ff3940a85bdf",
+            "slug": "chung-chi-chuyen-mon-thuyen-truong-hang-tu",
+            "sha256": "0197118e93d0825c5d16ea3b46b7c3b68bd8fcb7022dba896b2ee252057950ae"
+          },
+          {
+            "id": "914d64f2-522c-4fb5-a431-45416464eea8",
+            "slug": "chung-chi-chuyen-mon-may-truong-hang-nhi",
+            "sha256": "7a18ca6912b3ea635acff3b023743e1b20387e7c6704b86aaab672fbe8db8adf"
+          },
+          {
+            "id": "94bc3ac8-da92-4bdc-9b3e-ce25bf7a8cc1",
+            "slug": "tin-hieu-cua-phuong-tien",
+            "sha256": "92f5a9f7d0f43da0fb3c5532e6dbba71bbbfb90ff4d77562bb881db045bd8ef8"
+          },
+          {
+            "id": "94ccb498-59f7-434f-ad33-2e28290e082f",
+            "slug": "phuong-tien-khong-co-dong-co",
+            "sha256": "e0e0cfb8fc1b43c3a0c6d93f4bdba06dcc09a0fab9edf59234c0b86ba2f2a6d3"
+          },
+          {
+            "id": "962f6507-6e25-44e2-ae62-f20ec6594985",
+            "slug": "22-vbhn-vpqh",
+            "sha256": "c4b55ba161452e71e714969dba40e7c39624569301496138577979c1f39b5627"
+          },
+          {
+            "id": "96c8a954-cdfc-4d18-a98f-43db9bf223ea",
+            "slug": "cang-thuy-noi-dia",
+            "sha256": "3a3a2e0d610d3072ba86bd269666e626b169b30be56a63ccebd04b759f516a87"
+          },
+          {
+            "id": "999ecf8b-ed7f-40b1-ad15-8c196be2e417",
+            "slug": "thiet-bi-xep-do-hang-hoa",
+            "sha256": "15c6054ca52fbb3965b92b4a118ace7f91442f4df3fa3227f5eb746b985faa91"
+          },
+          {
+            "id": "9a27d155-9c4f-43ff-b6fa-c45988b74ce8",
+            "slug": "dieu-41-22-vbhn-vpqh",
+            "sha256": "d76e9f2385453a1160698e622ab7711796284bfe5d0f70c0be554cf3b3bbe74b"
+          },
+          {
+            "id": "a0e656d7-04f2-4669-b94e-1d0808888575",
+            "slug": "tham-quyen-xu-pha-142-2017-nd-cp",
+            "sha256": "ac4311b4665d762d5ab63350d034e98b3efac241457fc31e2e9093f5bf1c03de"
+          },
+          {
+            "id": "a1540e17-9a6c-4755-b098-b7b7bf3f50c5",
+            "slug": "dieu-19-22-vbhn-vpqh",
+            "sha256": "842e2a6d0cc5eca1053b0592ffbbdadcaeb79c202c8ec13914e28252169a05aa"
+          },
+          {
+            "id": "a29fff39-2bef-4218-ac96-07805eaf8b5b",
+            "slug": "dieu-34-22-vbhn-vpqh",
+            "sha256": "424be7457c11fc6f61c083b7658eb2707072fe2621e6811a8eb38f63eda7407a"
+          },
+          {
+            "id": "a2a0e807-4dfd-4eae-8e3c-1e8a0c5926be",
+            "slug": "dieu-52-22-vbhn-vpqh",
+            "sha256": "417e61ef0be9812de50679fefbf40d8e25637153788df0a1c5f4b628b9b80d0d"
+          },
+          {
+            "id": "a36b3c82-595b-4798-adcc-a439fc2e8477",
+            "slug": "giay-phep-hoat-dong",
+            "sha256": "b3ce3701db96a7ef03dbcce5c8623ef82082d6a21620541d19d144ea43ae54f5"
+          },
+          {
+            "id": "a41045f9-cae2-4e94-920e-d3fca197cf0f",
+            "slug": "dieu-4835-22-vbhn-vpqh",
+            "sha256": "78101f30db19523d317599397d13114ee5290b227320ecca0ff88ab8c6ef5f8f"
+          },
+          {
+            "id": "a80ef64b-3562-4884-996e-fb4687ac7262",
+            "slug": "dieu-24-22-vbhn-vpqh",
+            "sha256": "2d6e3b7690df46cf20243368332c3cde6b44910a3eb6c7a2050b379df493f41f"
+          },
+          {
+            "id": "ab1a3a2b-195e-47bb-be20-11c075e04a87",
+            "slug": "thuyen-truong-thuyen-pho-thuyen-vien-nguoi-lai-phuong-tien",
+            "sha256": "a4f71babd600099953a1e7e3ee04e5bdf7c6d0d8c11cf92e40a5bd323621192e"
+          },
+          {
+            "id": "adbf2bf1-53e4-4ff2-8560-617712da102c",
+            "slug": "dieu-14-22-vbhn-vpqh",
+            "sha256": "e12a26397b7da908e8a8c268e5366e8bf15bcfae244528db99073b2c49c5d964"
+          },
+          {
+            "id": "ae05618e-cdec-4602-baa1-960306df2819",
+            "slug": "dieu-30-22-vbhn-vpqh",
+            "sha256": "82987fe9b79e620cabc52b36b093a83f3a1c85458eafd9838c4ea336f7705733"
+          },
+          {
+            "id": "ae5cae87-1fdd-4f32-a041-2d9ae87dc9e9",
+            "slug": "dieu-42-22-vbhn-vpqh-nghi-dinh-nay",
+            "sha256": "9fd931e9f863225f72412c5946fc5b31487b2b1cb4bd77f35c0b62800f00a356"
+          },
+          {
+            "id": "b3974f82-2994-458e-9068-0efcfe2392bf",
+            "slug": "dieu-7-22-vbhn-vpqh",
+            "sha256": "907e4aff5d67e09f4129b28e9cf68d84f8fa1fd6fe4d8775d1d88218a54c9469"
+          },
+          {
+            "id": "b3bbf2f0-1e4e-4d3b-a846-223a3d6e8d29",
+            "slug": "dieu-43-22-vbhn-vpqh",
+            "sha256": "ff033ecb12bd613e76cf7f2a49d1f9ecc5936c8bb769320d224bdacb7c407b33"
+          },
+          {
+            "id": "b3e533f5-6b09-4048-9b71-2285c9c4547e",
+            "slug": "dieu-11-22-vbhn-vpqh",
+            "sha256": "269b6f2efc35fed8a20993cbca34004b60ce8a139f6d40ceda71ed6910e4b46e"
+          },
+          {
+            "id": "b6f88ecb-70f7-45ed-bed1-9da263069e0f",
+            "slug": "dieu-55-22-vbhn-vpqh",
+            "sha256": "7854829f0961b48bda92897dc34e9ccc49f38476189d083963209a2f73c5b49c"
+          },
+          {
+            "id": "b707044d-479e-42ef-b4ca-cc429eeede15",
+            "slug": "dieu-49-22-vbhn-vpqh",
+            "sha256": "9749014a3be0d6110b7cdac57a0a8669a5c37178a75a30a788a6d06bb2257340"
+          },
+          {
+            "id": "b908e9a5-98ab-4396-a82a-59b1be0d9abd",
+            "slug": "dieu-10-22-vbhn-vpqh",
+            "sha256": "3e7857015e8624db6c84f0f64455904b225c387514503b1f4eaff1f73b3ad026"
+          },
+          {
+            "id": "bc63cb38-05aa-4d1c-8dc9-179111f99a89",
+            "slug": "hanh-vi-gay-tai-nan-giao-thong-duong-thuy-noi-dia",
+            "sha256": "0949c3a8706d698ea22a2b31fcc32acfc333bff3f65885cbeb3deda14d670338"
+          },
+          {
+            "id": "bfa2ff16-a9ca-4424-901f-7b1ed4402968",
+            "slug": "pham-vi-dieu-chinh-22-vbhn-vpqh",
+            "sha256": "d9670ce9b2057abe951903dd631b1311932df73560f64ac21ca13a1ff742120c"
+          },
+          {
+            "id": "c1f7af0a-7591-410c-b1cd-85a6e3bd4757",
+            "slug": "dieu-17-22-vbhn-vpqh",
+            "sha256": "601d5c6665d5dfe5d886a70a080fc5b3f6ebc629b605dad27138eb67077ca225"
+          },
+          {
+            "id": "c3e20293-a228-4a49-8a9f-d036b56dde93",
+            "slug": "dieu-18-22-vbhn-vpqh",
+            "sha256": "789c4cb67cd663e80c2c0f80e93f5a1af44960193a214ba4c077f0535260e889"
+          },
+          {
+            "id": "c7230757-970a-4ae4-96d9-cc673a182bdc",
+            "slug": "dieu-20-22-vbhn-vpqh",
+            "sha256": "95b93470789f6d286b86b68bd97b294db5343662f9e09331a8672a0839869b7b"
+          },
+          {
+            "id": "c734f00b-8658-4210-8a7e-5b3719f8817b",
+            "slug": "dieu-59-22-vbhn-vpqh",
+            "sha256": "a3603610aa26673a7db96a3dff80ebd770d68a7d54266b9e00b06cbf1ac14760"
+          },
+          {
+            "id": "ce083c3b-15d6-45bf-9771-24057fe460a7",
+            "slug": "dieu-54-22-vbhn-vpqh",
+            "sha256": "d9d25edbfefbc9f7e8c485d4b39ef7df2331f1c55d7b55e0f02364dddae959a7"
+          },
+          {
+            "id": "cf398365-1f9e-48eb-9993-4e20ccbe16dd",
+            "slug": "dieu-35-22-vbhn-vpqh",
+            "sha256": "77507dc625020d89049392c4a024f7288e889994f8a3349a3ff71f86fba1c3d7"
+          },
+          {
+            "id": "d2d740cb-6180-4f9c-b417-fe2e821f08d7",
+            "slug": "dieu-38-22-vbhn-vpqh",
+            "sha256": "cafc220293d0ce747b8fc61594229cdb848edbcbeec71cdeadcec9fa4cdb32bc"
+          },
+          {
+            "id": "da62ac5a-12c6-4077-9ca9-37c62f8cdb6b",
+            "slug": "bao-hieu-duong-thuy-noi-dia",
+            "sha256": "599f50b1fc8add81ff7bc333f699ab938c339884dde7e0f16ac4bbedb9915fa4"
+          },
+          {
+            "id": "de21affe-bfce-423f-a573-6f00eaf79f2c",
+            "slug": "chung-chi-chuyen-mon-thuyen-truong-hang-nhat",
+            "sha256": "e53720979cfeb0629124cc0fa0e04a52c7065d574f044e3ed0c0e71ed6985dd1"
+          },
+          {
+            "id": "df159238-2435-452c-a1c3-46bea37ba358",
+            "slug": "dieu-4a-22-vbhn-vpqh",
+            "sha256": "67b10711a87c14474886c85f785b7fec817e1a8052f8d3118a1827e42c1ae3ac"
+          },
+          {
+            "id": "e06438e6-15c7-4942-8573-17319cb0bd76",
+            "slug": "dieu-2-22-vbhn-vpqh",
+            "sha256": "7c57b342ca205257684f2901cca4f3360c59b47dfccd26c97241b9e2c8b2d95f"
+          },
+          {
+            "id": "e3baa21e-0fec-4a2f-a7a8-7bbc2572abe4",
+            "slug": "dieu-41-22-vbhn-vpqh-2",
+            "sha256": "db0a6b815372011e51042d88092e5d5c86cca9706e7d193db81050c6ebc7c629"
+          },
+          {
+            "id": "e3da4a4f-62ef-42b2-8685-96d16b684d7d",
+            "slug": "dieu-22-22-vbhn-vpqh",
+            "sha256": "1cbc0bb352ccd680f1a8ea5cdf166c375829e254acb8a4e34b88ba180ec993ff"
+          },
+          {
+            "id": "e432dfa5-1f72-4841-a990-38fa040010ae",
+            "slug": "dieu-44b-22-vbhn-vpqh",
+            "sha256": "2ebf17a5af501437019e976743000b440e8ff4413da40d87068a63c1e751d812"
+          },
+          {
+            "id": "e4b7cd01-8230-4f5b-9cca-a2cd509db831",
+            "slug": "dieu-58-22-vbhn-vpqh",
+            "sha256": "766aed41131680dcbaf4db631f0e0abdcc174659fd94acff7030e3a174fa6fec"
+          },
+          {
+            "id": "e534b0aa-78f7-432d-b473-69556b1374a4",
+            "slug": "cong-bo-lai-hoat-dong",
+            "sha256": "1ecb34f8ee58dee9b27b701f5a83cd9468793e71c99c3f57833dfb6612fa0ddf"
+          },
+          {
+            "id": "e60f5a29-ff34-4ced-affb-882ba5cf0a0a",
+            "slug": "dieu-10-22-vbhn-vpqh-nghi-dinh-nay",
+            "sha256": "51a6c10b34ff1b034f8bc48b256cf16b46a0c4b2413656d9576e8dca8c199ff5"
+          },
+          {
+            "id": "e92cfc45-5858-4da3-8929-a246c59c4cab",
+            "slug": "dieu-2-22-vbhn-vpqh-generated",
+            "sha256": "b4b4e473965301b55109e52031cfcac6caa77df15cccaad1652f02f4a7d68ffe"
+          },
+          {
+            "id": "e9d4977d-3fcf-40fe-ac60-a5a17f625b6e",
+            "slug": "vi-pham-quy-dinh-dieu-tiet-khong-che-bao-dam-an-toan-giao-thong-va-chong-va-troi-tren-duong-thuy-noi-dia",
+            "sha256": "220ceb976855b659e2bd47848cdbf7733edbcbfaeb1a397f6e79e4a517df1a9c"
+          },
+          {
+            "id": "ebd0f565-ce62-4956-8288-9decaf2c4236",
+            "slug": "cuc-truong-cuc-hang-hai-va-duong-thuy-viet-nam",
+            "sha256": "6b3ae9181c053382a57e57b88ea4b8ba27f486e79bf6dcc4c85221129c792321"
+          },
+          {
+            "id": "ef44f0ee-bd3c-43cc-badc-cab06fd6a1b5",
+            "slug": "dieu-53-22-vbhn-vpqh",
+            "sha256": "790b63d57ca495feb1a62dd3bdde740f8be712b714f7285c374fcb6c80edb285"
+          },
+          {
+            "id": "eff610f8-95cb-4aef-b948-bf1426dd8f22",
+            "slug": "vung-nuoc",
+            "sha256": "ea64202a62d130906793c7705a1993d463b83c1bb835fe99842caee145e7c9ca"
+          },
+          {
+            "id": "f0553aaa-5a16-42ef-98ad-8618efb714aa",
+            "slug": "giay-chung-nhan-an-ninh-cang-thuy-noi-dia",
+            "sha256": "350c819c047b4837a6918302b5efc9c658c6c8701513773b2dabd1fe894ec153"
+          },
+          {
+            "id": "f14466dd-3af5-436f-8499-9a31c47e8d48",
+            "slug": "chung-chi-chuyen-mon-may-truong-hang-ba",
+            "sha256": "3f7ec5b3546df46af79a7bf17a0da8a2ebc65013014e4fdf471a0ed0fc66aa8b"
+          },
+          {
+            "id": "f2fc6032-0dac-4a4c-b3b2-24b0c88b006d",
+            "slug": "dieu-5-14-nghi-dinh-139-2021-xlvphc-giao-thong-2fbe6ea8-generated",
+            "sha256": "924a0e3169e7943f9f29626adb3b65071a992f19cec3bb33d5ee74d6b453b1c0"
+          },
+          {
+            "id": "f558cb06-d7ac-44d9-a29c-63c4c52c350c",
+            "slug": "dieu-5-22-vbhn-vpqh",
+            "sha256": "69c73c6acc6b1109ebb4f3776d8e2fb8c57d07c90e5f4a27498b762fd9115333"
+          },
+          {
+            "id": "f5c9e65a-a664-47e2-9c92-134c349e9104",
+            "slug": "hinh-thuc-xu-pha-vi-pham-hanh-chinh",
+            "sha256": "498ee7dc58c329f29c8a00925a02b8aa83de29d9708b4480bbeddc7767baec2a"
+          },
+          {
+            "id": "f79beb37-ce54-48ec-899e-a145cddc2e50",
+            "slug": "vi-pham-quy-dinh-trach-nhiem-mua-bao-hiem",
+            "sha256": "d51e9f2f628575b89a42339265966237fd6883cef7b30eff365645803ca5267d"
+          },
+          {
+            "id": "fa8cbb0b-e6ce-4cfb-9544-c1f4c4cb3eb9",
+            "slug": "dieu-9-22-vbhn-vpqh",
+            "sha256": "3bde7b965fbfc5afb813ee286bdaf48299af7f5a49254e3c27409ed647d68921"
+          },
+          {
+            "id": "fbac8434-1516-428e-aa70-aee97f497462",
+            "slug": "dieu-4-22-vbhn-vpqh",
+            "sha256": "58b48ea9e1d1df660692de084b5145331e60601395b2080833a0ff1d6a9032a1"
+          }
+        ]
+      }
+    },
+    {
+      "id": "440a3202-400c-48ea-8647-6c0647fcb642",
+      "before": {
+        "id": "440a3202-400c-48ea-8647-6c0647fcb642",
+        "status": "partial",
+        "wiki_status": "error",
+        "chunk_status": "ready",
+        "phase": "refine",
+        "raw_text_sha256": "d4a50dbaf64064ff2eebe4c9286314141a94510feee84000cdff0ba1a90f93fb",
+        "plan_pages": 58,
+        "draft_count": 5,
+        "pages": [
+          {
+            "id": "06b2856a-469f-441c-a6a1-057e4eea74f4",
+            "slug": "dieu-34-105-2025-nd-cp",
+            "sha256": "7b61a3489130bbc352bf8d5fa8ac2f5a3304ce77879fd7b489564e5d9ac4d9bf"
+          },
+          {
+            "id": "07be7146-8bcb-4b3a-a908-36c360316cc1",
+            "slug": "kiem-thi-ky-nang-ve-chua-chay",
+            "sha256": "961b113dcdad8794db8c15399d0a79ca0744315f9bbcec51f1f20924def5e1ee"
+          },
+          {
+            "id": "0a52c4b2-c8be-49c5-9251-4f8bc159eb3f",
+            "slug": "tinh-huong-tai-nan-giao-thong",
+            "sha256": "d2d03dbbd5c4d853dd719e306263f9a85593c9a54c5aab49271b2b4e4d97de1a"
+          },
+          {
+            "id": "0b9bcb7d-65b2-48ce-b265-d7bdd9e61107",
+            "slug": "kiem-thi-ky-nang-ve-thoat-nan-cuu-nan-cuu-ho",
+            "sha256": "ad86b3e7866fe6e2aa5464190c862fe6fab3d4c179c89ff328efbe00791e0483"
+          },
+          {
+            "id": "11776131-d28a-4216-a8cd-88e75ca3ac02",
+            "slug": "dieu-15-105-2025-nd-cp",
+            "sha256": "ee597083bf269b718e158ac0fe89a3fc4612b562eb18d6cc0b112e78ace73649"
+          },
+          {
+            "id": "1305a4b0-0e1d-4271-977c-805f55ce3c61",
+            "slug": "nhiem-vu-chua-chay",
+            "sha256": "c3c1c6a5a8b6f3c1f531a53335008811c25ffa5a0d6db99a7519914bdf19abea"
+          },
+          {
+            "id": "18d34e7c-aa5f-4bbd-97e2-ec9d6b6d9716",
+            "slug": "dieu-11-105-2025-nd-cp",
+            "sha256": "6463bbbd106d44f65f38b1e0b27021ab3c977a79374575237ad7c0524b1c608a"
+          },
+          {
+            "id": "19d41910-1e66-4264-b6bf-77aad5a0f68a",
+            "slug": "dieu-7-105-2025-nd-cp-thuat-dan-giao-chua-an-va-cuu",
+            "sha256": "8e2b38d402a475cce53f145747b68c9e5b3fed98f4493acebfa9da953a45452a"
+          },
+          {
+            "id": "1afee71e-43a4-4447-b813-6b4215d5c1ba",
+            "slug": "dieu-23-105-2025-nd-cp",
+            "sha256": "e89ddcd023ba61dea2da4894cbd83cd567a1c0b4852b9b6169dbc69d0f43958c"
+          },
+          {
+            "id": "1c964c8a-9d44-43f9-8a50-0d16c01935e9",
+            "slug": "dieu-10-105-2025-nd-cp",
+            "sha256": "5d26aeaeca1a02571ddd4af934bc2f32faa672362df621d57e302e68455022ae"
+          },
+          {
+            "id": "1cffad2f-92b9-4bbd-8c3c-4797a5d50dc3",
+            "slug": "uy-ban-nhan-dan-cap-xa",
+            "sha256": "cf944d29b73a551d8fdc1cc5e539e1aed0d8f1aa6cee658b7b58ddd611ccb796"
+          },
+          {
+            "id": "20c84ce1-c455-44c5-a4a0-3198bc0e696c",
+            "slug": "tinh-huong-sat-lo-dat-da",
+            "sha256": "39f89fe9322908333a2f92680231c6f963e5e6926658dec91108dc1b2c11acc4"
+          },
+          {
+            "id": "20f7ee84-cac9-4bab-989a-8e749f074f08",
+            "slug": "dieu-4-105-2025-nd-cp-generated",
+            "sha256": "48f7fd0b3888640616f8dc5f70a872b241be7b6cda27755f8f5b9b0455231cec"
+          },
+          {
+            "id": "24ce1743-4f8e-41bc-bfe3-022325a877bf",
+            "slug": "yeu-to-anh-huong-den-hoat-dong-cuu-nan-cuu-ho",
+            "sha256": "a4e0a4b8dcd025c2446c0712c9e039006f781166a3c667d1034ba99d6a74fa5d"
+          },
+          {
+            "id": "25257664-e10c-455e-b8a7-d127198d6720",
+            "slug": "phuong-an-chua-chay-cuu-nan-cuu-ho",
+            "sha256": "087dbd0b6e1bb455400c6cf7073330c68d353adc90779eff5fdacb0712b31427"
+          },
+          {
+            "id": "254511cc-32df-48d1-97bf-3146024aa87d",
+            "slug": "nhiem-vu-di-chuyen-bao-ve-tai-san",
+            "sha256": "3d6ad0f504c3d48066196b3f175609e29c4ba3d08056001151e79975184575fb"
+          },
+          {
+            "id": "27255bed-ee7b-4b34-a5a4-eb63d1998834",
+            "slug": "dieu-32-105-2025-nd-cp",
+            "sha256": "7ca32ffd5143dd8c2297bf5d2f2472d0de9cc650a45bec8ff913b8e2e70d4d3d"
+          },
+          {
+            "id": "2b8fe7e1-4c8e-404d-8288-0fa211e95de6",
+            "slug": "105-2025-nd-cp",
+            "sha256": "48117d1a9682be88a5c5a0ebe340d47f8f36c4daa7fb11b12767b5206cba7105"
+          },
+          {
+            "id": "30fe7c70-d54b-4eaf-b828-9063f41744a5",
+            "slug": "dieu-7-105-2025-nd-cp-3",
+            "sha256": "092daaafddb063980796d19af8cc583240a76547719f43fd44e6b02d154d2ca3"
+          },
+          {
+            "id": "35c943fd-6f53-44cd-90ca-7db871ffe79a",
+            "slug": "dieu-16-105-2025-nd-cp-generated",
+            "sha256": "30c59429c3013d33c241e2f0803c646e26d8b9e4ce4a444be679783db81c9b3c"
+          },
+          {
+            "id": "3dbd1765-a895-4672-b17a-57e0a1f3cdbb",
+            "slug": "nhiem-vu-cua-nguoi-chi-huy-chua-chay-tai-co-so",
+            "sha256": "058273727228c7c5db459316b2c748c7209789bc3bb40205334d5a86d068a146"
+          },
+          {
+            "id": "41bd6477-95f7-4ff0-8deb-56f27d0542a0",
+            "slug": "dieu-43-105-2025-nd-cp",
+            "sha256": "87b5a248e008494d78dbe895ba090377bc279db7630f2262cd770d24da045f4f"
+          },
+          {
+            "id": "447a3e08-1f1e-4991-b556-77eaf9ce121f",
+            "slug": "dieu-26-105-2025-nd-cp",
+            "sha256": "a53246146ec87dfdcd1f2c388bfe56d885eb7fd6dced4aea81593b3b77ef6e89"
+          },
+          {
+            "id": "4589a98b-ffac-4de2-977d-da40b1ab98e2",
+            "slug": "nhiem-vu-thong-tin-lien-lac",
+            "sha256": "f2ae6bd41546e46f4a5de385d8e185cdc49ec515b7cccace2b1c4b6759ffa42a"
+          },
+          {
+            "id": "465a46a3-1ce7-475d-897d-b78334f48810",
+            "slug": "nhiem-vu-cuu-nan-va-huong-dan-thoat-nan",
+            "sha256": "3ae31fb3c46cc8aa1ff36ca0f6accf605364c9db6b9a3940548c6c69b5ddaca0"
+          },
+          {
+            "id": "48d017ab-ac87-4624-91e4-3c5629c13aef",
+            "slug": "dieu-24-105-2025-nd-cp-generated",
+            "sha256": "6dd7e9587fa425ea9e408ee722c613a8a342fdfa22a3f3cc1e03743986e3f598"
+          },
+          {
+            "id": "4c302660-734d-4e60-8c8e-642a175dbda3",
+            "slug": "dieu-7-105-2025-nd-cp-tham-dinh-thiet-ke-nghien-cuu",
+            "sha256": "ec866d9c518ba8f329151aaf9406a813c8a5652707132b972fde02b785dae583"
+          },
+          {
+            "id": "4e50970e-1155-41b5-a9c4-9f0f7c694c42",
+            "slug": "phuong-tien-phong-chay-chua-chay-va-cuu-nan-cuu-ho",
+            "sha256": "df944c1baded9eff7902a9c071f6df6f452f1147fcc5aeaed617ec108117986a"
+          },
+          {
+            "id": "5064a763-d8e3-457e-b53e-1a1e2aa630cd",
+            "slug": "dieu-30-105-2025-nd-cp",
+            "sha256": "6e8805ff8f68e020ab438caeaa311a6248df8a1170815f763c5dace51cccd5d9"
+          },
+          {
+            "id": "57e740e0-dcd2-4c34-8643-7c3cc924b43a",
+            "slug": "he-thong-phong-chay-chua-chay",
+            "sha256": "8e7a7b68dd1578af32c1443f29bf6b4f8236cbda271f81cdc27efd852441ff2f"
+          },
+          {
+            "id": "5838cb3f-26ee-4de0-9759-bcf2c06c7cd2",
+            "slug": "tinh-trang-cua-nguoi-bi-nan-trong-cac-loai-hinh-tai-nan-su-co",
+            "sha256": "04557ba87655e614c1c66f04f4c442329b4b36ab034d32a85f8fa50357316056"
+          },
+          {
+            "id": "5d15cc53-4679-4c54-aa29-2c408400c31f",
+            "slug": "trach-nhiem-thi-hanh",
+            "sha256": "daeb3b9fe6d4ff1e907f7980eea99da07e078bed84dec9f9b9649f768bb105ef"
+          },
+          {
+            "id": "5d6aefce-111c-40f4-9c1f-593aa54873fd",
+            "slug": "co-so-co-nguy-hiem-ve-chay-no",
+            "sha256": "c7a1c9d201cb54296a4bda8c9c6224b882cf7e2ec288b9f6a7ef899703d32430"
+          },
+          {
+            "id": "5dac9f0a-d4c5-46ba-aa45-d6519207cc8e",
+            "slug": "dieu-16-105-2025-nd-cp",
+            "sha256": "56e6d77ccda0af043b3d52901492467fc70944d5a9877e0b8f89edde10f97e5b"
+          },
+          {
+            "id": "63bc2324-410c-46d7-8dc6-8f4129caae83",
+            "slug": "dieu-21-105-2025-nd-cp",
+            "sha256": "82bc4131016749c5c8395a2fadfaf6ce97c60f1d070598795da3ea81897162b9"
+          },
+          {
+            "id": "64c73c7d-ede2-4e1f-bada-517b83617167",
+            "slug": "dieu-13-105-2025-nd-cp",
+            "sha256": "4d9b9423998684ab0a832d54dfd1a2bb326f24a0436874789d037d205d250463"
+          },
+          {
+            "id": "67062633-1b02-4ea6-a40c-efc87ec03e08",
+            "slug": "dieu-40-105-2025-nd-cp",
+            "sha256": "d4ed86ee99a0b3c54ba8eac2c9b2b0cb740908c3010f915033b2d22bd8792c90"
+          },
+          {
+            "id": "6ba26d2c-7561-468f-931f-0fe2593df737",
+            "slug": "he-thong-chua-chay-tu-dong-sprinkler",
+            "sha256": "9b9dba353c0adabc1cee41c151dd74c7218a5fe47a6724ccf8b29948a837b61e"
+          },
+          {
+            "id": "70b0ebba-95a8-41d5-bc1b-0fbd8a636a31",
+            "slug": "kiem-tra-cong-tac-nghiem-thu-ve-phong-chay-va-chua-chay",
+            "sha256": "eeab933f0fe58b008e3b04654dbfd40c7f1cb4dcaa094c5429da36a35cd5daab"
+          },
+          {
+            "id": "71ffca36-51a8-43e5-b664-8d24ff250d7b",
+            "slug": "dieu-27-105-2025-nd-cp",
+            "sha256": "552c3ec6a790087af322ed13981d5fb8e80496b0e2cd07e525c0a4b560d0e333"
+          },
+          {
+            "id": "743b7af1-9a39-454e-9783-ac99fc2670e8",
+            "slug": "nhiem-vu-cua-cac-luc-luong-khac",
+            "sha256": "d079e79e3fad4d78b275852017e0a4b4f9c160f94ba4795f1d1d1c052e9b87fe"
+          },
+          {
+            "id": "74f1ded8-6f8d-4797-b6c7-4267230c72d7",
+            "slug": "nguon-nuoc-phuc-vu-chua-chay",
+            "sha256": "f57ba8f6ec6a0ff63fa026fc5c67243b3f4f4450b4241a92e7fb55255ab5e167"
+          },
+          {
+            "id": "79096c85-b431-425f-abef-6f3cdc612773",
+            "slug": "dieu-25-105-2025-nd-cp",
+            "sha256": "238a6649e651b190aaac15db9a5cc471e3777c0844173942babbb9b477cf5311"
+          },
+          {
+            "id": "7b733496-29cd-4ed9-84fb-5a20edf8dbc5",
+            "slug": "luc-luong-phong-chay-chua-chay-va-cuu-nan-cuu-ho-co-so",
+            "sha256": "0da30d7f8883b59c08a381a50363d06626311df675605a17c61b61e70258f880"
+          },
+          {
+            "id": "7feeb161-c9f0-4672-b027-cb0afbc10871",
+            "slug": "dieu-12-105-2025-nd-cp",
+            "sha256": "4e09353cc397af985cb94b51cfa372a440e5235a58fdf8f9e33f8ec67da27ff0"
+          },
+          {
+            "id": "81b2422f-893c-4d1e-8e7c-749663a41a3b",
+            "slug": "co-so-kinh-doanh-hang-hoa-de-chay",
+            "sha256": "5ce4857227f5fb59ac5c4edaa4d5c839b4c368aec1074777c956243572cf4bb3"
+          },
+          {
+            "id": "86ae5e30-d0bd-443c-8dd2-2866814d94b3",
+            "slug": "co-so-san-xuat-cong-nghiep",
+            "sha256": "a16edaaff81ee70f6603a75c58d5cc39f87cb8a317c3b14de96791848891c5d1"
+          },
+          {
+            "id": "88ac7252-0132-471c-8140-83666a66e90a",
+            "slug": "dieu-44-105-2025-nd-cp",
+            "sha256": "961b5965130d58f9a11bd9b8ecd1a298882c15fca3ff929c64adf340b5f4f1ab"
+          },
+          {
+            "id": "8b0b57d0-d0f0-4373-987a-b1c394bf0136",
+            "slug": "truong-hop-sap-do-nha-cong-trinh-cay-coi",
+            "sha256": "3fe2b9b596c26fc2c04481b230ae91a2c845224e12fc66305c32d025311d0d39"
+          },
+          {
+            "id": "8de1b699-f9c3-4401-b23d-64deb477783e",
+            "slug": "dieu-5-105-2025-nd-cp",
+            "sha256": "150c443d0a0f3b01b16eaca812d4b5a3e566ab9357a81c4427fea214e52c05da"
+          },
+          {
+            "id": "8e8f0211-10f1-4308-a1ca-a3aaa509d9c9",
+            "slug": "dieu-42-105-2025-nd-cp",
+            "sha256": "0a5bf69342d56650917a3dc50060170ea034e9159b0a9af2043cd4996d8b6dbc"
+          },
+          {
+            "id": "92a085d3-1b3c-445d-9403-91f599ee1a7c",
+            "slug": "dieu-28-105-2025-nd-cp-generated",
+            "sha256": "c623077626cf7fdaf82664f7e9e7046772dd78d35ee8437012df1c1e878a5337"
+          },
+          {
+            "id": "933c9864-19cd-4a38-b1fc-a8e66268c396",
+            "slug": "chien-tuat-ky-thuat-chua-chay-cuu-nan-cuu-ho",
+            "sha256": "c37137f980f3e222d2b0347789616675b7fe9d12d8e67a96cf9fd4d662cc339f"
+          },
+          {
+            "id": "93f36739-82a7-45d5-83cb-7b613c1068d2",
+            "slug": "dieu-20-105-2025-nd-cp",
+            "sha256": "184927afd633c7d60407344600b04c833efa276d535c9451aa398f57bf486c09"
+          },
+          {
+            "id": "994650d7-6aa1-43d0-b3af-25ccd5985bea",
+            "slug": "tham-quyen-kiem-tra",
+            "sha256": "f0b7de07d883f368132af803d90044ddbd540cfd1cfc0bd9f175179bedcf49b4"
+          },
+          {
+            "id": "9a348bc7-7bac-4585-8455-41eecbfeabe5",
+            "slug": "dieu-14-105-2025-nd-cp",
+            "sha256": "376df17abbb39e1f8ae1df64642c6abb60487a39b4f5647a73e64213f88ba9d6"
+          },
+          {
+            "id": "9b4bb25f-4527-4030-be25-99221bed60ab",
+            "slug": "giao-thong-phuc-vu-chua-chay-cuu-nan-cuu-ho",
+            "sha256": "78fdea599e254471d2e96f6b4b19803ee5d6cca39d1d61ac299a2484b325beb9"
+          },
+          {
+            "id": "9b73ece6-a982-4d8e-a6ba-9b4e881649ce",
+            "slug": "luc-luong-canh-sat-phong-chay-chua-chay-va-cuu-nan-cuu-ho",
+            "sha256": "f9b28a63311c16cb4e3c1a720271920318340ff8dea6ff6d6f4df81c33eb7941"
+          },
+          {
+            "id": "9c81ba72-a464-407b-a971-abeddb3a7dc7",
+            "slug": "dieu-3-105-2025-nd-cp",
+            "sha256": "ebd1d441a63ac204f3b4d7b13594bb6e0e455cec05a6f3f96c703b7fe50c3594"
+          },
+          {
+            "id": "9c85fe02-5457-4a9b-ba64-abdf42df547f",
+            "slug": "dieu-2-105-2025-nd-cp-generated",
+            "sha256": "48c351873268b0bc681fe1d4ee16db6e2e7264b92490381d08bf8b7c788b845c"
+          },
+          {
+            "id": "9cb64fec-ad00-4350-90f7-7b469d460649",
+            "slug": "kiem-thi-ky-nang-ve-phong-chay",
+            "sha256": "d5e6f10d191581ab4c1ac045303434aa0a6f7edd0dfd90b6c87774aa270cc5ba"
+          },
+          {
+            "id": "a0784d54-3567-42c4-abd9-348a5a0e8587",
+            "slug": "dieu-37-105-2025-nd-cp",
+            "sha256": "e8b75cfc1b2e052634ee9e29bffa835ea5d68c5d792d05d56a268607fc88d348"
+          },
+          {
+            "id": "a18495a1-e18c-42c5-868a-6e4839f193a7",
+            "slug": "tinh-toan-luc-luong-phuong-tien-chua-chay-cuu-nan-cuu-ho",
+            "sha256": "a9fc96dd0af6a90bfe8b0844a0e30c21237428262ced194bc8933d564201fb23"
+          },
+          {
+            "id": "a2f79530-6e9a-439a-aeb6-3463cd1ebd81",
+            "slug": "dieu-22-105-2025-nd-cp",
+            "sha256": "ce942e98fd1ba0ffdfe8f82113f87be9e5ab3d89b5dc3e327fdcb28db223ab4d"
+          },
+          {
+            "id": "a5cd5db4-b3ce-48eb-9f77-defc8ff3d373",
+            "slug": "dieu-39-105-2025-nd-cp",
+            "sha256": "85f24ec72e73453808a44b8bea5e9f19e39e24fdf6f7eb6a69a6f2244578923e"
+          },
+          {
+            "id": "a643e4df-1d9d-4ca7-8cc7-dbad26f151b4",
+            "slug": "dieu-7-105-2025-nd-cp-2",
+            "sha256": "41b57b75fb07c3cd145b228b71d742f9accbed5b8c43c90c0404b5b4977731ac"
+          },
+          {
+            "id": "a9ce3323-e8fe-4e77-a483-632e49fd23cb",
+            "slug": "phuong-an-cuu-nan-cuu-ho-cua-co-quan-cong-an",
+            "sha256": "4dee86e54ab379267b3f79aac662c96d7302f2e487fd703d20b6e512c764aeb0"
+          },
+          {
+            "id": "b06f28a8-b08b-4fe6-aa24-6b4faa91a483",
+            "slug": "so-do-tong-mat-bang",
+            "sha256": "04366977890148eb974e52e8dd701c171cb91be324c62b628df9a4461ed94c97"
+          },
+          {
+            "id": "b44b4256-850c-43eb-af9d-4b5882fd128d",
+            "slug": "dieu-28-105-2025-nd-cp",
+            "sha256": "44f9f4b855ac2f73c36dd680b8db4ce62781cf125fe63bf796d835ad9d8fef52"
+          },
+          {
+            "id": "b4684773-695e-4663-aa93-45effabee6f8",
+            "slug": "huy-dong-luc-luong-nguoi-phuong-tien-tai-san-de-chua-chay",
+            "sha256": "bcd92820a5bb621519109f76697de9660888090888c597cc0aab86df69c49524"
+          },
+          {
+            "id": "b49367d4-8eb4-4146-8671-613fb981b382",
+            "slug": "uy-ban-nhan-dan-cap-tinh",
+            "sha256": "9e05da71ce70c03f26ffce66f332de5dd7024ec557c57bf08c99517df1c2308e"
+          },
+          {
+            "id": "b5253a6f-bf2f-4e1d-bb03-ebe66b2114a2",
+            "slug": "dieu-2-105-2025-nd-cp",
+            "sha256": "80939c306573f8147d88b52fafedfcda60957f9d0935c30ba3ff17cf0bdb6031"
+          },
+          {
+            "id": "b7ac48c8-5c7a-4d2d-808e-10dbb919e4e4",
+            "slug": "dieu-4-105-2025-nd-cp",
+            "sha256": "289c13e1b58674d25fb80bb6d986cebb596675b98b1e2540e5ad51d4e0acdb9b"
+          },
+          {
+            "id": "b926f235-554b-47e8-8830-cd5d7fe69622",
+            "slug": "bao-hiem-chay-no-bat-buoc",
+            "sha256": "ce4065469c782bf46b4727017bb797c84d6f7a9be14dc3392acc4681c97d7d99"
+          },
+          {
+            "id": "bd15ee76-2585-48c8-9ab3-842ad9c5a8e7",
+            "slug": "dieu-18-105-2025-nd-cp",
+            "sha256": "107c81e4d39b94a6f3b8c91d97e892d05d03e661be079f488f063a0f8fa3316e"
+          },
+          {
+            "id": "be77838e-6573-44c0-8a98-603fc76c92f4",
+            "slug": "nhiem-vu-cua-nguoi-chi-huy-chua-chay-tren-phuong-tien",
+            "sha256": "d194b4028f923290d17fea3ad0b0f1bf33e4fcf2686e53592dd9958ccc417e92"
+          },
+          {
+            "id": "be942e2a-c3e5-4a3f-a6ee-fbfa98377966",
+            "slug": "dieu-38-105-2025-nd-cp",
+            "sha256": "a48dbe046443aad746fac4644c701d700583f8b87f9af27df1ca4daf29f1bd83"
+          },
+          {
+            "id": "c1e83c5c-dcb6-442a-9a9c-3a566bfe2434",
+            "slug": "dieu-7-105-2025-nd-cp-4",
+            "sha256": "c80e6b69cbed19ea35a366d96968b8db40397fe90e6b6f029799d46a52c48fb6"
+          },
+          {
+            "id": "c3da92aa-8447-4750-8625-e266bf24afb7",
+            "slug": "so-do-bo-tri-luc-luong-phuong-tien-chua-chay-cuu-nan-cuu-ho",
+            "sha256": "4141ff88b0cee33dbac602c17324983e246b295d613bdb0e307e8408337a6c9d"
+          },
+          {
+            "id": "c5542f22-d7fe-4a58-bfbf-08c353bc10f4",
+            "slug": "dieu-31-105-2025-nd-cp",
+            "sha256": "04ad66a33f49718b72aef9a4dadf19e6003f0a1076e93a03a1ae747731025e9a"
+          },
+          {
+            "id": "c66b3813-d7a1-4e1b-a1d4-f38cfe0820ba",
+            "slug": "dieu-6-105-2025-nd-cp",
+            "sha256": "5c45ee6c461c9bd4cee104612e251d0eca9ebdbecdbf378bae0b1b4e8f4957ba"
+          },
+          {
+            "id": "c77bf2ca-e871-4a77-885a-e296625c42ee",
+            "slug": "dieu-33-105-2025-nd-cp",
+            "sha256": "2bf854e8254e71442483152de4e5c04967e390851ca262472233c132a2189977"
+          },
+          {
+            "id": "cbd48c41-20c0-426d-a473-5eb6e2b04e5d",
+            "slug": "luat-phong-chay-chua-chay-va-cuu-nan-cuu-ho",
+            "sha256": "2ca86e628e9321ae71a39d92c3dfbe230599699f82384758369e7636b38c98a1"
+          },
+          {
+            "id": "cdbbdff3-37d3-4960-895b-a95c6e8ce32d",
+            "slug": "khoanh-vung-hien-truong",
+            "sha256": "1a3e26db23f498e5091f762d2fb9875cc2809906695d35c2cb928362b2e844da"
+          },
+          {
+            "id": "cfca73a0-44fd-4fe5-8d61-2162709816c2",
+            "slug": "cuu-nguoi-truc-tiep-va-gian-tiep",
+            "sha256": "a984acde7a707c4cf7c2da9fdb5b83f5e7be5721474bbcd2f06d611aa882a534"
+          },
+          {
+            "id": "d6c2ae4e-f8e4-4269-9c6d-775eecaaa0f7",
+            "slug": "co-so-thuoc-dien-quan-ly-ve-pccc",
+            "sha256": "e67ce41a4614e2bb79b8fb10de5aec8c778e1c18a8c78b22f7a039d02ed87b81"
+          },
+          {
+            "id": "d781eb52-5b81-4ec8-b0bf-96177c42763e",
+            "slug": "dieu-35-105-2025-nd-cp",
+            "sha256": "ca2a9f9220b75475295a857cf9aec29f8f4b07b7a70377bb44adbd06fd4c9b50"
+          },
+          {
+            "id": "dfaebe68-85c6-4e19-89eb-fd3b574a3a28",
+            "slug": "dieu-7-105-2025-nd-cp-tham-dinh-thiet-ke-ve-phong-ch",
+            "sha256": "56ccd9d4da8751252f5ee724a8f9af945f8aebe7ae1bdb4182752a601f9afada"
+          },
+          {
+            "id": "e216a704-cea2-4315-a2f7-d323234a3cfd",
+            "slug": "dieu-7-105-2025-nd-cp-5",
+            "sha256": "f1142adbd79df90277e220b4f599c5b803f6931848ca9385817299d677c6cc26"
+          },
+          {
+            "id": "e4f90fc1-ce08-40ee-8b64-5f2c6406e164",
+            "slug": "dieu-19-105-2025-nd-cp",
+            "sha256": "d4f14595af886a8ade8e033825bd8630b8520a2541ed888a5489a353a734577e"
+          },
+          {
+            "id": "e6f25ca5-aa3e-43b3-8a22-723fbc3b5d73",
+            "slug": "dieu-17-105-2025-nd-cp",
+            "sha256": "f2f4ad056e793e9a237163126a59057813a8bbca33d270618e1b10c9cfe3371c"
+          },
+          {
+            "id": "e8697651-c946-43d4-8998-8945171893f7",
+            "slug": "nhiem-vu-cua-co-quan-cong-an",
+            "sha256": "5454df5289fee2c20a7f91c204da9539d1368fbdd84714e18deb954d8e8658bb"
+          },
+          {
+            "id": "eb73226e-143e-4888-aa2d-13d9bcdd7a2c",
+            "slug": "dieu-6-105-2025-nd-cp-generated",
+            "sha256": "79e0e475e024feff877c945b94c744a9f16256441f208735dbfba401e8527159"
+          },
+          {
+            "id": "ee8440c3-44d8-48e8-8a01-fdc9dccd68a0",
+            "slug": "truong-hop-chay-tai-nan-su-co",
+            "sha256": "94ee7b0cbac4e417a6f76f6855ba1ae0084a2707c40b69581579f120f2cb9734"
+          },
+          {
+            "id": "eeef560c-5c56-400b-a8ec-e7318694786e",
+            "slug": "dieu-41-105-2025-nd-cp",
+            "sha256": "88f63fd69cf3336302bbb1fd3b1d7a8cf02e41b1db18b460be38d150d0a582c0"
+          },
+          {
+            "id": "efb9a9df-c5b2-4658-bd19-a0197f7b432a",
+            "slug": "banh-thong-ke-luc-luong-phuong-tien-chua-chay-cuu-nan-cuu-ho-du-ky-huy-dong",
+            "sha256": "54a20cabd9247f32f8836c207ea87c3b295116e3004f8aa2805724b65a32f862"
+          },
+          {
+            "id": "f3a92ab3-63f9-4a66-a994-46e0e64a92db",
+            "slug": "danh-sach-phuong-tien-thiet-bi-tren-dia-ban-cap-xa-co-the-huy-dong-khi-xay-ra-tai-nan-su-co-cung-loai-hinh",
+            "sha256": "0192875becfb054148cf0e3fdf3e039155662c0876f4bd2cb0bae05f2bf2ccb6"
+          },
+          {
+            "id": "f49add63-fcd8-4938-ac91-1e2996951835",
+            "slug": "danh-sach-dai-diem-khu-vuc-tren-dia-ban-cap-xa-co-nguy-co-xay-ra-tai-nan-su-co-cung-loai-hinh",
+            "sha256": "da0190179b518123c605054f2042788e05e23ed9e409a833c0520947573ac6c5"
+          },
+          {
+            "id": "f6965ea4-8ac9-49b8-8677-3cf8d735633a",
+            "slug": "dieu-39-105-2025-nd-cp-generated",
+            "sha256": "4a5e6703d85ab39d3fc9306e6ed99d134d87cdeee949e197e1c2f336fb31b230"
+          },
+          {
+            "id": "fb9bbde8-5ba9-4f5d-9585-5db5b71c57ee",
+            "slug": "bien-phap-sou-cuu-ngay-khi-dua-nan-nhan-den-vi-tri-an-toan",
+            "sha256": "2083cf3763f4c76bace26d3cbb8a802483779f97265ad42076bde8b4b6711369"
+          },
+          {
+            "id": "fd0e4fca-d3d8-45a5-a9b9-17a6bf3c6f69",
+            "slug": "dieu-24-105-2025-nd-cp",
+            "sha256": "9dcb8476199665f43fffafc8d48cba1f3d60e50f0877fa2d974a0bffcccf8ca3"
+          },
+          {
+            "id": "fdadaa29-9263-4cca-af20-0076a4c97b9f",
+            "slug": "noi-quy-phong-chay-chua-chay-va-cuu-nan-cuu-ho",
+            "sha256": "1b34e169640e11f1f24e941aa104dc0150098311fa0f825efe1b029e5d229969"
+          },
+          {
+            "id": "ff0bdb54-2ae0-4846-bcb0-43448e580bb6",
+            "slug": "dieu-7-105-2025-nd-cp",
+            "sha256": "c71572eaa3ff6197455fa222bb0ca7466b96fb9abc9f759abe1f073663c1ab12"
+          },
+          {
+            "id": "ffb72add-8dd6-46b9-a092-15e0ebf7100a",
+            "slug": "co-che-thong-tin-chi-huy-dieu-hanh",
+            "sha256": "2b1f167a8d5e4b9b2341271fdb7874b23a30484b2e6c0d3cfa50e25a0d91e9cd"
+          }
+        ]
+      },
+      "action": "wiki_requeued",
+      "job_id": "c6431c7c567a408cae8d6ecdd6a52f07",
+      "after": {
+        "id": "440a3202-400c-48ea-8647-6c0647fcb642",
+        "status": "processing",
+        "wiki_status": "queued",
+        "chunk_status": "ready",
+        "phase": "refine",
+        "raw_text_sha256": "d4a50dbaf64064ff2eebe4c9286314141a94510feee84000cdff0ba1a90f93fb",
+        "plan_pages": 58,
+        "draft_count": 5,
+        "pages": [
+          {
+            "id": "06b2856a-469f-441c-a6a1-057e4eea74f4",
+            "slug": "dieu-34-105-2025-nd-cp",
+            "sha256": "7b61a3489130bbc352bf8d5fa8ac2f5a3304ce77879fd7b489564e5d9ac4d9bf"
+          },
+          {
+            "id": "07be7146-8bcb-4b3a-a908-36c360316cc1",
+            "slug": "kiem-thi-ky-nang-ve-chua-chay",
+            "sha256": "961b113dcdad8794db8c15399d0a79ca0744315f9bbcec51f1f20924def5e1ee"
+          },
+          {
+            "id": "0a52c4b2-c8be-49c5-9251-4f8bc159eb3f",
+            "slug": "tinh-huong-tai-nan-giao-thong",
+            "sha256": "d2d03dbbd5c4d853dd719e306263f9a85593c9a54c5aab49271b2b4e4d97de1a"
+          },
+          {
+            "id": "0b9bcb7d-65b2-48ce-b265-d7bdd9e61107",
+            "slug": "kiem-thi-ky-nang-ve-thoat-nan-cuu-nan-cuu-ho",
+            "sha256": "ad86b3e7866fe6e2aa5464190c862fe6fab3d4c179c89ff328efbe00791e0483"
+          },
+          {
+            "id": "11776131-d28a-4216-a8cd-88e75ca3ac02",
+            "slug": "dieu-15-105-2025-nd-cp",
+            "sha256": "ee597083bf269b718e158ac0fe89a3fc4612b562eb18d6cc0b112e78ace73649"
+          },
+          {
+            "id": "1305a4b0-0e1d-4271-977c-805f55ce3c61",
+            "slug": "nhiem-vu-chua-chay",
+            "sha256": "c3c1c6a5a8b6f3c1f531a53335008811c25ffa5a0d6db99a7519914bdf19abea"
+          },
+          {
+            "id": "18d34e7c-aa5f-4bbd-97e2-ec9d6b6d9716",
+            "slug": "dieu-11-105-2025-nd-cp",
+            "sha256": "6463bbbd106d44f65f38b1e0b27021ab3c977a79374575237ad7c0524b1c608a"
+          },
+          {
+            "id": "19d41910-1e66-4264-b6bf-77aad5a0f68a",
+            "slug": "dieu-7-105-2025-nd-cp-thuat-dan-giao-chua-an-va-cuu",
+            "sha256": "8e2b38d402a475cce53f145747b68c9e5b3fed98f4493acebfa9da953a45452a"
+          },
+          {
+            "id": "1afee71e-43a4-4447-b813-6b4215d5c1ba",
+            "slug": "dieu-23-105-2025-nd-cp",
+            "sha256": "e89ddcd023ba61dea2da4894cbd83cd567a1c0b4852b9b6169dbc69d0f43958c"
+          },
+          {
+            "id": "1c964c8a-9d44-43f9-8a50-0d16c01935e9",
+            "slug": "dieu-10-105-2025-nd-cp",
+            "sha256": "5d26aeaeca1a02571ddd4af934bc2f32faa672362df621d57e302e68455022ae"
+          },
+          {
+            "id": "1cffad2f-92b9-4bbd-8c3c-4797a5d50dc3",
+            "slug": "uy-ban-nhan-dan-cap-xa",
+            "sha256": "cf944d29b73a551d8fdc1cc5e539e1aed0d8f1aa6cee658b7b58ddd611ccb796"
+          },
+          {
+            "id": "20c84ce1-c455-44c5-a4a0-3198bc0e696c",
+            "slug": "tinh-huong-sat-lo-dat-da",
+            "sha256": "39f89fe9322908333a2f92680231c6f963e5e6926658dec91108dc1b2c11acc4"
+          },
+          {
+            "id": "20f7ee84-cac9-4bab-989a-8e749f074f08",
+            "slug": "dieu-4-105-2025-nd-cp-generated",
+            "sha256": "48f7fd0b3888640616f8dc5f70a872b241be7b6cda27755f8f5b9b0455231cec"
+          },
+          {
+            "id": "24ce1743-4f8e-41bc-bfe3-022325a877bf",
+            "slug": "yeu-to-anh-huong-den-hoat-dong-cuu-nan-cuu-ho",
+            "sha256": "a4e0a4b8dcd025c2446c0712c9e039006f781166a3c667d1034ba99d6a74fa5d"
+          },
+          {
+            "id": "25257664-e10c-455e-b8a7-d127198d6720",
+            "slug": "phuong-an-chua-chay-cuu-nan-cuu-ho",
+            "sha256": "087dbd0b6e1bb455400c6cf7073330c68d353adc90779eff5fdacb0712b31427"
+          },
+          {
+            "id": "254511cc-32df-48d1-97bf-3146024aa87d",
+            "slug": "nhiem-vu-di-chuyen-bao-ve-tai-san",
+            "sha256": "3d6ad0f504c3d48066196b3f175609e29c4ba3d08056001151e79975184575fb"
+          },
+          {
+            "id": "27255bed-ee7b-4b34-a5a4-eb63d1998834",
+            "slug": "dieu-32-105-2025-nd-cp",
+            "sha256": "7ca32ffd5143dd8c2297bf5d2f2472d0de9cc650a45bec8ff913b8e2e70d4d3d"
+          },
+          {
+            "id": "2b8fe7e1-4c8e-404d-8288-0fa211e95de6",
+            "slug": "105-2025-nd-cp",
+            "sha256": "48117d1a9682be88a5c5a0ebe340d47f8f36c4daa7fb11b12767b5206cba7105"
+          },
+          {
+            "id": "30fe7c70-d54b-4eaf-b828-9063f41744a5",
+            "slug": "dieu-7-105-2025-nd-cp-3",
+            "sha256": "092daaafddb063980796d19af8cc583240a76547719f43fd44e6b02d154d2ca3"
+          },
+          {
+            "id": "35c943fd-6f53-44cd-90ca-7db871ffe79a",
+            "slug": "dieu-16-105-2025-nd-cp-generated",
+            "sha256": "30c59429c3013d33c241e2f0803c646e26d8b9e4ce4a444be679783db81c9b3c"
+          },
+          {
+            "id": "3dbd1765-a895-4672-b17a-57e0a1f3cdbb",
+            "slug": "nhiem-vu-cua-nguoi-chi-huy-chua-chay-tai-co-so",
+            "sha256": "058273727228c7c5db459316b2c748c7209789bc3bb40205334d5a86d068a146"
+          },
+          {
+            "id": "41bd6477-95f7-4ff0-8deb-56f27d0542a0",
+            "slug": "dieu-43-105-2025-nd-cp",
+            "sha256": "87b5a248e008494d78dbe895ba090377bc279db7630f2262cd770d24da045f4f"
+          },
+          {
+            "id": "447a3e08-1f1e-4991-b556-77eaf9ce121f",
+            "slug": "dieu-26-105-2025-nd-cp",
+            "sha256": "a53246146ec87dfdcd1f2c388bfe56d885eb7fd6dced4aea81593b3b77ef6e89"
+          },
+          {
+            "id": "4589a98b-ffac-4de2-977d-da40b1ab98e2",
+            "slug": "nhiem-vu-thong-tin-lien-lac",
+            "sha256": "f2ae6bd41546e46f4a5de385d8e185cdc49ec515b7cccace2b1c4b6759ffa42a"
+          },
+          {
+            "id": "465a46a3-1ce7-475d-897d-b78334f48810",
+            "slug": "nhiem-vu-cuu-nan-va-huong-dan-thoat-nan",
+            "sha256": "3ae31fb3c46cc8aa1ff36ca0f6accf605364c9db6b9a3940548c6c69b5ddaca0"
+          },
+          {
+            "id": "48d017ab-ac87-4624-91e4-3c5629c13aef",
+            "slug": "dieu-24-105-2025-nd-cp-generated",
+            "sha256": "6dd7e9587fa425ea9e408ee722c613a8a342fdfa22a3f3cc1e03743986e3f598"
+          },
+          {
+            "id": "4c302660-734d-4e60-8c8e-642a175dbda3",
+            "slug": "dieu-7-105-2025-nd-cp-tham-dinh-thiet-ke-nghien-cuu",
+            "sha256": "ec866d9c518ba8f329151aaf9406a813c8a5652707132b972fde02b785dae583"
+          },
+          {
+            "id": "4e50970e-1155-41b5-a9c4-9f0f7c694c42",
+            "slug": "phuong-tien-phong-chay-chua-chay-va-cuu-nan-cuu-ho",
+            "sha256": "df944c1baded9eff7902a9c071f6df6f452f1147fcc5aeaed617ec108117986a"
+          },
+          {
+            "id": "5064a763-d8e3-457e-b53e-1a1e2aa630cd",
+            "slug": "dieu-30-105-2025-nd-cp",
+            "sha256": "6e8805ff8f68e020ab438caeaa311a6248df8a1170815f763c5dace51cccd5d9"
+          },
+          {
+            "id": "57e740e0-dcd2-4c34-8643-7c3cc924b43a",
+            "slug": "he-thong-phong-chay-chua-chay",
+            "sha256": "8e7a7b68dd1578af32c1443f29bf6b4f8236cbda271f81cdc27efd852441ff2f"
+          },
+          {
+            "id": "5838cb3f-26ee-4de0-9759-bcf2c06c7cd2",
+            "slug": "tinh-trang-cua-nguoi-bi-nan-trong-cac-loai-hinh-tai-nan-su-co",
+            "sha256": "04557ba87655e614c1c66f04f4c442329b4b36ab034d32a85f8fa50357316056"
+          },
+          {
+            "id": "5d15cc53-4679-4c54-aa29-2c408400c31f",
+            "slug": "trach-nhiem-thi-hanh",
+            "sha256": "daeb3b9fe6d4ff1e907f7980eea99da07e078bed84dec9f9b9649f768bb105ef"
+          },
+          {
+            "id": "5d6aefce-111c-40f4-9c1f-593aa54873fd",
+            "slug": "co-so-co-nguy-hiem-ve-chay-no",
+            "sha256": "c7a1c9d201cb54296a4bda8c9c6224b882cf7e2ec288b9f6a7ef899703d32430"
+          },
+          {
+            "id": "5dac9f0a-d4c5-46ba-aa45-d6519207cc8e",
+            "slug": "dieu-16-105-2025-nd-cp",
+            "sha256": "56e6d77ccda0af043b3d52901492467fc70944d5a9877e0b8f89edde10f97e5b"
+          },
+          {
+            "id": "63bc2324-410c-46d7-8dc6-8f4129caae83",
+            "slug": "dieu-21-105-2025-nd-cp",
+            "sha256": "82bc4131016749c5c8395a2fadfaf6ce97c60f1d070598795da3ea81897162b9"
+          },
+          {
+            "id": "64c73c7d-ede2-4e1f-bada-517b83617167",
+            "slug": "dieu-13-105-2025-nd-cp",
+            "sha256": "4d9b9423998684ab0a832d54dfd1a2bb326f24a0436874789d037d205d250463"
+          },
+          {
+            "id": "67062633-1b02-4ea6-a40c-efc87ec03e08",
+            "slug": "dieu-40-105-2025-nd-cp",
+            "sha256": "d4ed86ee99a0b3c54ba8eac2c9b2b0cb740908c3010f915033b2d22bd8792c90"
+          },
+          {
+            "id": "6ba26d2c-7561-468f-931f-0fe2593df737",
+            "slug": "he-thong-chua-chay-tu-dong-sprinkler",
+            "sha256": "9b9dba353c0adabc1cee41c151dd74c7218a5fe47a6724ccf8b29948a837b61e"
+          },
+          {
+            "id": "70b0ebba-95a8-41d5-bc1b-0fbd8a636a31",
+            "slug": "kiem-tra-cong-tac-nghiem-thu-ve-phong-chay-va-chua-chay",
+            "sha256": "eeab933f0fe58b008e3b04654dbfd40c7f1cb4dcaa094c5429da36a35cd5daab"
+          },
+          {
+            "id": "71ffca36-51a8-43e5-b664-8d24ff250d7b",
+            "slug": "dieu-27-105-2025-nd-cp",
+            "sha256": "552c3ec6a790087af322ed13981d5fb8e80496b0e2cd07e525c0a4b560d0e333"
+          },
+          {
+            "id": "743b7af1-9a39-454e-9783-ac99fc2670e8",
+            "slug": "nhiem-vu-cua-cac-luc-luong-khac",
+            "sha256": "d079e79e3fad4d78b275852017e0a4b4f9c160f94ba4795f1d1d1c052e9b87fe"
+          },
+          {
+            "id": "74f1ded8-6f8d-4797-b6c7-4267230c72d7",
+            "slug": "nguon-nuoc-phuc-vu-chua-chay",
+            "sha256": "f57ba8f6ec6a0ff63fa026fc5c67243b3f4f4450b4241a92e7fb55255ab5e167"
+          },
+          {
+            "id": "79096c85-b431-425f-abef-6f3cdc612773",
+            "slug": "dieu-25-105-2025-nd-cp",
+            "sha256": "238a6649e651b190aaac15db9a5cc471e3777c0844173942babbb9b477cf5311"
+          },
+          {
+            "id": "7b733496-29cd-4ed9-84fb-5a20edf8dbc5",
+            "slug": "luc-luong-phong-chay-chua-chay-va-cuu-nan-cuu-ho-co-so",
+            "sha256": "0da30d7f8883b59c08a381a50363d06626311df675605a17c61b61e70258f880"
+          },
+          {
+            "id": "7feeb161-c9f0-4672-b027-cb0afbc10871",
+            "slug": "dieu-12-105-2025-nd-cp",
+            "sha256": "4e09353cc397af985cb94b51cfa372a440e5235a58fdf8f9e33f8ec67da27ff0"
+          },
+          {
+            "id": "81b2422f-893c-4d1e-8e7c-749663a41a3b",
+            "slug": "co-so-kinh-doanh-hang-hoa-de-chay",
+            "sha256": "5ce4857227f5fb59ac5c4edaa4d5c839b4c368aec1074777c956243572cf4bb3"
+          },
+          {
+            "id": "86ae5e30-d0bd-443c-8dd2-2866814d94b3",
+            "slug": "co-so-san-xuat-cong-nghiep",
+            "sha256": "a16edaaff81ee70f6603a75c58d5cc39f87cb8a317c3b14de96791848891c5d1"
+          },
+          {
+            "id": "88ac7252-0132-471c-8140-83666a66e90a",
+            "slug": "dieu-44-105-2025-nd-cp",
+            "sha256": "961b5965130d58f9a11bd9b8ecd1a298882c15fca3ff929c64adf340b5f4f1ab"
+          },
+          {
+            "id": "8b0b57d0-d0f0-4373-987a-b1c394bf0136",
+            "slug": "truong-hop-sap-do-nha-cong-trinh-cay-coi",
+            "sha256": "3fe2b9b596c26fc2c04481b230ae91a2c845224e12fc66305c32d025311d0d39"
+          },
+          {
+            "id": "8de1b699-f9c3-4401-b23d-64deb477783e",
+            "slug": "dieu-5-105-2025-nd-cp",
+            "sha256": "150c443d0a0f3b01b16eaca812d4b5a3e566ab9357a81c4427fea214e52c05da"
+          },
+          {
+            "id": "8e8f0211-10f1-4308-a1ca-a3aaa509d9c9",
+            "slug": "dieu-42-105-2025-nd-cp",
+            "sha256": "0a5bf69342d56650917a3dc50060170ea034e9159b0a9af2043cd4996d8b6dbc"
+          },
+          {
+            "id": "92a085d3-1b3c-445d-9403-91f599ee1a7c",
+            "slug": "dieu-28-105-2025-nd-cp-generated",
+            "sha256": "c623077626cf7fdaf82664f7e9e7046772dd78d35ee8437012df1c1e878a5337"
+          },
+          {
+            "id": "933c9864-19cd-4a38-b1fc-a8e66268c396",
+            "slug": "chien-tuat-ky-thuat-chua-chay-cuu-nan-cuu-ho",
+            "sha256": "c37137f980f3e222d2b0347789616675b7fe9d12d8e67a96cf9fd4d662cc339f"
+          },
+          {
+            "id": "93f36739-82a7-45d5-83cb-7b613c1068d2",
+            "slug": "dieu-20-105-2025-nd-cp",
+            "sha256": "184927afd633c7d60407344600b04c833efa276d535c9451aa398f57bf486c09"
+          },
+          {
+            "id": "994650d7-6aa1-43d0-b3af-25ccd5985bea",
+            "slug": "tham-quyen-kiem-tra",
+            "sha256": "f0b7de07d883f368132af803d90044ddbd540cfd1cfc0bd9f175179bedcf49b4"
+          },
+          {
+            "id": "9a348bc7-7bac-4585-8455-41eecbfeabe5",
+            "slug": "dieu-14-105-2025-nd-cp",
+            "sha256": "376df17abbb39e1f8ae1df64642c6abb60487a39b4f5647a73e64213f88ba9d6"
+          },
+          {
+            "id": "9b4bb25f-4527-4030-be25-99221bed60ab",
+            "slug": "giao-thong-phuc-vu-chua-chay-cuu-nan-cuu-ho",
+            "sha256": "78fdea599e254471d2e96f6b4b19803ee5d6cca39d1d61ac299a2484b325beb9"
+          },
+          {
+            "id": "9b73ece6-a982-4d8e-a6ba-9b4e881649ce",
+            "slug": "luc-luong-canh-sat-phong-chay-chua-chay-va-cuu-nan-cuu-ho",
+            "sha256": "f9b28a63311c16cb4e3c1a720271920318340ff8dea6ff6d6f4df81c33eb7941"
+          },
+          {
+            "id": "9c81ba72-a464-407b-a971-abeddb3a7dc7",
+            "slug": "dieu-3-105-2025-nd-cp",
+            "sha256": "ebd1d441a63ac204f3b4d7b13594bb6e0e455cec05a6f3f96c703b7fe50c3594"
+          },
+          {
+            "id": "9c85fe02-5457-4a9b-ba64-abdf42df547f",
+            "slug": "dieu-2-105-2025-nd-cp-generated",
+            "sha256": "48c351873268b0bc681fe1d4ee16db6e2e7264b92490381d08bf8b7c788b845c"
+          },
+          {
+            "id": "9cb64fec-ad00-4350-90f7-7b469d460649",
+            "slug": "kiem-thi-ky-nang-ve-phong-chay",
+            "sha256": "d5e6f10d191581ab4c1ac045303434aa0a6f7edd0dfd90b6c87774aa270cc5ba"
+          },
+          {
+            "id": "a0784d54-3567-42c4-abd9-348a5a0e8587",
+            "slug": "dieu-37-105-2025-nd-cp",
+            "sha256": "e8b75cfc1b2e052634ee9e29bffa835ea5d68c5d792d05d56a268607fc88d348"
+          },
+          {
+            "id": "a18495a1-e18c-42c5-868a-6e4839f193a7",
+            "slug": "tinh-toan-luc-luong-phuong-tien-chua-chay-cuu-nan-cuu-ho",
+            "sha256": "a9fc96dd0af6a90bfe8b0844a0e30c21237428262ced194bc8933d564201fb23"
+          },
+          {
+            "id": "a2f79530-6e9a-439a-aeb6-3463cd1ebd81",
+            "slug": "dieu-22-105-2025-nd-cp",
+            "sha256": "ce942e98fd1ba0ffdfe8f82113f87be9e5ab3d89b5dc3e327fdcb28db223ab4d"
+          },
+          {
+            "id": "a5cd5db4-b3ce-48eb-9f77-defc8ff3d373",
+            "slug": "dieu-39-105-2025-nd-cp",
+            "sha256": "85f24ec72e73453808a44b8bea5e9f19e39e24fdf6f7eb6a69a6f2244578923e"
+          },
+          {
+            "id": "a643e4df-1d9d-4ca7-8cc7-dbad26f151b4",
+            "slug": "dieu-7-105-2025-nd-cp-2",
+            "sha256": "41b57b75fb07c3cd145b228b71d742f9accbed5b8c43c90c0404b5b4977731ac"
+          },
+          {
+            "id": "a9ce3323-e8fe-4e77-a483-632e49fd23cb",
+            "slug": "phuong-an-cuu-nan-cuu-ho-cua-co-quan-cong-an",
+            "sha256": "4dee86e54ab379267b3f79aac662c96d7302f2e487fd703d20b6e512c764aeb0"
+          },
+          {
+            "id": "b06f28a8-b08b-4fe6-aa24-6b4faa91a483",
+            "slug": "so-do-tong-mat-bang",
+            "sha256": "04366977890148eb974e52e8dd701c171cb91be324c62b628df9a4461ed94c97"
+          },
+          {
+            "id": "b44b4256-850c-43eb-af9d-4b5882fd128d",
+            "slug": "dieu-28-105-2025-nd-cp",
+            "sha256": "44f9f4b855ac2f73c36dd680b8db4ce62781cf125fe63bf796d835ad9d8fef52"
+          },
+          {
+            "id": "b4684773-695e-4663-aa93-45effabee6f8",
+            "slug": "huy-dong-luc-luong-nguoi-phuong-tien-tai-san-de-chua-chay",
+            "sha256": "bcd92820a5bb621519109f76697de9660888090888c597cc0aab86df69c49524"
+          },
+          {
+            "id": "b49367d4-8eb4-4146-8671-613fb981b382",
+            "slug": "uy-ban-nhan-dan-cap-tinh",
+            "sha256": "9e05da71ce70c03f26ffce66f332de5dd7024ec557c57bf08c99517df1c2308e"
+          },
+          {
+            "id": "b5253a6f-bf2f-4e1d-bb03-ebe66b2114a2",
+            "slug": "dieu-2-105-2025-nd-cp",
+            "sha256": "80939c306573f8147d88b52fafedfcda60957f9d0935c30ba3ff17cf0bdb6031"
+          },
+          {
+            "id": "b7ac48c8-5c7a-4d2d-808e-10dbb919e4e4",
+            "slug": "dieu-4-105-2025-nd-cp",
+            "sha256": "289c13e1b58674d25fb80bb6d986cebb596675b98b1e2540e5ad51d4e0acdb9b"
+          },
+          {
+            "id": "b926f235-554b-47e8-8830-cd5d7fe69622",
+            "slug": "bao-hiem-chay-no-bat-buoc",
+            "sha256": "ce4065469c782bf46b4727017bb797c84d6f7a9be14dc3392acc4681c97d7d99"
+          },
+          {
+            "id": "bd15ee76-2585-48c8-9ab3-842ad9c5a8e7",
+            "slug": "dieu-18-105-2025-nd-cp",
+            "sha256": "107c81e4d39b94a6f3b8c91d97e892d05d03e661be079f488f063a0f8fa3316e"
+          },
+          {
+            "id": "be77838e-6573-44c0-8a98-603fc76c92f4",
+            "slug": "nhiem-vu-cua-nguoi-chi-huy-chua-chay-tren-phuong-tien",
+            "sha256": "d194b4028f923290d17fea3ad0b0f1bf33e4fcf2686e53592dd9958ccc417e92"
+          },
+          {
+            "id": "be942e2a-c3e5-4a3f-a6ee-fbfa98377966",
+            "slug": "dieu-38-105-2025-nd-cp",
+            "sha256": "a48dbe046443aad746fac4644c701d700583f8b87f9af27df1ca4daf29f1bd83"
+          },
+          {
+            "id": "c1e83c5c-dcb6-442a-9a9c-3a566bfe2434",
+            "slug": "dieu-7-105-2025-nd-cp-4",
+            "sha256": "c80e6b69cbed19ea35a366d96968b8db40397fe90e6b6f029799d46a52c48fb6"
+          },
+          {
+            "id": "c3da92aa-8447-4750-8625-e266bf24afb7",
+            "slug": "so-do-bo-tri-luc-luong-phuong-tien-chua-chay-cuu-nan-cuu-ho",
+            "sha256": "4141ff88b0cee33dbac602c17324983e246b295d613bdb0e307e8408337a6c9d"
+          },
+          {
+            "id": "c5542f22-d7fe-4a58-bfbf-08c353bc10f4",
+            "slug": "dieu-31-105-2025-nd-cp",
+            "sha256": "04ad66a33f49718b72aef9a4dadf19e6003f0a1076e93a03a1ae747731025e9a"
+          },
+          {
+            "id": "c66b3813-d7a1-4e1b-a1d4-f38cfe0820ba",
+            "slug": "dieu-6-105-2025-nd-cp",
+            "sha256": "5c45ee6c461c9bd4cee104612e251d0eca9ebdbecdbf378bae0b1b4e8f4957ba"
+          },
+          {
+            "id": "c77bf2ca-e871-4a77-885a-e296625c42ee",
+            "slug": "dieu-33-105-2025-nd-cp",
+            "sha256": "2bf854e8254e71442483152de4e5c04967e390851ca262472233c132a2189977"
+          },
+          {
+            "id": "cbd48c41-20c0-426d-a473-5eb6e2b04e5d",
+            "slug": "luat-phong-chay-chua-chay-va-cuu-nan-cuu-ho",
+            "sha256": "2ca86e628e9321ae71a39d92c3dfbe230599699f82384758369e7636b38c98a1"
+          },
+          {
+            "id": "cdbbdff3-37d3-4960-895b-a95c6e8ce32d",
+            "slug": "khoanh-vung-hien-truong",
+            "sha256": "1a3e26db23f498e5091f762d2fb9875cc2809906695d35c2cb928362b2e844da"
+          },
+          {
+            "id": "cfca73a0-44fd-4fe5-8d61-2162709816c2",
+            "slug": "cuu-nguoi-truc-tiep-va-gian-tiep",
+            "sha256": "a984acde7a707c4cf7c2da9fdb5b83f5e7be5721474bbcd2f06d611aa882a534"
+          },
+          {
+            "id": "d6c2ae4e-f8e4-4269-9c6d-775eecaaa0f7",
+            "slug": "co-so-thuoc-dien-quan-ly-ve-pccc",
+            "sha256": "e67ce41a4614e2bb79b8fb10de5aec8c778e1c18a8c78b22f7a039d02ed87b81"
+          },
+          {
+            "id": "d781eb52-5b81-4ec8-b0bf-96177c42763e",
+            "slug": "dieu-35-105-2025-nd-cp",
+            "sha256": "ca2a9f9220b75475295a857cf9aec29f8f4b07b7a70377bb44adbd06fd4c9b50"
+          },
+          {
+            "id": "dfaebe68-85c6-4e19-89eb-fd3b574a3a28",
+            "slug": "dieu-7-105-2025-nd-cp-tham-dinh-thiet-ke-ve-phong-ch",
+            "sha256": "56ccd9d4da8751252f5ee724a8f9af945f8aebe7ae1bdb4182752a601f9afada"
+          },
+          {
+            "id": "e216a704-cea2-4315-a2f7-d323234a3cfd",
+            "slug": "dieu-7-105-2025-nd-cp-5",
+            "sha256": "f1142adbd79df90277e220b4f599c5b803f6931848ca9385817299d677c6cc26"
+          },
+          {
+            "id": "e4f90fc1-ce08-40ee-8b64-5f2c6406e164",
+            "slug": "dieu-19-105-2025-nd-cp",
+            "sha256": "d4f14595af886a8ade8e033825bd8630b8520a2541ed888a5489a353a734577e"
+          },
+          {
+            "id": "e6f25ca5-aa3e-43b3-8a22-723fbc3b5d73",
+            "slug": "dieu-17-105-2025-nd-cp",
+            "sha256": "f2f4ad056e793e9a237163126a59057813a8bbca33d270618e1b10c9cfe3371c"
+          },
+          {
+            "id": "e8697651-c946-43d4-8998-8945171893f7",
+            "slug": "nhiem-vu-cua-co-quan-cong-an",
+            "sha256": "5454df5289fee2c20a7f91c204da9539d1368fbdd84714e18deb954d8e8658bb"
+          },
+          {
+            "id": "eb73226e-143e-4888-aa2d-13d9bcdd7a2c",
+            "slug": "dieu-6-105-2025-nd-cp-generated",
+            "sha256": "79e0e475e024feff877c945b94c744a9f16256441f208735dbfba401e8527159"
+          },
+          {
+            "id": "ee8440c3-44d8-48e8-8a01-fdc9dccd68a0",
+            "slug": "truong-hop-chay-tai-nan-su-co",
+            "sha256": "94ee7b0cbac4e417a6f76f6855ba1ae0084a2707c40b69581579f120f2cb9734"
+          },
+          {
+            "id": "eeef560c-5c56-400b-a8ec-e7318694786e",
+            "slug": "dieu-41-105-2025-nd-cp",
+            "sha256": "88f63fd69cf3336302bbb1fd3b1d7a8cf02e41b1db18b460be38d150d0a582c0"
+          },
+          {
+            "id": "efb9a9df-c5b2-4658-bd19-a0197f7b432a",
+            "slug": "banh-thong-ke-luc-luong-phuong-tien-chua-chay-cuu-nan-cuu-ho-du-ky-huy-dong",
+            "sha256": "54a20cabd9247f32f8836c207ea87c3b295116e3004f8aa2805724b65a32f862"
+          },
+          {
+            "id": "f3a92ab3-63f9-4a66-a994-46e0e64a92db",
+            "slug": "danh-sach-phuong-tien-thiet-bi-tren-dia-ban-cap-xa-co-the-huy-dong-khi-xay-ra-tai-nan-su-co-cung-loai-hinh",
+            "sha256": "0192875becfb054148cf0e3fdf3e039155662c0876f4bd2cb0bae05f2bf2ccb6"
+          },
+          {
+            "id": "f49add63-fcd8-4938-ac91-1e2996951835",
+            "slug": "danh-sach-dai-diem-khu-vuc-tren-dia-ban-cap-xa-co-nguy-co-xay-ra-tai-nan-su-co-cung-loai-hinh",
+            "sha256": "da0190179b518123c605054f2042788e05e23ed9e409a833c0520947573ac6c5"
+          },
+          {
+            "id": "f6965ea4-8ac9-49b8-8677-3cf8d735633a",
+            "slug": "dieu-39-105-2025-nd-cp-generated",
+            "sha256": "4a5e6703d85ab39d3fc9306e6ed99d134d87cdeee949e197e1c2f336fb31b230"
+          },
+          {
+            "id": "fb9bbde8-5ba9-4f5d-9585-5db5b71c57ee",
+            "slug": "bien-phap-sou-cuu-ngay-khi-dua-nan-nhan-den-vi-tri-an-toan",
+            "sha256": "2083cf3763f4c76bace26d3cbb8a802483779f97265ad42076bde8b4b6711369"
+          },
+          {
+            "id": "fd0e4fca-d3d8-45a5-a9b9-17a6bf3c6f69",
+            "slug": "dieu-24-105-2025-nd-cp",
+            "sha256": "9dcb8476199665f43fffafc8d48cba1f3d60e50f0877fa2d974a0bffcccf8ca3"
+          },
+          {
+            "id": "fdadaa29-9263-4cca-af20-0076a4c97b9f",
+            "slug": "noi-quy-phong-chay-chua-chay-va-cuu-nan-cuu-ho",
+            "sha256": "1b34e169640e11f1f24e941aa104dc0150098311fa0f825efe1b029e5d229969"
+          },
+          {
+            "id": "ff0bdb54-2ae0-4846-bcb0-43448e580bb6",
+            "slug": "dieu-7-105-2025-nd-cp",
+            "sha256": "c71572eaa3ff6197455fa222bb0ca7466b96fb9abc9f759abe1f073663c1ab12"
+          },
+          {
+            "id": "ffb72add-8dd6-46b9-a092-15e0ebf7100a",
+            "slug": "co-che-thong-tin-chi-huy-dieu-hanh",
+            "sha256": "2b1f167a8d5e4b9b2341271fdb7874b23a30484b2e6c0d3cfa50e25a0d91e9cd"
+          }
+        ]
+      }
+    }
+  ],
+  "provider_ready": true
+}

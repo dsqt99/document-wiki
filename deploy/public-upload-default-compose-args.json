@@ -1,0 +1,20 @@
+[
+  "--project-directory",
+  "D:/code/dsqt/conganhungyen/chatbot_cahy/final_ban_giao/cahy_wiki",
+  "--env-file",
+  "D:/code/dsqt/conganhungyen/chatbot_cahy/final_ban_giao/cahy_wiki/.env",
+  "--file",
+  "C:\\Users\\DEV\\.codex\\worktrees\\cahy-wiki-source-info-20261022\\docker-compose.yml",
+  "--file",
+  "C:\\Users\\DEV\\.codex\\worktrees\\cahy-wiki-source-info-20261022\\deploy\\compose.legal-flow.json",
+  "--file",
+  "C:\\Users\\DEV\\AppData\\Local\\Temp\\claude\\D--code-dsqt-conganhungyen-chatbot-cahy-final-ban-giao\\70b8650a-4c29-4baa-9199-d974bb9ec2ef\\scratchpad\\compose.label-wiki.json",
+  "--file",
+  "C:\\Users\\DEV\\.codex\\worktrees\\cahy-wiki-source-info-20261022\\deploy\\compose.wiki-labels-vi.json",
+  "--file",
+  "C:\\Users\\DEV\\AppData\\Local\\Temp\\claude\\D--code-dsqt-conganhungyen-chatbot-cahy-final-ban-giao\\70b8650a-4c29-4baa-9199-d974bb9ec2ef\\scratchpad\\compose.rewrite-wiki.json",
+  "--file",
+  "C:\\Users\\DEV\\AppData\\Local\\Temp\\claude\\D--code-dsqt-conganhungyen-chatbot-cahy-final-ban-giao\\70b8650a-4c29-4baa-9199-d974bb9ec2ef\\scratchpad\\compose.discover-wiki.json",
+  "--file",
+  "C:\\Users\\DEV\\.codex\\worktrees\\cahy-wiki-source-info-20261022\\deploy\\compose.public-upload-default.json"
+]

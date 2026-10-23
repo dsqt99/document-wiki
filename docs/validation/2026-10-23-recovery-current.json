@@ -1,0 +1,60 @@
+{
+  "at_utc": "2026-10-23T14:00:20.183996+00:00",
+  "read_only": true,
+  "sources": [
+    {
+      "id": "b1372cdc-5cc5-423b-8a1b-1c965ba58889",
+      "status": "processing",
+      "wiki_status": "queued",
+      "phase": "commit",
+      "progress": 0,
+      "draft_count": 79,
+      "planned_pages": 79,
+      "job_id": "6f2dcddd1d0745cdbb22880569928ae3",
+      "job_status": "queued",
+      "live_lease_seconds": -2
+    },
+    {
+      "id": "440a3202-400c-48ea-8647-6c0647fcb642",
+      "status": "processing",
+      "wiki_status": "queued",
+      "phase": "refine",
+      "progress": 0,
+      "draft_count": 5,
+      "planned_pages": 58,
+      "job_id": "c6431c7c567a408cae8d6ecdd6a52f07",
+      "job_status": "queued",
+      "live_lease_seconds": -2
+    },
+    {
+      "id": "ec027731-8a58-4974-9106-456f5ba2eb0c",
+      "status": "processing",
+      "wiki_status": "refining",
+      "phase": "refine",
+      "progress": 78,
+      "draft_count": 79,
+      "planned_pages": 106
+    },
+    {
+      "id": "d6de6e95-ee4e-4a31-9377-d4eca7fe77c1",
+      "status": "processing",
+      "wiki_status": "refining",
+      "phase": "verify",
+      "progress": 95,
+      "draft_count": 73,
+      "planned_pages": 74,
+      "job_id": "ac528a5e6f9943849e081638c1ca5250",
+      "job_status": "in_progress",
+      "live_lease_seconds": 5259
+    },
+    {
+      "id": "041d3b9c-bb3b-42b4-b82d-a6ff69a34c24",
+      "status": "pending",
+      "wiki_status": "pending",
+      "phase": null,
+      "progress": 0,
+      "draft_count": 0,
+      "planned_pages": 0
+    }
+  ]
+}

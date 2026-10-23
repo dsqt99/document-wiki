@@ -1,0 +1,7 @@
+ARG RUNTIME_BASE
+FROM ${RUNTIME_BASE}
+COPY app/routers/sources.py /tmp/reviewed-sources.py
+COPY deploy/apply-public-label-default.py /tmp/apply-public-label-default.py
+RUN python /tmp/apply-public-label-default.py
+ARG BUILD_REVISION=unknown
+LABEL org.opencontainers.image.revision=$BUILD_REVISION

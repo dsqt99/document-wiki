@@ -1,0 +1,11 @@
+{
+  "employee_id": "ec9dc679-dfdf-4f63-bd78-142a0a8d62c1",
+  "external_id": "7b5db72c-e480-4bad-9147-a92a870475bf",
+  "clearance_level": "PUBLIC",
+  "role": "employee",
+  "global_role": "viewer",
+  "global_role_source": "sso",
+  "roles": [
+    "user"
+  ]
+}
