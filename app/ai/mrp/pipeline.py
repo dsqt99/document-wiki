@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from copy import copy
+from types import SimpleNamespace
 from typing import Any, Optional
 
 from loguru import logger
@@ -42,7 +43,7 @@ async def _merge_llm(session):
 
 
 async def run_commit_phase(session, source, page_results, plan, embedding_provider, embedding_spec,
-                           kt_slug, tracker) -> dict:
+                           kt_slug, tracker, *, expected_fingerprint: Optional[str] = None) -> dict:
     from app.database.models import Source
 
     wiki_scopes = await _resolve_wiki_scopes(session, source)
@@ -74,6 +75,31 @@ async def run_commit_phase(session, source, page_results, plan, embedding_provid
     merge_llm = await _merge_llm(session)
 
     await _progress(tracker, 95, f"Saving {len(good)} wiki page(s)...")
+    if expected_fingerprint is not None:
+        from app.ai.mrp.writer import checkpoint_fingerprint
+        from app.database.models import SourceCompilationPlan
+
+        # ProgressTracker uses a separate Source session: finish it before
+        # taking this lock. Hold source + plan locks through publication and
+        # the final commit, including the all-reused checkpoint path.
+        if plan is None or not await source_quality.lock_current_attempt(session, source, "wiki"):
+            await session.rollback()
+            return {"status": "stale"}
+        current = (await session.execute(
+            select(Source.full_text, Source.outline_json, Source.attempt_id)
+            .where(Source.id == source.id).execution_options(autoflush=False)
+        )).one_or_none()
+        latest_plan = (await session.execute(
+            select(SourceCompilationPlan.plan_json).where(SourceCompilationPlan.id == plan.id)
+            .with_for_update().execution_options(autoflush=False)
+        )).scalar_one_or_none()
+        snapshot = SimpleNamespace(id=source.id, attempt_id=current.attempt_id,
+                                   outline_json=current.outline_json) if current is not None else None
+        if (snapshot is None or not isinstance(latest_plan, dict)
+                or checkpoint_fingerprint(snapshot, plan, current.full_text, kt_slug,
+                                          plan_json=latest_plan) != expected_fingerprint):
+            await session.rollback()
+            return {"status": "stale"}
     created = 0
     updated = 0
     kt_list = [kt_slug] if kt_slug else []
@@ -362,6 +388,7 @@ async def run_refine_pipeline(session, source, full_text, tracker, registry, kt_
     plan = await _load_plan(session, source.id)
     if plan is None or plan.status not in ("approved", "in_progress", "done"):
         raise ValueError("No approved compilation plan for this source")
+    expected_fingerprint = writer.checkpoint_fingerprint(source, plan, full_text, kt_slug)
 
     rows = (await session.execute(
         select(SourceChunkExtract)
@@ -401,4 +428,5 @@ async def run_refine_pipeline(session, source, full_text, tracker, registry, kt_
         await session.commit()
 
     results = await verifier.run_verify_phase(session, source, results, rows, full_text, llm, emb, tracker)
-    return await run_commit_phase(session, source, results, plan, emb, embedding_spec, kt_slug, tracker)
+    return await run_commit_phase(session, source, results, plan, emb, embedding_spec, kt_slug, tracker,
+                                  expected_fingerprint=expected_fingerprint)

@@ -7,7 +7,7 @@ import uuid
 
 import pytest
 
-from app.ai.mrp import pipeline, writer
+from app.ai.mrp import pipeline, writer, verifier
 from app.services.wiki_write_guard import make_failure_stub
 
 
@@ -190,6 +190,77 @@ async def test_checkpoint_with_wrong_or_duplicate_slug_regenerates_that_item():
     plan.plan_json["_page_drafts"].append(deepcopy(plan.plan_json["_page_drafts"][1]))
     _, generated = await run_writer(source, plan)
     assert generated == ["page-0-generated", "page-1-generated"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("change", ["text", "outline", "plan", "attempt", None])
+async def test_final_publication_rechecks_all_reused_drafts_after_verify(change):
+    source, plan = source_and_plan(1)
+    source.pipeline_phase = "commit"
+    plan.status = "done"
+    draft = writer.PageWriteResult("page-0", "Page", "concept", "CREATE", source.full_text, "")
+    plan.plan_json["_page_drafts"] = [draft.to_dict()]
+    plan.plan_json["_page_drafts_checkpoint"] = {
+        "fingerprint": writer.checkpoint_fingerprint(source, plan, source.full_text),
+        "slugs": {"page-0": "page-0"},
+    }
+    stored = SimpleNamespace(full_text=source.full_text, outline_json=None, attempt_id=source.attempt_id)
+    stored_plan = deepcopy(plan.plan_json)
+    current_attempt = True
+    events = []
+    tracker = SimpleNamespace(update=AsyncMock(side_effect=lambda *a: events.append("progress")))
+    def check_attempt(*args):
+        assert events == ["progress"]  # Separate-session progress must finish before source lock.
+        events.append("source_lock")
+        return current_attempt
+    db = AsyncMock()
+    def query(*args, **kwargs):
+        result = MagicMock()
+        result.scalars.return_value.all.return_value = []
+        result.one_or_none.return_value = stored
+        result.scalar_one_or_none.return_value = stored_plan
+        return result
+    db.execute.side_effect = query
+    db.get.return_value = source
+    async def verify(*args):
+        nonlocal current_attempt
+        if change == "text":
+            stored.full_text = "Concurrently corrected source."
+        elif change == "outline":
+            stored.outline_json = [{"title": "New outline"}]
+        elif change == "plan":
+            stored_plan["pages"][0]["entity_names"] = ["Changed plan"]
+        elif change == "attempt":
+            current_attempt = False
+        return args[2]
+    registry = AsyncMock()
+    registry.get_active_embedding_spec_id.return_value = None
+    with patch.object(pipeline, "_load_plan", AsyncMock(return_value=plan)), \
+         patch.object(writer, "run_refine_phase", AsyncMock()) as refine, \
+         patch.object(verifier, "run_verify_phase", AsyncMock(side_effect=verify)), \
+         patch.object(pipeline, "_resolve_wiki_scopes", AsyncMock(return_value=[("global", None)])), \
+         patch.object(pipeline, "_merge_llm", AsyncMock(return_value=None)), \
+         patch.object(pipeline, "_lock", AsyncMock()), \
+         patch("app.services.wiki_origin_service.resolve_target_slug", AsyncMock(side_effect=lambda db, slug, *a: slug)), \
+         patch.object(pipeline.wiki_service, "get_page_by_slug", AsyncMock(return_value=None)), \
+         patch.object(pipeline.wiki_service, "apply_create", AsyncMock(return_value=SimpleNamespace(content_md=source.full_text))) as create, \
+         patch.object(pipeline.wiki_service, "regenerate_index", AsyncMock()), \
+         patch.object(pipeline.wiki_service, "append_log", AsyncMock()), \
+         patch.object(pipeline.source_quality, "save_quality", AsyncMock(return_value=True)) as save, \
+         patch.object(pipeline.source_quality, "lock_current_attempt", AsyncMock(side_effect=check_attempt)), \
+         patch.object(pipeline.source_status, "update_source_dual_status", AsyncMock()) as state:
+        result = await pipeline.run_refine_pipeline(db, source, source.full_text, tracker, registry, None, None, None)
+    refine.assert_not_awaited()
+    assert events == ["progress", "source_lock"]
+    if change:
+        assert result == {"status": "stale"}
+        create.assert_not_awaited()
+        state.assert_not_awaited()
+        save.assert_not_awaited()
+        db.rollback.assert_awaited_once()
+    else:
+        assert result["pages_created"] == 1
+        create.assert_awaited_once()
 
 
 @pytest.mark.asyncio
