@@ -257,7 +257,10 @@ async def save_custom_model(
     renamed = original is not None and original.id != spec_id
     if existing is not None and (original is None or renamed):
         raise HTTPException(status_code=409, detail="Model này đã có trong danh sách.")
-    if renamed and (await _active_ids(db)).get(body.kind) == original.id:
+    # LLM/vision only point at the model by id, so a rename can move the pointer along.
+    # Other kinds keep derived state (embedding tables, OCR keys) and must be switched first.
+    move_active = renamed and (await _active_ids(db)).get(body.kind) == original.id
+    if move_active and body.kind not in ("llm", "vision"):
         raise HTTPException(
             status_code=409,
             detail="Model đang dùng: không đổi được tên model/số chiều. Chuyển sang model khác trước.",
@@ -275,6 +278,11 @@ async def save_custom_model(
     if renamed:
         await delete_custom(db, body.kind, original.id)
     await save_custom(db, model, api_key)
+    if move_active:
+        from app.services.config_service import ACTIVE_LLM_MODEL_KEY, ACTIVE_VISION_MODEL_KEY, ConfigService
+
+        key = ACTIVE_LLM_MODEL_KEY if body.kind == "llm" else ACTIVE_VISION_MODEL_KEY
+        await ConfigService(db).set(key, spec_id)
     # Keep the OCR keys in sync when the edited model is the OCR model in use.
     if body.kind == "ocr" and (await _active_ids(db))["ocr"] == spec_id:
         await _apply_ocr(db, spec_id, None)
@@ -401,6 +409,13 @@ async def resolve_probe_endpoint(db: AsyncSession, body: EndpointIn) -> tuple[st
         base_url = (body.base_url or "").strip()
         if not base_url.startswith(("http://", "https://")):
             raise HTTPException(status_code=400, detail="Base URL must start with http:// or https://")
+        if not typed_key:
+            # "Để trống = giữ key hiện tại": reuse the key of a saved model on the same endpoint.
+            for saved in await list_custom(db):
+                if saved.base_url.rstrip("/") == base_url.rstrip("/"):
+                    typed_key = await get_api_key(db, saved.kind, saved.id) or None
+                    if typed_key:
+                        break
         # Local servers (vLLM, Ollama) often need no auth; the SDK refuses an empty key.
         return base_url, typed_key or "none"
     svc = ConfigService(db)

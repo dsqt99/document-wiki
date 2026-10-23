@@ -242,3 +242,92 @@ async def test_edit_custom_model_renames_and_keeps_key(store, monkeypatch):
 
 async def _async(value):
     return value
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("supplied_key", [None, "", "••••saved", "typed-key"])
+async def test_discovery_reuses_saved_endpoint_key_unless_typed(store, supplied_key):
+    from app.routers import admin_custom_models as r
+
+    await cm.save_custom(None, cm.CustomModel(
+        id="custom/other", kind="llm", model_id="other", label="Other",
+        base_url="http://other.local/v1"), "other-key")
+    await cm.save_custom(None, cm.CustomModel(
+        id="custom/saved", kind="vision", model_id="saved", label="Saved",
+        base_url="http://models.local/v1/"), "saved-key")
+    endpoint, key = await r.resolve_probe_endpoint(None, r.EndpointIn(
+        kind="llm", base_url="http://models.local/v1", api_key=supplied_key))
+    assert endpoint == "http://models.local/v1"
+    assert key == ("typed-key" if supplied_key == "typed-key" else "saved-key")
+
+
+@pytest.mark.asyncio
+async def test_discovery_does_not_reuse_key_from_different_endpoint(store):
+    from app.routers import admin_custom_models as r
+
+    await cm.save_custom(None, cm.CustomModel(
+        id="custom/private", kind="llm", model_id="private", label="Private",
+        base_url="http://private.local/v1"), "private-key")
+    assert await r.resolve_probe_endpoint(None, r.EndpointIn(
+        kind="llm", base_url="http://new.local/v1")) == ("http://new.local/v1", "none")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind,active_key", [
+    ("llm", "active_llm_model_spec_id"),
+    ("vision", "active_vision_model_spec_id"),
+])
+async def test_rename_active_llm_or_vision_moves_pointer_and_keeps_key(store, monkeypatch, kind, active_key):
+    from app.ai.registry import ProviderRegistry
+    from app.routers import admin_custom_models as r
+
+    class FakeDb:
+        async def commit(self):
+            pass
+
+    async def no_audit(*args, **kwargs):
+        pass
+
+    monkeypatch.setattr(r, "log_audit", no_audit)
+    await cm.save_custom(None, cm.CustomModel(
+        id="custom/old", kind=kind, model_id="old", label="Old",
+        base_url="http://models.local/v1"), "saved-key")
+    store[active_key] = "custom/old"
+    # Keep the other selector untouched even if it uses the same model name.
+    other_key = "active_vision_model_spec_id" if kind == "llm" else "active_llm_model_spec_id"
+    store[other_key] = "custom/other"
+    result = await r.save_custom_model(r.CustomModelIn(
+        kind=kind, model_id="new", original_id="custom/old",
+        base_url="http://models.local/v1", api_key="••••saved"), FakeDb(), None)
+    assert result.id == "custom/new" and store[active_key] == "custom/new"
+    assert store[other_key] == "custom/other"
+    assert await cm.get_custom(None, kind, "custom/old") is None
+    assert await cm.get_api_key(None, kind, "custom/old") == ""
+    assert await cm.get_api_key(None, kind, "custom/new") == "saved-key"
+    registry = ProviderRegistry(None)
+    config = await (registry._load_llm_config() if kind == "llm" else registry._load_vision_config())
+    assert (config.model_id, config.api_key) == ("new", "saved-key")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind,active_key,dimension", [
+    ("embedding", "active_embedding_model_spec_id", 1024),
+    ("ocr", "ocr_model_spec_id", None),
+    ("rerank", "active_reranker_model_spec_id", None),
+])
+async def test_rename_other_active_kinds_stays_blocked(store, kind, active_key, dimension):
+    from fastapi import HTTPException
+    from app.routers import admin_custom_models as r
+
+    old_id = cm.make_id(kind, "old", dimension)
+    await cm.save_custom(None, cm.CustomModel(
+        id=old_id, kind=kind, model_id="old", label="Old", dimension=dimension,
+        base_url="http://models.local/v1"), "saved-key")
+    store[active_key] = old_id
+    with pytest.raises(HTTPException) as error:
+        await r.save_custom_model(r.CustomModelIn(
+            kind=kind, model_id="new", original_id=old_id,
+            dimension=dimension, base_url="http://models.local/v1"), None, None)
+    assert error.value.status_code == 409
+    assert store[active_key] == old_id
+    assert await cm.get_api_key(None, kind, old_id) == "saved-key"
