@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.database.models import LegalRelation, LegalUnit, Source
@@ -20,6 +20,9 @@ async def db():
         # No source text, real sources or configured database are touched.
         await conn.run_sync(LegalUnit.__table__.create)
         await conn.run_sync(LegalRelation.__table__.create)
+        # The real slug lookup joins only these page columns. Avoid emulating
+        # PostgreSQL ARRAY fields that are unrelated to this SQLite regression.
+        await conn.execute(text("CREATE TABLE wiki_pages (id CHAR(32) PRIMARY KEY, slug TEXT NOT NULL)"))
     async with async_sessionmaker(engine, expire_on_commit=False)() as session:
         yield session
     await engine.dispose()
@@ -228,3 +231,59 @@ async def test_relation_tool_marks_unresolved_graph_incomplete(db):
     data = output.structured_content
     assert data["verification_status"] == "unresolved" and data["unresolved_count"] == 1
     assert data["checked_sources"] == [{"source_id": str(source.id), "doc_number": "99/2026/TT-BTC"}]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("target_kind", ["article", "document"])
+async def test_slug_relation_lookup_excludes_resolved_edges_to_duplicate_source(db, target_kind):
+    from fastmcp import FastMCP
+    from app.mcp.tools import register_tools
+    source_a = await ingest(db, "12/2020/TT-BTC")
+    source_b = await ingest(db, "12/2020/TT-BTC")
+    modifier = await ingest(db, "99/2026/TT-BTC")
+    article_a = (await db.execute(select(LegalUnit).where(
+        LegalUnit.source_id == source_a.id, LegalUnit.unit_type == "article"))).scalar_one()
+    target_b = (await db.execute(select(LegalUnit).where(
+        LegalUnit.source_id == source_b.id, LegalUnit.unit_type == target_kind))).scalar_one()
+    modifying_unit = (await db.execute(select(LegalUnit).where(
+        LegalUnit.source_id == modifier.id, LegalUnit.unit_type == "article"))).scalar_one()
+    page_id = uuid.uuid4()
+    await db.execute(text("INSERT INTO wiki_pages (id, slug) VALUES (:id, :slug)"),
+                     {"id": page_id.hex, "slug": "source-a-article-1"})
+    article_a.wiki_page_id = page_id
+    edge = LegalRelation(id=uuid.uuid4(), source_unit_id=modifying_unit.id,
+        target_unit_id=target_b.id, target_doc_number="12/2020/TT-BTC",
+        target_article_number="1" if target_kind == "article" else None,
+        relation_type="bai_bo", quote_context="Applies only to source B", is_effective=True)
+    db.add(edge)
+    await db.commit()
+    app = FastMCP("duplicate-source-slug")
+    register_tools(app)
+    tool = await app.get_tool("get_document_relations")
+    with patch("app.mcp.tools._get_identity", new_callable=AsyncMock, return_value=(SimpleNamespace(is_admin=False), None)), \
+         patch("app.mcp.tools._get_allowed_source_ids", new_callable=AsyncMock,
+               return_value=[str(s.id) for s in [source_a, source_b, modifier]]), \
+         patch("app.database.async_session_factory") as factory:
+        factory.return_value.__aenter__.return_value = db
+        output = await tool.fn(slug="source-a-article-1")
+    data = output.structured_content
+    assert data["checked_sources"] == [{"source_id": str(source_a.id), "doc_number": "12/2020/TT-BTC"}]
+    assert data["relations"] == []
+    assert data["verification_status"] == "checked"
+    assert str(edge.id) not in str(data)
+    assert "Applies only to source B" not in str(output.content)
+
+
+@pytest.mark.asyncio
+async def test_article_link_is_ambiguous_when_duplicate_source_has_no_article_yet(db):
+    await ingest(db, "12/2020/TT-BTC")
+    pending = Source(id=uuid.uuid4(), title="Same number, incomplete hierarchy")
+    await ingest_legal_graph(db, pending, [], doc_number="12/2020/TT-BTC")
+    await db.commit()
+    modifier = await ingest(db, "99/2026/TT-BTC", "Bãi bỏ Điều 1 của Thông tư số 12/2020/TT-BTC.")
+    result = await relink_legal_relations(db, source_id=modifier.id)
+    edge = (await db.execute(select(LegalRelation))).scalar_one()
+    assert edge.target_unit_id is None
+    assert result["linked_count"] == 0
+    assert result["unresolved_count"] == 1
+    assert result["ambiguous_count"] == 1

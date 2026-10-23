@@ -1080,7 +1080,10 @@ def register_tools(mcp) -> None:  # noqa: C901 - one registry for all tools
             out_q = scoped(select(LegalRelation).join(LegalUnit, LegalRelation.source_unit_id == LegalUnit.id)
                 .where(LegalRelation.source_unit_id.in_(unit_ids))
                 .options(contains_eager(LegalRelation.source_unit), selectinload(LegalRelation.target_unit)))
-            named_target = _doc_col(LegalRelation.target_doc_number) == norm
+            # A resolved edge belongs to its exact source/unit identity, even
+            # when another accessible source has the same document number.
+            named_target = and_(LegalRelation.target_unit_id.is_(None),
+                                _doc_col(LegalRelation.target_doc_number) == norm)
             if art or slug:
                 selected_art = art or str(units[0].unit_number or "").lower()
                 named_target = and_(named_target, or_(LegalRelation.target_article_number.is_(None),

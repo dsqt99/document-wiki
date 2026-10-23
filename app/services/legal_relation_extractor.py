@@ -332,16 +332,17 @@ async def relink_legal_relations(
             target_unit_query = target_unit_query.where(func.lower(LegalUnit.unit_number) == target_art)
         unit_res = await session.execute(target_unit_query.limit(2))
         candidates = list(unit_res.scalars().all())
+        # An incomplete duplicate source might not have this article yet. Check
+        # document identity across all units before resolving any target level.
+        source_res = await session.execute(select(LegalUnit.source_id).where(
+            normalized_doc_column(LegalUnit.doc_number) == target_doc).distinct().limit(2))
+        source_ids = list(source_res.scalars().all())
+        if len(source_ids) > 1:
+            ambiguous_count += 1
+            unresolved_count += 1
+            continue
         if not target_art:
-            # Legacy graphs lack roots. Inspect all matching source identities as
-            # well as roots, so an existing root cannot mask a duplicate source.
-            source_res = await session.execute(select(LegalUnit.source_id).where(
-                normalized_doc_column(LegalUnit.doc_number) == target_doc).distinct().limit(2))
-            source_ids = list(source_res.scalars().all())
-            if len(source_ids) > 1:
-                ambiguous_count += 1
-                unresolved_count += 1
-                continue
+            # Legacy graphs can lack the otherwise uniquely identified root.
             if not candidates and len(source_ids) == 1:
                 key = (source_ids[0], target_doc)
                 root = planned_roots.get(key)
