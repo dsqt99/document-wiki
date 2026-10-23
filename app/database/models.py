@@ -61,6 +61,7 @@ WIKI_DRAFT_STATUSES = ("pending", "needs_revision", "withdrawn", "approved", "re
 
 
 class LegalUnitType(str, enum.Enum):
+    DOCUMENT = "document"
     PART = "part"
     CHAPTER = "chapter"
     SECTION = "section"

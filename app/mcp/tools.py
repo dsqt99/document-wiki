@@ -485,7 +485,8 @@ _ARM_LABELS = {"wiki": "trang wiki", "source": "văn bản gốc", "exact": "tra
 
 
 def _norm_doc_number(value: str) -> str:
-    return re.sub(r"\s+", "", (value or "").strip()).upper()
+    from app.services.legal_relation_extractor import normalize_doc_number
+    return normalize_doc_number(value)
 
 
 def _norm_article(value: str) -> str:
@@ -495,7 +496,8 @@ def _norm_article(value: str) -> str:
 
 
 def _doc_col(col):
-    return func.upper(func.replace(col, " ", ""))
+    from app.services.legal_relation_extractor import normalized_doc_column
+    return normalized_doc_column(col)
 
 
 def _rel_type(rel) -> str:
@@ -515,7 +517,7 @@ def _target_ref(rel, allowed: Optional[set[str]]) -> str:
     target = getattr(rel, "target_unit", None)
     if target is not None and (allowed is None or str(target.source_id) in allowed):
         return _unit_ref(target)
-    doc = getattr(rel, "target_doc_number", None) or (getattr(target, "doc_number", None) if target else None)
+    doc = getattr(rel, "target_doc_number", None)
     return doc or "văn bản chưa rõ số hiệu"
 
 
@@ -554,11 +556,12 @@ def _relations_block(outgoing: list, incoming: list, limit: int, allowed) -> str
     return "\n".join(lines)
 
 
-async def _validity_callout(session, unit_id) -> str:
+async def _validity_callout(session, unit_id, *, identity) -> str:
     try:
         from app.services import legal_service
 
-        warnings = await legal_service.get_legal_unit_validity_warnings(session, unit_id)
+        allowed = await _this()._get_allowed_source_ids(identity, session)
+        warnings = await legal_service.get_legal_unit_validity_warnings(session, unit_id, allowed_source_ids=allowed)
         return legal_service.format_legal_validity_warning_callout(warnings) if warnings else ""
     except Exception as e:
         logger.debug("validity warnings failed: %s", e)
@@ -973,7 +976,7 @@ def register_tools(mcp) -> None:  # noqa: C901 - one registry for all tools
             unit = (await session.execute(select(LegalUnit).where(LegalUnit.wiki_page_id == page.id)
                     .order_by(case((LegalUnit.unit_type == "article", 0), else_=1)).limit(1))).scalars().first()
             if unit is not None:
-                callout = await _validity_callout(session, unit.id)
+                callout = await _validity_callout(session, unit.id, identity=identity)
                 if callout:
                     parts.append(callout)
             window = payloads.text_window(page.content_md, offset=offset, max_chars=max_chars)
@@ -1018,109 +1021,97 @@ def register_tools(mcp) -> None:  # noqa: C901 - one registry for all tools
         article_number: Optional[str] = None,
         slug: Optional[str] = None,
         limit: int = 50,
-    ) -> str:
+    ) -> Any:
         identity, err = await _this()._get_identity()
         if err:
             return err
         from app.database.models import LegalRelation, LegalUnit, WikiPage
 
         limit = _clamp(limit, 1, 200, 50)
-        doc_number = (doc_number or "").strip() or None
+        norm = _norm_doc_number(doc_number or "")
         art = _norm_article(article_number) if article_number else ""
         slug = (slug or "").strip() or None
 
+        def outcome(text, verification, *, checked=None, **data):
+            return payloads.knowledge_result(
+                text, status="ok" if verification in ("checked", "unresolved") else verification,
+                verification_status=verification, doc_number=norm or None,
+                article_number=art or None, checked_sources=checked or [],
+                source_ids=[s["source_id"] for s in checked or []], validity_known=False,
+                **data)
+
+        if not norm and not slug:
+            return outcome("Vui lòng cung cấp số hiệu văn bản hoặc slug hợp lệ.", "not_found")
         async with _db().async_session_factory() as session:
             allowed = await _this()._get_allowed_source_ids(identity, session)
             if allowed is not None and not allowed:
-                return NO_SCOPE_MSG
+                return outcome(NO_SCOPE_MSG, "not_found")
             allowed_uuids = [u for u in (_as_uuid(a) for a in allowed) if u] if allowed is not None else None
 
             def scoped(q, col=LegalUnit.source_id):
                 return q.where(col.in_(allowed_uuids)) if allowed_uuids is not None else q
 
-            unit = None
-            if doc_number and art:
-                norm = _norm_doc_number(doc_number)
-                dcol = _doc_col(LegalUnit.doc_number)
-                q = scoped(
-                    select(LegalUnit).where(
-                        dcol.like(f"%{norm}%"),
-                        LegalUnit.unit_type == "article",
-                        func.lower(LegalUnit.unit_number) == art,
-                    )
-                ).order_by(case((dcol == norm, 0), (dcol.like(f"{norm}%"), 1), else_=2)).limit(1)
-                unit = (await session.execute(q)).scalars().first()
-
-            if unit is None and slug:
-                q = scoped(
-                    select(LegalUnit)
-                    .join(WikiPage, LegalUnit.wiki_page_id == WikiPage.id)
-                    .where(WikiPage.slug == slug)
-                ).order_by(case((LegalUnit.unit_type == "article", 0), else_=1)).limit(1)
-                unit = (await session.execute(q)).scalars().first()
-                if unit is None and not (doc_number and art):
-                    if not doc_number:
-                        return f"Không tìm thấy điều khoản gắn với trang `{slug}` (hoặc bạn không có quyền)."
-
-            if unit is not None:
-                header = f"## Quan hệ văn bản: {unit.full_path or unit.title or ''} ({unit.doc_number or 'chưa rõ số hiệu'})"
-                callout = await _validity_callout(session, unit.id)
-                out_q = (
-                    select(LegalRelation)
-                    .where(LegalRelation.source_unit_id == unit.id)
-                    .options(selectinload(LegalRelation.target_unit))
-                    .limit(limit + 1)
-                )
-                outgoing = list((await session.execute(out_q)).scalars().all())
-                incoming_cond = [LegalRelation.target_unit_id == unit.id]
-                if unit.doc_number and unit.unit_number:
-                    incoming_cond.append(
-                        and_(
-                            _doc_col(LegalRelation.target_doc_number) == _norm_doc_number(unit.doc_number),
-                            func.lower(LegalRelation.target_article_number) == str(unit.unit_number).lower(),
-                        )
-                    )
-                in_q = scoped(
-                    select(LegalRelation)
-                    .join(LegalUnit, LegalRelation.source_unit_id == LegalUnit.id)
-                    .where(or_(*incoming_cond))
-                    .options(contains_eager(LegalRelation.source_unit))
-                ).limit(limit + 1)
-                incoming = list((await session.execute(in_q)).scalars().all())
-                body = _relations_block(outgoing, incoming, limit, allowed)
-                return "\n\n".join(p for p in (header, callout, body) if p)
-
-            if doc_number:
-                norm = _norm_doc_number(doc_number)
-                SrcU = aliased(LegalUnit)
-                TgtU = aliased(LegalUnit)
-                out_q = scoped(
-                    select(LegalRelation)
-                    .join(SrcU, LegalRelation.source_unit_id == SrcU.id)
-                    .where(_doc_col(SrcU.doc_number).like(f"%{norm}%"))
-                    .options(contains_eager(LegalRelation.source_unit.of_type(SrcU)), selectinload(LegalRelation.target_unit)),
-                    SrcU.source_id,
-                ).limit(limit + 1)
-                outgoing = list((await session.execute(out_q)).scalars().all())
-                in_q = scoped(
-                    select(LegalRelation)
-                    .join(SrcU, LegalRelation.source_unit_id == SrcU.id)
-                    .outerjoin(TgtU, LegalRelation.target_unit_id == TgtU.id)
-                    .where(
-                        or_(
-                            _doc_col(LegalRelation.target_doc_number).like(f"%{norm}%"),
-                            _doc_col(TgtU.doc_number).like(f"%{norm}%"),
-                        ),
-                        not_(func.coalesce(_doc_col(SrcU.doc_number), literal("")).like(f"%{norm}%")),
-                    )
-                    .options(contains_eager(LegalRelation.source_unit.of_type(SrcU))),
-                    SrcU.source_id,
-                ).limit(limit + 1)
-                incoming = list((await session.execute(in_q)).scalars().all())
-                header = f"## Quan hệ văn bản: {doc_number}"
-                return header + "\n\n" + _relations_block(outgoing, incoming, limit, allowed)
-
-        return "Vui lòng cung cấp `doc_number` (kèm `article_number` nếu cần) hoặc `slug` hợp lệ."
+            q = select(LegalUnit)
+            if norm:
+                q = q.where(_doc_col(LegalUnit.doc_number) == norm)
+            if art:
+                q = q.where(LegalUnit.unit_type == "article", func.lower(LegalUnit.unit_number) == art)
+            if slug:
+                q = q.join(WikiPage, LegalUnit.wiki_page_id == WikiPage.id).where(WikiPage.slug == slug)
+            units = list((await session.execute(scoped(q))).scalars().all())
+            identities = {(str(u.source_id), _norm_doc_number(u.doc_number or "")) for u in units}
+            if not identities:
+                return outcome("Không tìm thấy văn bản/điều khoản trong phạm vi được phép.", "not_found")
+            if len(identities) != 1 or (art and len(units) != 1):
+                return outcome("Số hiệu khớp nhiều nguồn; cần xác định đúng trang tài liệu.", "ambiguous",
+                               choices=[{"source_id": sid, "doc_number": number} for sid, number in sorted(identities)])
+            source_id, actual_doc = next(iter(identities))
+            norm = actual_doc
+            checked = [{"source_id": source_id, "doc_number": actual_doc}]
+            unit_ids = [u.id for u in units]
+            target_ids = list(unit_ids)
+            if art or slug:
+                # Include document-root effects on this article, including legacy
+                # graphs whose root was created by the bounded repair command.
+                roots = (await session.execute(scoped(select(LegalUnit).where(
+                    LegalUnit.source_id == uuid.UUID(source_id), LegalUnit.unit_type == "document",
+                    _doc_col(LegalUnit.doc_number) == norm)))).scalars().all()
+                target_ids.extend(r.id for r in roots)
+            out_q = scoped(select(LegalRelation).join(LegalUnit, LegalRelation.source_unit_id == LegalUnit.id)
+                .where(LegalRelation.source_unit_id.in_(unit_ids))
+                .options(contains_eager(LegalRelation.source_unit), selectinload(LegalRelation.target_unit)))
+            named_target = _doc_col(LegalRelation.target_doc_number) == norm
+            if art or slug:
+                selected_art = art or str(units[0].unit_number or "").lower()
+                named_target = and_(named_target, or_(LegalRelation.target_article_number.is_(None),
+                    func.lower(LegalRelation.target_article_number) == selected_art))
+            in_q = scoped(select(LegalRelation).join(LegalUnit, LegalRelation.source_unit_id == LegalUnit.id)
+                .where(or_(LegalRelation.target_unit_id.in_(target_ids), named_target))
+                .options(contains_eager(LegalRelation.source_unit), selectinload(LegalRelation.target_unit)))
+            outgoing = list((await session.execute(out_q.order_by(LegalRelation.id).limit(limit + 1))).scalars().all())
+            incoming = list((await session.execute(in_q.order_by(LegalRelation.id).limit(limit + 1))).scalars().all())
+            truncated = len(outgoing) > limit or len(incoming) > limit
+            records = []
+            for direction, relations in (("outgoing", outgoing[:limit]), ("incoming", incoming[:limit])):
+                for rel in relations:
+                    target = rel.target_unit
+                    readable_target = target is not None and (allowed is None or str(target.source_id) in allowed)
+                    records.append({"relation_id": str(rel.id), "relation_type": _rel_type(rel),
+                        "direction": direction, "is_effective": rel.is_effective,
+                        "resolved": rel.target_unit_id is not None,
+                        "source_id": str(rel.source_unit.source_id),
+                        "source_doc_number": rel.source_unit.doc_number,
+                        "target_doc_number": rel.target_doc_number,
+                        "target_unit_id": str(target.id) if readable_target else None,
+                        "quote_context": rel.quote_context})
+            unresolved = sum(not r["resolved"] for r in records)
+            verification = "unresolved" if unresolved or truncated else "checked"
+            header = f"## Quan hệ văn bản: {norm}" + (f" (Điều {art})" if art else "")
+            callout = await _validity_callout(session, units[0].id, identity=identity) if art or slug else ""
+            body = _relations_block(outgoing, incoming, limit, allowed)
+            caveat = "Kết quả phản ánh quan hệ trong kho cục bộ; không xác nhận hiệu lực pháp luật hiện hành."
+            return outcome("\n\n".join(p for p in (header, callout, body, caveat) if p), verification,
+                           checked=checked, relations=records, unresolved_count=unresolved, truncated=truncated)
 
     # -- list_wiki_pages -----------------------------------------------------
 

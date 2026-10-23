@@ -157,7 +157,7 @@ def test_verbatim_legal_page_detection():
 
 
 @pytest.mark.asyncio
-async def test_relink_tolerates_duplicate_target_units():
+async def test_relink_leaves_duplicate_target_units_unresolved():
     from app.services.legal_relation_extractor import relink_legal_relations
 
     rel = MagicMock(target_doc_number="90/VBHN-VPQH", target_article_number="5",
@@ -175,8 +175,11 @@ async def test_relink_tolerates_duplicate_target_units():
     session.execute = AsyncMock(side_effect=[_res([rel]), _res([art, dup]), _res([clause, dup])])
     session.commit = AsyncMock()
     out = await relink_legal_relations(session)
-    assert out == {"linked_count": 1, "unresolved_count": 0}
-    assert rel.target_unit_id == clause.id
+    assert out["linked_count"] == 0
+    assert out["unresolved_count"] == 1
+    assert out["ambiguous_count"] == 1
+    assert rel.target_unit_id is None
+    session.commit.assert_not_awaited()
 
 
 @pytest.mark.asyncio

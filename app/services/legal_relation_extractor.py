@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from typing import Any, List, Optional
 
 from loguru import logger
-from sqlalchemy import select, update
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.models import LegalRelation, LegalRelationType, LegalUnit, LegalUnitType
@@ -48,9 +48,27 @@ RE_DOC_NUMBER_ANY = re.compile(
     r"(?<![\w/])(\d+(?:/\d{4})?/[A-ZĐ]{1,8}\d*(?:\-[A-ZĐ]{1,8}\d*){0,3})(?![\w/])"
 )
 
+_SEPARATORS = str.maketrans({c: "-" for c in "‐‑‒–—−"} | {"／": "/"})
+
+
+def normalize_doc_number(value: str) -> str:
+    """Canonical exact identifier; never remove meaningful digits or suffixes."""
+    return re.sub(r"\s+", "", (value or "").translate(_SEPARATORS)).upper()
+
+
+def normalized_doc_column(column):
+    """SQL equivalent for stored identifiers, portable to PostgreSQL and SQLite."""
+    for char in "‐‑‒–—−":
+        column = func.replace(column, char, "-")
+    column = func.replace(column, "／", "/")
+    for char in " \t\r\n\u00a0":
+        column = func.replace(column, char, "")
+    return func.upper(func.replace(column, "đ", "Đ"))
+
 
 def find_doc_numbers(text: str) -> list[str]:
     """All doc numbers in `text`, specific pattern first, deduplicated in order."""
+    text = re.sub(r"\s*([/-])\s*", r"\1", text.translate(_SEPARATORS))
     seen: dict[str, None] = {}
     for m in RE_DOC_NUMBER.finditer(text):
         seen.setdefault(m.group(1).upper(), None)
@@ -85,6 +103,7 @@ RE_BAI_BO_CLAUSE = re.compile(
     r"bãi\s+bỏ\s+(?:điểm\s+([a-zđ])\s+)?(?:khoản\s+(\d+)\s+)?Điều\s+(\d+[a-z]?)(?:\s+(?:của|tại)\s+([^;\n\.]+))?",
     re.IGNORECASE,
 )
+RE_THAY_THE_CLAUSE = re.compile(RE_BAI_BO_CLAUSE.pattern.replace(r"bãi\s+bỏ", r"thay\s+thế"), re.IGNORECASE)
 
 # Reference / Citation patterns
 RE_DAN_CHIEU = re.compile(
@@ -109,12 +128,13 @@ class LegalRelationExtractor:
         lines = text.split("\n")
 
         # Global doc numbers found in the text for fallback resolution
-        text_doc_numbers = RE_DOC_NUMBER.findall(text)
-        fallback_target_doc = None
-        for dn in text_doc_numbers:
-            if not default_doc_number or dn.upper() != default_doc_number.upper():
-                fallback_target_doc = dn.upper()
-                break
+        text_doc_numbers = [dn for dn in find_doc_numbers(text)
+                            if dn != normalize_doc_number(default_doc_number or "")]
+        fallback_target_doc = text_doc_numbers[0] if len(text_doc_numbers) == 1 else None
+
+        def target_document(context):
+            docs = find_doc_numbers(context)
+            return docs[0] if len(docs) == 1 else (fallback_target_doc if not docs else None)
 
         for line in lines:
             line_str = line.strip()
@@ -125,8 +145,7 @@ class LegalRelationExtractor:
             for m in RE_SUA_DOI.finditer(line_str):
                 art_num = m.group(1).lower()
                 context = m.group(2) or ""
-                doc_m = RE_DOC_NUMBER.search(context)
-                target_doc = doc_m.group(1).upper() if doc_m else fallback_target_doc
+                target_doc = target_document(context)
 
                 relations.append(
                     ExtractedRelation(
@@ -142,8 +161,7 @@ class LegalRelationExtractor:
                 for m in RE_BO_SUNG.finditer(line_str):
                     art_num = m.group(1).lower()
                     context = m.group(2) or ""
-                    doc_m = RE_DOC_NUMBER.search(context)
-                    target_doc = doc_m.group(1).upper() if doc_m else fallback_target_doc
+                    target_doc = target_document(context)
 
                     relations.append(
                         ExtractedRelation(
@@ -155,17 +173,16 @@ class LegalRelationExtractor:
                     )
 
             # 2. Check for Bãi bỏ
-            for m in RE_BAI_BO_CLAUSE.finditer(line_str):
+            for m in list(RE_BAI_BO_CLAUSE.finditer(line_str)) + list(RE_THAY_THE_CLAUSE.finditer(line_str)):
                 point_num = m.group(1)
                 clause_num = m.group(2)
                 art_num = m.group(3).lower() if m.group(3) else None
                 context = m.group(4) or ""
-                doc_m = RE_DOC_NUMBER.search(context)
-                target_doc = doc_m.group(1).upper() if doc_m else fallback_target_doc
+                target_doc = target_document(context)
 
                 relations.append(
                     ExtractedRelation(
-                        relation_type=LegalRelationType.BAI_BO,
+                        relation_type=LegalRelationType.THAY_THE if m.re is RE_THAY_THE_CLAUSE else LegalRelationType.BAI_BO,
                         target_doc_number=target_doc,
                         target_article_number=art_num,
                         target_clause_number=clause_num,
@@ -213,7 +230,7 @@ class LegalRelationExtractor:
         ("Quyết định số X ... hết hiệu lực"). Article-level repeals are handled
         by RE_BAI_BO_CLAUSE.
         """
-        own = (default_doc_number or "").upper()
+        own = normalize_doc_number(default_doc_number or "")
         out: List[ExtractedRelation] = []
         seen: set[tuple[LegalRelationType, str]] = set()
 
@@ -273,62 +290,96 @@ class LegalRelationExtractor:
 async def relink_legal_relations(
     session: AsyncSession,
     source_id: Optional[uuid.UUID] = None,
-) -> dict[str, int]:
-    """Relink unlinked LegalRelation records to their corresponding LegalUnit targets.
+    *, limit: Optional[int] = None, after_id: Optional[uuid.UUID] = None,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Resolve exact unique targets, including incoming and whole-document changes.
 
-    Searches for LegalUnit matching (target_doc_number, unit_type='article', unit_number=target_article_number).
-    If target_clause_number is present, attempts to link to the specific clause unit if available.
+    Dry-run neither adds roots nor mutates relations. Bounded maintenance callers
+    can page by relation UUID; unresolved/ambiguous records remain unresolved.
     """
     query = select(LegalRelation).where(
         LegalRelation.target_unit_id.is_(None),
         LegalRelation.target_doc_number.is_not(None),
-        LegalRelation.target_article_number.is_not(None),
     )
     if source_id:
-        # Filter relations originating from this source's units
-        query = query.join(LegalUnit, LegalRelation.source_unit_id == LegalUnit.id).where(
-            LegalUnit.source_id == source_id
-        )
+        source_units = select(LegalUnit.id).where(LegalUnit.source_id == source_id)
+        source_docs = select(normalized_doc_column(LegalUnit.doc_number)).where(LegalUnit.source_id == source_id)
+        query = query.where(or_(LegalRelation.source_unit_id.in_(source_units),
+                                normalized_doc_column(LegalRelation.target_doc_number).in_(source_docs)))
+    if after_id:
+        query = query.where(LegalRelation.id > after_id)
+    query = query.order_by(LegalRelation.id)
+    if limit is not None:
+        if not 1 <= limit <= 1000:
+            raise ValueError("limit must be between 1 and 1000")
+        query = query.limit(limit)
 
     res = await session.execute(query)
     unlinked_relations = res.scalars().all()
 
-    linked_count = 0
-    unresolved_count = 0
+    linked_count = unresolved_count = ambiguous_count = roots_created = 0
+    planned_roots: dict[tuple[uuid.UUID, str], LegalUnit] = {}
 
     for rel in unlinked_relations:
-        target_doc = rel.target_doc_number
+        target_doc = normalize_doc_number(rel.target_doc_number)
         target_art = (rel.target_article_number or "").lower()
-
-        # Find candidate article unit
         target_unit_query = select(LegalUnit).where(
-            LegalUnit.doc_number.ilike(target_doc),
-            LegalUnit.unit_type == LegalUnitType.ARTICLE,
-            LegalUnit.unit_number.ilike(target_art),
+            normalized_doc_column(LegalUnit.doc_number) == target_doc,
+            LegalUnit.unit_type == (LegalUnitType.ARTICLE if target_art else LegalUnitType.DOCUMENT),
         )
-        unit_res = await session.execute(target_unit_query)
-        target_unit = unit_res.scalars().first()
-
-        if target_unit:
-            # If target clause is specified, see if child clause unit exists
-            if rel.target_clause_number:
-                clause_query = select(LegalUnit).where(
-                    LegalUnit.parent_unit_id == target_unit.id,
-                    LegalUnit.unit_type == LegalUnitType.CLAUSE,
-                    LegalUnit.unit_number == rel.target_clause_number,
-                )
-                clause_res = await session.execute(clause_query)
-                clause_unit = clause_res.scalars().first()
-                if clause_unit:
-                    target_unit = clause_unit
-
-            rel.target_unit_id = target_unit.id
-            linked_count += 1
-        else:
+        if target_art:
+            target_unit_query = target_unit_query.where(func.lower(LegalUnit.unit_number) == target_art)
+        unit_res = await session.execute(target_unit_query.limit(2))
+        candidates = list(unit_res.scalars().all())
+        if not target_art:
+            # Legacy graphs lack roots. Inspect all matching source identities as
+            # well as roots, so an existing root cannot mask a duplicate source.
+            source_res = await session.execute(select(LegalUnit.source_id).where(
+                normalized_doc_column(LegalUnit.doc_number) == target_doc).distinct().limit(2))
+            source_ids = list(source_res.scalars().all())
+            if len(source_ids) > 1:
+                ambiguous_count += 1
+                unresolved_count += 1
+                continue
+            if not candidates and len(source_ids) == 1:
+                key = (source_ids[0], target_doc)
+                root = planned_roots.get(key)
+                if root is None:
+                    root = LegalUnit(id=uuid.uuid4(), source_id=source_ids[0],
+                                     unit_type=LegalUnitType.DOCUMENT, doc_number=target_doc,
+                                     full_path=target_doc, content="")
+                    planned_roots[key] = root
+                    roots_created += 1
+                    if not dry_run:
+                        session.add(root)
+                        await session.flush()
+                candidates = [root]
+        if len(candidates) != 1:
+            ambiguous_count += int(len(candidates) > 1)
             unresolved_count += 1
+            continue
+        target_unit = candidates[0]
+        if rel.target_clause_number:
+            clause_res = await session.execute(select(LegalUnit).where(
+                LegalUnit.parent_unit_id == target_unit.id,
+                LegalUnit.unit_type == LegalUnitType.CLAUSE,
+                LegalUnit.unit_number == rel.target_clause_number).limit(2))
+            clauses = list(clause_res.scalars().all())
+            if len(clauses) != 1:
+                ambiguous_count += int(len(clauses) > 1)
+                unresolved_count += 1
+                continue
+            target_unit = clauses[0]
+        if not dry_run:
+            rel.target_unit_id = target_unit.id
+        linked_count += 1
 
-    if linked_count > 0:
+    if linked_count > 0 and not dry_run:
         await session.commit()
         logger.info(f"Relinked {linked_count} legal relations to target legal units.")
 
-    return {"linked_count": linked_count, "unresolved_count": unresolved_count}
+    return {"linked_count": linked_count, "unresolved_count": unresolved_count,
+            "ambiguous_count": ambiguous_count, "roots_created": roots_created,
+            "scanned_count": len(unlinked_relations), "dry_run": dry_run,
+            "next_after_id": str(unlinked_relations[-1].id) if unlinked_relations else None}

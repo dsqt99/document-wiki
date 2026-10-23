@@ -21,6 +21,7 @@ async def test_legal_service_respects_department_scope():
     mock_source.scope_id = dept_id
 
     mock_session = AsyncMock()
+    mock_session.add = MagicMock()  # AsyncSession.add is synchronous.
     mock_session.execute.return_value = MagicMock()
     mock_tracker = AsyncMock()
 

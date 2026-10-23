@@ -1054,7 +1054,11 @@ async def ingest_legal_graph(
     # 1. Clean up existing units for idempotency
     await session.execute(delete(LegalUnit).where(LegalUnit.source_id == source.id))
 
-    units_count = 0
+    root = LegalUnit(id=uuid.uuid4(), source_id=source.id,
+                     unit_type=LegalUnitType.DOCUMENT, doc_number=doc_number,
+                     title=source.title, full_path=doc_number or source.title or "", content="")
+    session.add(root)
+    units_count = 1
     relations_count = 0
     extractor = LegalRelationExtractor()
     first_unit = None
@@ -1076,6 +1080,7 @@ async def ingest_legal_graph(
             full_path=f"Điều {art_num}" + (f": {art_title}" if art_title else ""),
             content=art_content,
             doc_number=doc_number,
+            parent_unit_id=root.id,
         )
         session.add(art_unit)
         units_count += 1
@@ -1190,20 +1195,47 @@ async def get_legal_context_with_hierarchy(
 async def get_legal_unit_validity_warnings(
     session: AsyncSession,
     unit_id: uuid.UUID,
+    *, allowed_source_ids: Optional[list[str]] = None,
 ) -> list[dict[str, Any]]:
-    """Check if a legal unit has been amended, supplemented, replaced, or repealed."""
+    """Local graph warnings for this unit/ancestors, limited to readable provenance.
+
+    Absence of warnings is not evidence of current legal validity. None denotes
+    an unrestricted internal/admin caller; an empty allow-list denies all reads.
+    """
     from sqlalchemy.orm import configure_mappers, selectinload
+    from sqlalchemy import union
+    from app.services.legal_relation_extractor import normalized_doc_column
 
     configure_mappers()  # backref attributes (LegalRelation.source_unit) exist only after configure
 
-    from app.database.models import LegalRelation, LegalRelationType
+    from app.database.models import LegalRelation, LegalRelationType, LegalUnit
+
+    allowed = None if allowed_source_ids is None else [uuid.UUID(str(s)) for s in allowed_source_ids]
+    if allowed == []:
+        return []
+    target = select(LegalUnit.id, LegalUnit.parent_unit_id).where(LegalUnit.id == unit_id)
+    if allowed is not None:
+        target = target.where(LegalUnit.source_id.in_(allowed))
+    ancestry = target.cte("validity_ancestors", recursive=True)
+    ancestry = ancestry.union(select(LegalUnit.id, LegalUnit.parent_unit_id).join(
+        ancestry, LegalUnit.id == ancestry.c.parent_unit_id))
+    # Source identity also finds a maintenance-created root in legacy graphs
+    # whose article parent pointers predate document roots.
+    source = select(LegalUnit.source_id).where(LegalUnit.id == unit_id)
+    document = select(normalized_doc_column(LegalUnit.doc_number)).where(LegalUnit.id == unit_id)
+    roots = select(LegalUnit.id).where(
+        LegalUnit.source_id.in_(source), LegalUnit.unit_type == "document",
+        normalized_doc_column(LegalUnit.doc_number).in_(document))
+    if allowed is not None:
+        roots = roots.where(LegalUnit.source_id.in_(allowed))
+    target_ids = union(select(ancestry.c.id), roots)
 
     # Eager-load: a lazy `rel.source_unit` raises MissingGreenlet under asyncio.
     query = (
         select(LegalRelation)
         .options(selectinload(LegalRelation.source_unit))
         .where(
-            LegalRelation.target_unit_id == unit_id,
+            LegalRelation.target_unit_id.in_(target_ids),
             LegalRelation.is_effective.is_(True),
             LegalRelation.relation_type.in_([
                 LegalRelationType.SUA_DOI,
@@ -1213,6 +1245,9 @@ async def get_legal_unit_validity_warnings(
             ]),
         )
     )
+    if allowed is not None:
+        query = query.join(LegalUnit, LegalRelation.source_unit_id == LegalUnit.id).where(
+            LegalUnit.source_id.in_(allowed))
     res = await session.execute(query)
     relations = res.scalars().all()
 
@@ -1228,6 +1263,8 @@ async def get_legal_unit_validity_warnings(
             "modifying_doc_number": modifying_doc,
             "modifying_article_number": modifying_art,
             "quote_context": rel.quote_context,
+            "modifying_source_id": str(source_u.source_id) if source_u else None,
+            "target_unit_id": str(rel.target_unit_id),
         })
     return warnings
 
