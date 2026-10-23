@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import re
+from collections import Counter
 from dataclasses import asdict, dataclass, field
 from typing import Any, Optional
 
@@ -84,6 +87,52 @@ class PageWriteResult:
         if d.get("status"):
             obj.status = d["status"]  # type: ignore[attr-defined]
         return obj
+
+
+def checkpoint_fingerprint(source, plan, full_text: str, kt_slug=None, *, plan_json=None) -> str:
+    """Bind drafts to the original extraction and every saved generation input.
+
+    A Wiki-only retry changes wiki_attempt_id, not these inputs. Legacy drafts
+    without this provenance are intentionally regenerated once.
+    """
+    inputs = dict((plan.plan_json if plan_json is None else plan_json) or {})
+    inputs.pop("_page_drafts", None)
+    inputs.pop("_page_drafts_checkpoint", None)
+    payload = {"version": 1, "source_id": str(source.id),
+               "attempt_id": str(getattr(source, "attempt_id", None)),
+               "source_text": full_text or "", "outline": getattr(source, "outline_json", None),
+               "plan_id": str(getattr(plan, "id", None)), "plan": inputs, "knowledge_type": kt_slug}
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False,
+                                     default=str).encode("utf-8")).hexdigest()
+
+
+def reusable_checkpoint_results(source, plan, full_text: str, kt_slug=None) -> dict[str, PageWriteResult]:
+    """Return only unique, current, factually valid drafts keyed by planned slug."""
+    from app.ai.mrp.verifier import factual_publication_blockers
+
+    saved = plan.plan_json or {}
+    marker = saved.get("_page_drafts_checkpoint") or {}
+    if not isinstance(marker, dict) or marker.get("fingerprint") != checkpoint_fingerprint(source, plan, full_text, kt_slug):
+        return {}
+    mapping = marker.get("slugs") or {}
+    if not isinstance(mapping, dict):
+        return {}
+    drafts = [d for d in saved.get("_page_drafts", []) if isinstance(d, dict)]
+    counts = Counter(d.get("slug") for d in drafts if isinstance(d.get("slug"), str))
+    unique = {d["slug"]: d for d in drafts if isinstance(d.get("slug"), str) and counts[d["slug"]] == 1}
+    resolved_counts = Counter(v for v in mapping.values() if isinstance(v, str))
+    reusable = {}
+    for item in saved.get("pages") or []:
+        if not isinstance(item, dict) or not item.get("slug"):
+            continue
+        original = item["slug"]
+        resolved = mapping.get(original)
+        if not isinstance(resolved, str) or resolved_counts[resolved] != 1 or resolved not in unique:
+            continue
+        row = PageWriteResult.from_dict(unique[resolved])
+        if not is_failure_stub(row.content_md) and not factual_publication_blockers(row.content_md, full_text or ""):
+            reusable[original] = row
+    return reusable
 
 
 def _pass_drops_rows(before: str, after: str) -> bool:
@@ -559,6 +608,8 @@ async def run_refine_phase(session, source, plan, chunk_extracts, full_text, llm
     from app.services import wiki_service
 
     plan_json = dict(getattr(plan, "plan_json", None) or {})
+    fingerprint = checkpoint_fingerprint(source, plan, full_text, kt_slug)
+    completed = reusable_checkpoint_results(source, plan, full_text, kt_slug)
     items = [p for p in (plan_json.get("pages") or []) if isinstance(p, dict) and p.get("slug")]
     items.sort(key=lambda p: p.get("priority") if isinstance(p.get("priority"), (int, float)) else 99)
     claims = _claims_from_extracts(chunk_extracts, plan_json)
@@ -574,9 +625,16 @@ async def run_refine_phase(session, source, plan, chunk_extracts, full_text, llm
     from app.services.wiki_origin_service import resolve_target_slug
     # Plan collisions must be resolved before producing links or loading old content.
     prepared = []
+    planned_slugs = {}
     for item in items:
         item = dict(item)
-        item["slug"] = await resolve_target_slug(session, item["slug"], "generated", scope[0], scope[1], source.id)
+        original = item["slug"]
+        item["slug"] = await resolve_target_slug(session, original, "generated", scope[0], scope[1], source.id)
+        planned_slugs[original] = item["slug"]
+        # A collision/ownership change since the checkpoint also invalidates reuse.
+        if original in completed and completed[original].slug != item["slug"]:
+            completed.pop(original)
+        item["_planned_slug"] = original
         prepared.append(item)
     items = prepared
     linkable_all = [p["slug"] for p in items]
@@ -585,9 +643,48 @@ async def run_refine_phase(session, source, plan, chunk_extracts, full_text, llm
         await tracker.update(78, f"Writing {len(items)} wiki page(s)...")
 
     sem = asyncio.Semaphore(MAX_PARALLEL_PAGES)
+    checkpoint_lock = asyncio.Lock()
+
+    async def _checkpoint(original: str, result: PageWriteResult) -> None:
+        from sqlalchemy import select
+        from app.database.models import Source, SourceCompilationPlan
+        from app.services.source_quality import lock_current_attempt
+
+        # Per-page LLM work uses separate sessions. Serialize all parent-session
+        # writes, and keep attempt/plan locks through the checkpoint commit.
+        async with checkpoint_lock:
+            try:
+                if not await lock_current_attempt(session, source, "wiki"):
+                    raise RuntimeError("Stale Wiki attempt cannot save a draft checkpoint")
+                current_source = (await session.execute(
+                    select(Source.full_text, Source.outline_json).where(Source.id == source.id)
+                    .execution_options(autoflush=False)
+                )).one_or_none()
+                if (current_source is None or current_source.full_text != full_text
+                        or current_source.outline_json != getattr(source, "outline_json", None)):
+                    raise RuntimeError("Stale Wiki original cannot save a draft checkpoint")
+                latest = (await session.execute(
+                    select(SourceCompilationPlan.plan_json).where(SourceCompilationPlan.id == plan.id)
+                    .with_for_update().execution_options(autoflush=False)
+                )).scalar_one_or_none()
+                if not isinstance(latest, dict) or checkpoint_fingerprint(
+                        source, plan, full_text, kt_slug, plan_json=latest) != fingerprint:
+                    raise RuntimeError("Stale Wiki plan cannot save a draft checkpoint")
+                completed[original] = result
+                latest = dict(latest)
+                latest["_page_drafts"] = [completed[key].to_dict() for key in planned_slugs if key in completed]
+                latest["_page_drafts_checkpoint"] = {"fingerprint": fingerprint, "slugs": planned_slugs}
+                plan.plan_json = latest
+                await session.commit()
+            except BaseException:
+                await session.rollback()
+                raise
 
     async def _one(item: dict) -> PageWriteResult:
         slug = item["slug"]
+        original = item["_planned_slug"]
+        if original in completed:
+            return completed[original]
         title = item.get("title") or slug
         action = (item.get("action") or "CREATE").upper()
         result = PageWriteResult(
@@ -647,14 +744,14 @@ async def run_refine_phase(session, source, plan, chunk_extracts, full_text, llm
                 logger.warning(f"refine[{slug}]: page generation failed: {type(e).__name__}: {e}")
                 result.content_md = make_failure_stub(title, f"{type(e).__name__}: {e}")
                 result.summary = title
+        await _checkpoint(original, result)
         return result
 
-    results = list(await asyncio.gather(*[_one(i) for i in items]))
-
+    tasks = [asyncio.create_task(_one(i)) for i in items]
     try:
-        plan_json["_page_drafts"] = [r.to_dict() for r in results]
-        plan.plan_json = plan_json
-        await session.commit()
-    except Exception as e:
-        logger.warning(f"refine: could not persist page drafts: {e}")
-    return results
+        return list(await asyncio.gather(*tasks))
+    except BaseException:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise

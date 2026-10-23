@@ -41,6 +41,10 @@ async def test_good_checkpoint_does_not_call_writer_again():
     row = writer.PageWriteResult("page", "Page", "concept", "CREATE", "Valid source text.", "")
     plan = SimpleNamespace(status="done", plan_json={"pages": [{"slug": "page"}],
                                                    "_page_drafts": [row.to_dict()]})
+    plan.plan_json["_page_drafts_checkpoint"] = {
+        "fingerprint": writer.checkpoint_fingerprint(source, plan, "Valid source text."),
+        "slugs": {"page": "page"},
+    }
     db = AsyncMock()
     db.execute.return_value = MagicMock()
     db.execute.return_value.scalars.return_value.all.return_value = []

@@ -10,7 +10,6 @@ from loguru import logger
 from sqlalchemy import select, text
 
 from app.ai.mrp.merger import append_fallback, merge_page_content
-from app.ai.mrp.writer import PageWriteResult
 from app.services import source_quality, source_status, wiki_chunk_service, wiki_service
 from app.services.wiki_service import resolve_wiki_scopes as _resolve_wiki_scopes
 from app.services.wiki_write_guard import is_failure_stub
@@ -57,6 +56,17 @@ async def run_commit_phase(session, source, page_results, plan, embedding_provid
     failure_reasons = {r.slug: r.publication_blockers for r in page_results
                        if getattr(r, "publication_blockers", [])}
     validation_detail = ", ".join(sorted({reason for reasons in failure_reasons.values() for reason in reasons}))
+    # Keep safe diagnostics for generation failures as well as factual blockers;
+    # raw provider exception text may contain endpoint/credential details.
+    from app.services.source_retry import is_ai_outage_text
+    for r in page_results:
+        if is_failure_stub(r.content_md):
+            reasons = ["generation_failed"]
+            if is_ai_outage_text(r.content_md):
+                reasons.append("ai_unavailable")
+            if any(token in r.content_md.lower() for token in ("timeout", "timed out", "error code: 524")):
+                reasons.append("ai_timeout")
+            failure_reasons[r.slug] = reasons
     good = [r for r in page_results if r.slug not in failed_slugs]
     planned = (getattr(plan, "plan_json", None) or {}).get("pages") if plan is not None else None
     expected = max(len(planned or []), len(page_results)) * len(wiki_scopes or [("global", None)])
@@ -159,6 +169,7 @@ async def run_commit_phase(session, source, page_results, plan, embedding_provid
             except Exception as e:
                 if r.slug not in failed_slugs:
                     failed_slugs.append(r.slug)
+                failure_reasons.setdefault(r.slug, []).append("commit_failed")
                 logger.error(f"commit[{r.slug}] in {scope_type}:{scope_id} failed: {type(e).__name__}: {e}")
 
         created += scope_created
@@ -373,15 +384,13 @@ async def run_refine_pipeline(session, source, full_text, tracker, registry, kt_
     except Exception as e:
         logger.info(f"refine: no active embedding spec ({e})")
 
-    drafts = (plan.plan_json or {}).get("_page_drafts") or []
-    results = [PageWriteResult.from_dict(d) for d in drafts if isinstance(d, dict)]
+    reusable = writer.reusable_checkpoint_results(source, plan, full_text, kt_slug)
+    results = list(reusable.values())
     planned_count = sum(1 for p in (plan.plan_json or {}).get("pages", [])
                         if isinstance(p, dict) and p.get("slug"))
     invalid_checkpoint = (
         # Generated slugs can acquire a scope/origin collision suffix.
         not results or len(results) != planned_count
-        or any(is_failure_stub(r.content_md)
-               or verifier.factual_publication_blockers(r.content_md, full_text or "") for r in results)
     )
     if source.pipeline_phase not in ("verify", "commit") or invalid_checkpoint:
         source.pipeline_phase = "refine"
