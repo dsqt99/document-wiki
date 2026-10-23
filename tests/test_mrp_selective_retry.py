@@ -20,7 +20,7 @@ def source_and_plan(count=3):
 
 
 async def run_writer(source, plan, *, generate=None, current_attempt=True,
-                     stored_text=None, stored_plan=None, attempt_check=None):
+                     stored_text=None, stored_plan=None, attempt_check=None, resolve=None):
     db = AsyncMock()
     def current_plan(*args, **kwargs):
         result = MagicMock()
@@ -37,7 +37,7 @@ async def run_writer(source, plan, *, generate=None, current_attempt=True,
          patch("app.services.wiki_service.resolve_wiki_scopes", AsyncMock(return_value=[("global", None)])), \
          patch("app.services.wiki_service.get_page_by_slug", AsyncMock(return_value=None)), \
          patch("app.services.wiki_origin_service.resolve_target_slug", AsyncMock(
-             side_effect=lambda session, slug, *a: slug + "-generated")), \
+             side_effect=resolve or (lambda session, slug, *a: slug + "-generated"))), \
          patch("app.services.source_quality.lock_current_attempt",
                attempt_check or AsyncMock(return_value=current_attempt)), \
          patch.object(writer, "write_simple", generate):
@@ -132,6 +132,31 @@ async def test_retry_regenerates_only_missing_or_currently_blocked_drafts():
     results, generated = await run_writer(source, plan)
     assert generated == ["page-1-generated", "page-2-generated"]
     assert len(results) == 3
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("old_link", [
+    "[[b]]", "[[b|B]]", "[[b#detail|B]]", "[B](/wiki/b)",
+    "[B](https://portal.invalid/wiki/b?scope=global#detail)", "[B](</wiki/%62#detail>)",
+    "[B][target]\n\n[target]: /wiki/b#detail",
+])
+@pytest.mark.parametrize("target_failed", [False, True])
+async def test_retry_invalidates_cached_links_to_a_newly_colliding_slug(old_link, target_failed):
+    source, plan = source_and_plan()
+    plan.plan_json["pages"] = [{"slug": slug} for slug in ("a", "b", "c")]
+    async def initial(*args):
+        return ("Valid source text. " + old_link if args[1]["slug"] == "a" else "Valid source text.", "Summary")
+    await run_writer(source, plan, generate=AsyncMock(side_effect=initial),
+                     resolve=lambda db, slug, *a: slug)
+    if target_failed:
+        plan.plan_json["_page_drafts"][1]["content_md"] = make_failure_stub("B", "[ai_unavailable]")
+    async def regenerate(*args):
+        return ("Valid source text. [[b-generated|B]]" if args[1]["slug"] == "a" else "Valid source text.", "Summary")
+    results, generated = await run_writer(source, plan, generate=AsyncMock(side_effect=regenerate),
+        resolve=lambda db, slug, *a: "b-generated" if slug == "b" else slug)
+    assert generated == ["a", "b-generated"]  # C remains reusable.
+    assert results[0].content_md == "Valid source text. [[b-generated|B]]"
+    assert plan.plan_json["_page_drafts_checkpoint"]["slugs"] == {"a": "a", "b": "b-generated", "c": "c"}
 
 
 @pytest.mark.asyncio

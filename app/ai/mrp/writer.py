@@ -9,6 +9,7 @@ import re
 from collections import Counter
 from dataclasses import asdict, dataclass, field
 from typing import Any, Optional
+from urllib.parse import unquote
 
 from loguru import logger
 
@@ -133,6 +134,19 @@ def reusable_checkpoint_results(source, plan, full_text: str, kt_slug=None) -> d
         if not is_failure_stub(row.content_md) and not factual_publication_blockers(row.content_md, full_text or ""):
             reusable[original] = row
     return reusable
+
+
+def _linked_slugs(content: str) -> set[str]:
+    """Conservatively detect cached Wiki/Markdown link dependencies.
+
+    Origin remap_links handles plain Wikilinks only; dependency invalidation
+    must also see anchors, Markdown URLs and reference-style destinations.
+    """
+    targets = re.findall(r"\[\[([^\]|]+)(?:\|[^\]]*)?\]\]", content or "")
+    targets += re.findall(r"\[[^\]]*\]\(\s*(<[^>]+>|[^\s)]+)", content or "")
+    targets += re.findall(r"(?m)^\s{0,3}\[[^\]]+\]:\s*(<[^>]+>|\S+)", content or "")
+    return {re.split(r"[?#]", unquote(target.strip("<>")), maxsplit=1)[0]
+            .rstrip("/").rsplit("/", 1)[-1] for target in targets}
 
 
 def _pass_drops_rows(before: str, after: str) -> bool:
@@ -636,6 +650,16 @@ async def run_refine_phase(session, source, plan, chunk_extracts, full_text, llm
             completed.pop(original)
         item["_planned_slug"] = original
         prepared.append(item)
+    marker = plan_json.get("_page_drafts_checkpoint") or {}
+    previous_slugs = marker.get("slugs", {}) if isinstance(marker, dict) else {}
+    if isinstance(previous_slugs, dict):
+        changed_targets = {old for original, old in previous_slugs.items()
+                           if isinstance(old, str) and original in planned_slugs
+                           and old != planned_slugs[original]}
+        # Reusing A after B's resolved slug changes would keep A's old link to
+        # an unrelated collision page. Regenerate dependents with current links.
+        completed = {original: row for original, row in completed.items()
+                     if not _linked_slugs(row.content_md).intersection(changed_targets)}
     items = prepared
     linkable_all = [p["slug"] for p in items]
 
