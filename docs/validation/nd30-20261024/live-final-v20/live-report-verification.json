@@ -1,0 +1,73 @@
+{
+  "artifact": {
+    "id": "7ae3e038-6c2f-4834-a2b0-428863c4e33c",
+    "version": 1,
+    "name": "ket_qua_3835e321.docx",
+    "media_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "size": 38741,
+    "chat_id": "20d38f93-ca16-436e-ab70-b8d150c723bc",
+    "message_id": "0d303f5c-305d-454c-bd03-a743562f5076",
+    "status": "available",
+    "expires_at": null
+  },
+  "checks": {
+    "source_fact": true,
+    "unknown_signing_date": true,
+    "no_invented_year": true,
+    "one_national_header": true,
+    "no_raw_frontmatter": true,
+    "page_field": true,
+    "first_page_hidden": true,
+    "no_invented_signer": true,
+    "font": true
+  },
+  "text": "CÔNG AN TỈNH HƯNG YÊN\nPHÒNG THAM MƯU\nCỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM\nĐộc lập - Tự do - Hạnh phúc\nSố: .../BC-...\nHưng Yên, ngày ... tháng ... năm ...\nBÁO CÁO\nKết quả kiểm tra hồ sơ thử nghiệm\nKính gửi: Công an tỉnh Hưng Yên\nĐã kiểm tra 3 hồ sơ thử nghiệm./.\nNơi nhận:\n- Như trên;\n- Lưu: VT.\n...\n...",
+  "cahy": {
+    "status": "completed",
+    "outcome": "answered",
+    "task_type": "draft",
+    "route": "export",
+    "decision": {
+      "model": "Qwen/Qwen3.5-9B",
+      "route": "export",
+      "confidence": 0.8763207944419397,
+      "latency_ms": 1825,
+      "total_tokens": 3288
+    },
+    "execution_nodes": [
+      "document_agent",
+      "document_agent",
+      "export_node",
+      "export_node",
+      "export_node",
+      "export_node"
+    ],
+    "validation_errors": [],
+    "skills": [
+      {
+        "id": "/skill-wiki-cahy-kn3-sinh-van-ban",
+        "name": "cahy-kn3-sinh-van-ban",
+        "version": 4,
+        "hash": "e0b8ccce502d69bc9180265623e745a3b4972d8eff67a9c38c9814e436328679"
+      }
+    ],
+    "step_statuses": [],
+    "executed_tools": [
+      "cahy_read_skill_resource",
+      "write_file",
+      "run_command",
+      "get_process_status"
+    ],
+    "source_versions": [],
+    "calculation_trace": [],
+    "replacements": [],
+    "budgets": {
+      "tool_used": 4,
+      "tool_limit": 12,
+      "shared_budget": {
+        "used": 4,
+        "limit": 16
+      }
+    }
+  }
+}

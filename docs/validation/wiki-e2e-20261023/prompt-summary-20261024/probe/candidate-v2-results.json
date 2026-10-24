@@ -1,0 +1,86 @@
+[
+  {
+    "case": "original_failure",
+    "mode": "candidate-v2",
+    "response": "{\"so_ky_hieu\":null,\"ngay_ban_hanh\":null,\"co_quan_ban_hanh\":null,\"trich_yeu\":\"Tài liệu nghiệm thu upload CAHY ngày 26/10/2023 là dữ liệu kiểm thử giả lập, không phải tài liệu nghiệp vụ.\",\"y_chinh\":[\"Tài liệu có tiêu đề NGHIỆM THU UPLOAD CAHY 261023.\",\"Đây là dữ liệu kiểm thử giả lập, không phải tài liệu nghiệp vụ.\",\"Mã đối chiếu là QA-UPLOAD-261023-321d948.\"],\"thoi_han\":[],\"nhiem_vu_cong_an\":[],\"de_xuat_xu_ly\":\"Tài liệu không nêu đề xuất xử lý\"}",
+    "finish_reason": "stop",
+    "usage": {
+      "input": 6736,
+      "output": 166
+    },
+    "tool_calls": 0,
+    "checks": {
+      "number": true,
+      "date": true,
+      "issuer": true,
+      "legal_branch": true,
+      "marker": true,
+      "normal_finish": true
+    },
+    "passed": true,
+    "seconds": 6.328
+  },
+  {
+    "case": "unseen_reference",
+    "mode": "candidate-v2",
+    "response": "{\"so_ky_hieu\": null, \"ngay_ban_hanh\": null, \"co_quan_ban_hanh\": null, \"trich_yeu\": \"Tài liệu kiểm định giả lập ghi chú bàn giao mã REF-P08-774 giữa Nhóm A và Nhóm B.\", \"y_chinh\": [\"Tài liệu có tiêu đề GHI CHÚ BÀN GIAO.\", \"Mã hồ sơ là REF-P08-774.\", \"Nhóm A bàn giao 3 tệp cho nhóm B.\", \"Đây là tài liệu kiểm thử giả lập.\"], \"thoi_han\": [], \"nhiem_vu_cong_an\": [], \"de_xuat_xu_ly\": \"Tài liệu không nêu đề xuất xử lý\"}",
+    "finish_reason": "stop",
+    "usage": {
+      "input": 6681,
+      "output": 160
+    },
+    "tool_calls": 0,
+    "checks": {
+      "number": true,
+      "date": true,
+      "issuer": true,
+      "legal_branch": true,
+      "marker": true,
+      "normal_finish": true
+    },
+    "passed": true,
+    "seconds": 2.82
+  },
+  {
+    "case": "report_citing_law",
+    "mode": "candidate-v2",
+    "response": "{\"so_ky_hieu\":\"17/BC-ABC\",\"ngay_ban_hanh\":\"2026-01-15\",\"co_quan_ban_hanh\":\"Đơn vị A\",\"trich_yeu\":\"Đơn vị A báo cáo tình hình tiếp nhận và xử lý hồ sơ.\",\"y_chinh\":[\"Đơn vị A căn cứ Luật số 99/2099/QH99.\",\"Đã tiếp nhận 8 hồ sơ.\",\"Đã xử lý 6 hồ sơ.\",\"Còn 2 hồ sơ.\",\"Tài liệu không nêu đề xuất xử lý\"],\"thoi_han\":[],\"nhiem_vu_cong_an\":[],\"de_xuat_xu_ly\":\"Tài liệu không nêu đề xuất xử lý\"}",
+    "finish_reason": "stop",
+    "usage": {
+      "input": 6742,
+      "output": 157
+    },
+    "tool_calls": 0,
+    "checks": {
+      "number": true,
+      "date": true,
+      "issuer": true,
+      "legal_branch": true,
+      "marker": true,
+      "normal_finish": true
+    },
+    "passed": true,
+    "seconds": 2.804
+  },
+  {
+    "case": "own_legal_document",
+    "mode": "candidate-v2",
+    "response": "{\"so_ky_hieu\":\"01/2099/TT-XX\",\"ngay_ban_hanh\":\"2099-01-10\",\"co_quan_ban_hanh\":\"Cơ quan X\",\"trich_yeu\":\"Cơ quan X ban hành thông tư quy định quy trình thử nghiệm áp dụng cho Nhóm A.\",\"y_chinh\":[\"Thông tư quy định quy trình thử nghiệm.\",\"Đối tượng áp dụng là Nhóm A.\",\"Thông tư có hiệu lực từ ngày 2099-02-01.\"],\"thoi_han\":[],\"nhiem_vu_cong_an\":[],\"de_xuat_xu_ly\":\"Tài liệu không nêu đề xuất xử lý\",\"qppl\":{\"pham_vi_dieu_chinh\":\"Quy trình thử nghiệm\",\"doi_tuong_ap_dung\":\"Nhóm A\",\"diem_moi\":[\"(cán bộ pháp chế bổ sung)\"],\"ngay_hieu_luc\":\"2099-02-01\",\"van_ban_bi_thay_the\":[]}}",
+    "finish_reason": "stop",
+    "usage": {
+      "input": 6741,
+      "output": 218
+    },
+    "tool_calls": 0,
+    "checks": {
+      "number": true,
+      "date": true,
+      "issuer": true,
+      "legal_branch": true,
+      "marker": true,
+      "normal_finish": true
+    },
+    "passed": true,
+    "seconds": 3.685
+  }
+]

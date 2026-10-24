@@ -1,0 +1,32 @@
+{
+  "sync": {
+    "ok": true,
+    "total": 9,
+    "added": 0,
+    "updated": 2,
+    "disabled": 0,
+    "at": 1792783710
+  },
+  "checked": [
+    {
+      "slug": "cahy-kn3-sinh-van-ban",
+      "version": 4,
+      "hash": "e0b8ccce502d69bc9180265623e745a3b4972d8eff67a9c38c9814e436328679",
+      "body_match": true,
+      "resources": {
+        "references/nd30-the-thuc.md": "bff2d7a4375117aafc06b003d3690a0fea0a74ed22bf249b3eee96537bbdc8b4",
+        "references/s3_slot.schema.json": "3bcb4c086e325c3661d759a647b0a15d3e1729715f670387125bc52d549918ee"
+      }
+    },
+    {
+      "slug": "cahy-kn7-kiem-tra-the-thuc",
+      "version": 4,
+      "hash": "8b57122a0d1321973fbf6a29bd26ae58d4745fb4b40a6bf555c5f72690a27dd8",
+      "body_match": true,
+      "resources": {
+        "references/nd30-the-thuc.md": "bff2d7a4375117aafc06b003d3690a0fea0a74ed22bf249b3eee96537bbdc8b4",
+        "references/s7_kiem_tra.schema.json": "3838e51af8dd510f4a762d5d0c92a51863faf9fcdd1626f528c4d29b60041f06"
+      }
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+[
+  {
+    "case": "review_word_metadata",
+    "mode": "candidate",
+    "response": "{\"hop_le\": true, \"so_loi\": 0, \"loi\": []}",
+    "usage": {
+      "input": 5849,
+      "output": 20
+    },
+    "checks": {
+      "normal_finish": true,
+      "consistent_count": true,
+      "no_false_positive": true
+    },
+    "passed": true,
+    "seconds": 1.974
+  }
+]

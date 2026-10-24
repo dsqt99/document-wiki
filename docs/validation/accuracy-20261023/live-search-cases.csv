@@ -1,0 +1,9 @@
+﻿id,query,status,seconds,mode,retrieval_mode,candidate_count,result_count,negative_case,rank,hit1,hit3,mrr,ndcg3,false_positive_count
+s_article2,Điều 2 giải thích từ ngữ Luật 55/2024/QH15,completed,5.7975,rerank,hybrid,51,9,False,1,1,1,1.0,1.0,
+s_article39,Điều 39 Luật 55/2024/QH15 phòng cháy chữa cháy tình nguyện,completed,2.9448,rerank,hybrid,72,10,False,1,1,1,1.0,1.0,
+s_article19,Điều 19 Nghị định 136/2020/NĐ-CP phương án chữa cháy,completed,2.7204,rerank,hybrid,52,10,False,1,1,1,1.0,1.0,
+s_skills,"Kiến thức, kỹ năng về chữa cháy",completed,3.0257,rerank,hybrid,39,10,False,1,1,1,1.0,1.0,
+s_accentless,tinh huong tai nan giao thong,completed,3.0723,rerank,hybrid,32,2,False,1,1,1,1.0,1.0,
+s_duties,nhiệm vụ chữa cháy,completed,4.0821,rerank,hybrid,51,10,False,1,1,1,1.0,1.0,
+s_escape,"Kiến thức, kỹ năng về thoát nạn, cứu nạn, cứu hộ",completed,3.392,rerank,hybrid,37,10,False,1,1,1,1.0,1.0,
+s_absent,KT-XYZ-NONEXISTENT-261023-QA,completed,1.414,rerank,hybrid,15,0,True,,,,,,0

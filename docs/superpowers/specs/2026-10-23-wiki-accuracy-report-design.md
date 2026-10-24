@@ -1,5 +1,7 @@
 # Wiki accuracy report CLI
 
+> Superseded by the user's 23/10/2026 clarification: run the checks directly and deliver a report; do not implement a product CLI. The resulting observations and report are under `docs/validation/accuracy-20261023/`. No `app.evaluation` CLI was implemented.
+
 ## Intent and scope
 
 The user requested repeatable accuracy reports for extraction, OCR, embedding/search and reranking using current Wiki settings. They selected CLI + HTML/JSON/CSV instead of an admin UI. Build one local Python toolkit in this repository, without a new service, UI, ingestion job or changes to operating settings.

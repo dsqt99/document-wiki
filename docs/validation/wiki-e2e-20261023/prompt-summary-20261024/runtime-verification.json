@@ -1,0 +1,31 @@
+{
+  "observed_at": "2026-10-24T01:49:46.2609394+07:00",
+  "image": "cahy-chatbot:summary-prompt-261024-v12",
+  "health": "healthy",
+  "files": [
+    {
+      "file": "nodes.py",
+      "runtime_sha256": "a4940baee0b5d1b0935e5bfbc5616ad11950a37c8432766f55b26a8da87cf119",
+      "build_sha256": "a4940baee0b5d1b0935e5bfbc5616ad11950a37c8432766f55b26a8da87cf119",
+      "match": true
+    },
+    {
+      "file": "cahy_knowledge_flow.py",
+      "runtime_sha256": "88e9b5269d05deae90d019d6f7c336be344bcff132831df5e922363272e9ca4d",
+      "build_sha256": "88e9b5269d05deae90d019d6f7c336be344bcff132831df5e922363272e9ca4d",
+      "match": true
+    },
+    {
+      "file": "route_nodes.py",
+      "runtime_sha256": "9774a4a879075f434405a8423a4bbdd7c8e587302f61b140e9b187d2b87519f1",
+      "build_sha256": "9774a4a879075f434405a8423a4bbdd7c8e587302f61b140e9b187d2b87519f1",
+      "match": true
+    },
+    {
+      "file": "cahy_agent_facts.py",
+      "runtime_sha256": "88934ff1766fe10dc401071a532604a65ebf82cd79990c2fd878f065c7ae0b6a",
+      "build_sha256": "88934ff1766fe10dc401071a532604a65ebf82cd79990c2fd878f065c7ae0b6a",
+      "match": true
+    }
+  ]
+}

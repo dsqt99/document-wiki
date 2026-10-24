@@ -1,0 +1,272 @@
+[
+  {
+    "path": "docs/validation/accuracy-20261023/embedding-cases.csv",
+    "sha256": "375a9f88f88a1c834c3dfdc008ae34ef83024bec57ad89c64b55f2677dae6928",
+    "bytes": 311
+  },
+  {
+    "path": "docs/validation/accuracy-20261023/fixtures/digital.pdf",
+    "sha256": "a9da1b4a0e9b0d0f0a406ad29331d15b19634812ae76bd88509ef93cfab43ce2",
+    "bytes": 46370
+  },
+  {
+    "path": "docs/validation/accuracy-20261023/fixtures/mixed.pdf",
+    "sha256": "6a83fd199bf85f882d66226d4c453a6896b97af06e80e6afa61f45d23e0545f8",
+    "bytes": 80618
+  },
+  {
+    "path": "docs/validation/accuracy-20261023/fixtures/scan-blank.png",
+    "sha256": "96c1a1ea191300bfb1f43eb950de443320057e0e130b02a8782a3c5612487473",
+    "bytes": 8037
+  },
+  {
+    "path": "docs/validation/accuracy-20261023/fixtures/scan-blurred.png",
+    "sha256": "13b04137f02e920d02f42d7313e06e024544a94e55c36d5af9715950caee006a",
+    "bytes": 72123
+  },
+  {
+    "path": "docs/validation/accuracy-20261023/fixtures/scan-clean.png",
+    "sha256": "b4e6a84df76154577698440b3e113b9548e24cd72f002cb94ec0c34fe10e31d2",
+    "bytes": 41083
+  },
+  {
+    "path": "docs/validation/accuracy-20261023/fixtures/scan-rotated.png",
+    "sha256": "62388e4c3f541930e3d012df15e030dced2b166e2b4e3341f3f745f33da16d79",
+    "bytes": 82383
+  },
+  {
+    "path": "docs/validation/accuracy-20261023/fixtures/scanned.pdf",
+    "sha256": "c20d7ff0132239c918cc79bf6daad019f862f997e204d7aa7b2ad4404a06b9d2",
+    "bytes": 39203
+  },
+  {
+    "path": "docs/validation/accuracy-20261023/fixtures/slides.pptx",
+    "sha256": "ccc4c322bbc79a7b8ada378f4d84e407afe561451689c1e613848c3b9395d86c",
+    "bytes": 29209
+  },
+  {
+    "path": "docs/validation/accuracy-20261023/fixtures/table.docx",
+    "sha256": "2da1765e2a59ba77da8a8a725ca7cd677f015cce421dcdce991e8479be221cf1",
+    "bytes": 36790
+  },
+  {
+    "path": "docs/validation/accuracy-20261023/fixtures/table.xlsx",
+    "sha256": "790745ca35034b982cdf3875a8f844ba7f88a5d056125d43f893ef4b09454d1d",
+    "bytes": 4960
+  },
+  {
+    "path": "docs/validation/accuracy-20261023/fixtures/vietnamese.docx",
+    "sha256": "4e0c1fa22e0f7f685daf794fd2315534e1bd4cf18c16599fb95ef2df3ba60537",
+    "bytes": 36854
+  },
+  {
+    "path": "docs/validation/accuracy-20261023/fixtures/vietnamese.md",
+    "sha256": "118155f7ca6e7aa5331967fa5426ec9d432afe6913df10ad4392c03b3814142f",
+    "bytes": 326
+  },
+  {
+    "path": "docs/validation/accuracy-20261023/fixtures/vietnamese.txt",
+    "sha256": "118155f7ca6e7aa5331967fa5426ec9d432afe6913df10ad4392c03b3814142f",
+    "bytes": 326
+  },
+  {
+    "path": "docs/validation/accuracy-20261023/handover/Bao_cao_phep_do_Wiki_20261023.docx",
+    "sha256": "6c0c4a2eed0e49b16af0a839e5322256847a9dfe361e39d5f951c9247e692d99",
+    "bytes": 44650
+  },
+  {
+    "path": "docs/validation/accuracy-20261023/handover/Bao_cao_phep_do_Wiki_20261023.pdf",
+    "sha256": "98201a132252f22cff8866182b2d98240d2426575a8df347f9663811b067c38b",
+    "bytes": 155242
+  },
+  {
+    "path": "docs/validation/accuracy-20261023/live-search-cases.csv",
+    "sha256": "4b28c1a277ff0d15e5e321a7c86f32b8f18455545aeba1aab70f70b7cf0d9461",
+    "bytes": 1076
+  },
+  {
+    "path": "docs/validation/accuracy-20261023/manifest.json",
+    "sha256": "ae67b8ba05213d5915ad5418cf63c2764a2b4b5074044281ca5f5440622f139a",
+    "bytes": 11640
+  },
+  {
+    "path": "docs/validation/accuracy-20261023/rerank-cases.csv",
+    "sha256": "62ab92ba99a7f868fa9e0f14a5165b3a2d0050f62c16041f237131355e8536bf",
+    "bytes": 373
+  },
+  {
+    "path": "docs/validation/accuracy-20261023/reviewed-results.json",
+    "sha256": "412ee3ef59a05c537bb49ffd8f8465ae69d08640acc65f9efa593a8514f897a4",
+    "bytes": 22234
+  },
+  {
+    "path": "docs/validation/accuracy-20261023/text-cases.csv",
+    "sha256": "5e2ad00f8cdf660d71fd082140c070de43fcf8e18cd5f9eccff78d60d2b83323",
+    "bytes": 3268
+  },
+  {
+    "path": "docs/validation/accuracy-20261023/threshold-cases.csv",
+    "sha256": "8cd01e829644a948c5eaee2d63b5ee40fce3a8c5dc703175f0a44d91f495420f",
+    "bytes": 318
+  },
+  {
+    "path": "docs/validation/accuracy-20261023/VALIDATION.md",
+    "sha256": "ae4346b03fda3da1cb90e2d9dee2a29171e378cd854a9ec8f261159301411508",
+    "bytes": 2868
+  },
+  {
+    "path": "docs/validation/accuracy-20261023/wiki-accuracy-report.html",
+    "sha256": "fe0d3fbe7d9a73ecf0266a9d7e134faa49058144acdbb7ccd88108411e6351a7",
+    "bytes": 2883703
+  },
+  {
+    "path": "docs/validation/nd30-20261024/backend-merge-proof.json",
+    "sha256": "004033d75613efccd2f96aae1d3d5fb1f5e034142d3b6a09d2f97c162ffc333a",
+    "bytes": 795
+  },
+  {
+    "path": "docs/validation/nd30-20261024/backend-tests.xml",
+    "sha256": "56f3c37ef25197d3f5e3f4688d91c50fba09363bd4a633eb83c14153e14e7d33",
+    "bytes": 31130
+  },
+  {
+    "path": "docs/validation/nd30-20261024/candidate-probes-metadata.json",
+    "sha256": "7a673113337ce8600b5549f919acf3e9918b7dcabb5c4efa67b4e1747c8308ba",
+    "bytes": 357
+  },
+  {
+    "path": "docs/validation/nd30-20261024/candidate-probes.json",
+    "sha256": "0cc3d28e22b63cb08ac89d63a3ea4332f103ab776b03020a828a4a4c308cea9d",
+    "bytes": 3125
+  },
+  {
+    "path": "docs/validation/nd30-20261024/exporter-merge-proof.json",
+    "sha256": "3f1f21c96e4cb546ed911644df50430afbe9a366cb69523913a18377583b8fcd",
+    "bytes": 263
+  },
+  {
+    "path": "docs/validation/nd30-20261024/layout-tests.xml",
+    "sha256": "c2f8884e382a9eaeb962ea53f12ea8c718242815d3bec113139c37131a093fb8",
+    "bytes": 1670
+  },
+  {
+    "path": "docs/validation/nd30-20261024/live-final-v20/live-report-verification.json",
+    "sha256": "07133c9a33a88d946cb49659a387157829002dfef5282aa57ee88d984fb6ce70",
+    "bytes": 2187
+  },
+  {
+    "path": "docs/validation/nd30-20261024/live-final-v20/live-report.docx",
+    "sha256": "ead3777a0ce0dafde1ba45fdbe1d30461b4ae071af07851299a01a9c1dc1fa6e",
+    "bytes": 38741
+  },
+  {
+    "path": "docs/validation/nd30-20261024/live-final-v20/live-results.json",
+    "sha256": "d92294aa8ae6052dc6346575eeadce36d2625120056710b2d2d2c5bf5fb7b124",
+    "bytes": 598
+  },
+  {
+    "path": "docs/validation/nd30-20261024/live-final-v20/page-1.png",
+    "sha256": "45054ce535fc940f8d5fa8eb96e63ce0b682994c01f59552e67f8e8c6d8d1bef",
+    "bytes": 48154
+  },
+  {
+    "path": "docs/validation/nd30-20261024/live-final-v20/pdf/live-report.pdf",
+    "sha256": "255fc8e15dd399d59252c502b8c230bc9c1021cb5dbe258086224a427b854a6e",
+    "bytes": 97846
+  },
+  {
+    "path": "docs/validation/nd30-20261024/live-final-v20/postflight.json",
+    "sha256": "6bb6b47a8bcbafa855c0a3797c79b9d7a91fbcf8a24d0d9196e4d158ef9e5875",
+    "bytes": 819
+  },
+  {
+    "path": "docs/validation/nd30-20261024/publication-status.json",
+    "sha256": "f5d3e7aab14536bc3113303e7ef68f7267b207a27eb17b591ad423891ef86d0a",
+    "bytes": 420
+  },
+  {
+    "path": "docs/validation/nd30-20261024/RESULTS.md",
+    "sha256": "c0c540f66ff5db72ed8583ccbd117775877f6a091a542d577b82540f55bd4087",
+    "bytes": 7190
+  },
+  {
+    "path": "docs/validation/nd30-20261024/runtime-final.json",
+    "sha256": "f6115ccb49f544b6d0e5a7075c2113017ce98ff5b95757e28fa18a2c79be8372",
+    "bytes": 1529
+  },
+  {
+    "path": "docs/validation/nd30-20261024/skill-sync-tests.xml",
+    "sha256": "226fe0497264496217c2c90e432c547b88ed99112840dfa842987d638633ce8c",
+    "bytes": 895
+  },
+  {
+    "path": "docs/validation/nd30-20261024/sync-results.json",
+    "sha256": "fb1590b8fb9635b31d510f8195f17019833c627bca50c5c6b556b41fab4b4836",
+    "bytes": 1003
+  },
+  {
+    "path": "docs/validation/wiki-e2e-20261023/prompt-summary-20261024/composite-v12-tests.xml",
+    "sha256": "bb9df518ccd9a211c9bf3e6f7766afad41626ddf81d8ad02b1f64228d039b7bc",
+    "bytes": 46109
+  },
+  {
+    "path": "docs/validation/wiki-e2e-20261023/prompt-summary-20261024/live-run1/artifact-verification.json",
+    "sha256": "2221d5a576fa5846e62481ac08f9d348f1de7dfcc1e84643facfa8430f081552",
+    "bytes": 2685
+  },
+  {
+    "path": "docs/validation/wiki-e2e-20261023/prompt-summary-20261024/live-run1/qa-summary.docx",
+    "sha256": "1de1ee72dee4d26dcd6be0cf85ef4cc72369bd6f38dcd011c25c2d9e34cfd213",
+    "bytes": 37148
+  },
+  {
+    "path": "docs/validation/wiki-e2e-20261023/prompt-summary-20261024/live-run2/artifact-verification.json",
+    "sha256": "b5108a1e781d6399bd2543b5f6a064c27d6236202278d66da2e3e1e5156985ec",
+    "bytes": 2697
+  },
+  {
+    "path": "docs/validation/wiki-e2e-20261023/prompt-summary-20261024/live-run2/qa-summary.docx",
+    "sha256": "21aa5f2cedb8db0e80f6aaf9eab58c400ad288be48db18e931df5db2250188ad",
+    "bytes": 37150
+  },
+  {
+    "path": "docs/validation/wiki-e2e-20261023/prompt-summary-20261024/probe/baseline-results.json",
+    "sha256": "5aef34ef194bb8a11fb3b8c504d83e9e40d122ce7ff321297ab0d82fe5a060c5",
+    "bytes": 1395
+  },
+  {
+    "path": "docs/validation/wiki-e2e-20261023/prompt-summary-20261024/probe/candidate-v2-results.json",
+    "sha256": "217bd1e9e6ed7fbe28a2822b08c6f550adc86edf23532a3db23801f0135d6c61",
+    "bytes": 3908
+  },
+  {
+    "path": "docs/validation/wiki-e2e-20261023/prompt-summary-20261024/publish.json",
+    "sha256": "0a495c3dd5cd6aa19278655b9b2c63f835eeb29c857e3736c21fa895dd0da6b7",
+    "bytes": 98
+  },
+  {
+    "path": "docs/validation/wiki-e2e-20261023/prompt-summary-20261024/RESULTS.md",
+    "sha256": "685243b772f8d6d287299ebbde3511cd9d7e2e6adc5f40ecbf338f33ea181a13",
+    "bytes": 5445
+  },
+  {
+    "path": "docs/validation/wiki-e2e-20261023/prompt-summary-20261024/runtime-verification.json",
+    "sha256": "7f51e8aa517f75d01e8a1b549e8ce8474a2ac91c5fc8cde5bd29e4ff8f4bed7f",
+    "bytes": 1176
+  },
+  {
+    "path": "docs/validation/wiki-e2e-20261023/prompt-summary-20261024/sync.json",
+    "sha256": "3664dca3cde5668e813025ade6f2c544ff74b83bb380639d8f62d17dcd4eda83",
+    "bytes": 364
+  },
+  {
+    "path": "docs/validation/wiki-e2e-20261023/rerank-repair-acceptance.json",
+    "sha256": "94cb7aaf210c01b5b14b00a14406dcb8187431b69d36aa66d0c133eeea16a97e",
+    "bytes": 4010
+  },
+  {
+    "path": "docs/validation/wiki-e2e-20261023/summary-prompt-tests.xml",
+    "sha256": "0d500793a22e94e5359498548832b70c452eb90ab1e9c86eaef7014a56705c61",
+    "bytes": 2156
+  }
+]

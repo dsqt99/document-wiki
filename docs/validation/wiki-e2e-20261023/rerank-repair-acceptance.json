@@ -1,0 +1,170 @@
+{
+  "at": "2026-10-23T16:16:07.763389+00:00",
+  "layer": "live_configured_reranker",
+  "cases": [
+    {
+      "case": "q_equipment",
+      "expected": "equipment",
+      "returned": [
+        "equipment"
+      ],
+      "passed": true,
+      "search": {
+        "mode": "rerank",
+        "warning": null,
+        "warnings": [],
+        "warning_codes": [],
+        "threshold": 0.7,
+        "retrieval_mode": "hybrid"
+      }
+    },
+    {
+      "case": "q_leave",
+      "expected": "leave",
+      "returned": [
+        "leave"
+      ],
+      "passed": true,
+      "search": {
+        "mode": "rerank",
+        "warning": null,
+        "warnings": [],
+        "warning_codes": [],
+        "threshold": 0.7,
+        "retrieval_mode": "hybrid"
+      }
+    },
+    {
+      "case": "q_visitor",
+      "expected": "visitor",
+      "returned": [
+        "visitor"
+      ],
+      "passed": true,
+      "search": {
+        "mode": "rerank",
+        "warning": null,
+        "warnings": [],
+        "warning_codes": [],
+        "threshold": 0.7,
+        "retrieval_mode": "hybrid"
+      }
+    },
+    {
+      "case": "q_backup",
+      "expected": "backup",
+      "returned": [
+        "backup"
+      ],
+      "passed": true,
+      "search": {
+        "mode": "hybrid_fallback",
+        "warning": "Điểm xếp hạng thấp hơn ngưỡng. Chỉ hiển thị kết quả khớp từ khóa; cần kiểm tra nội dung nguồn.",
+        "warnings": [
+          "Điểm xếp hạng thấp hơn ngưỡng. Chỉ hiển thị kết quả khớp từ khóa; cần kiểm tra nội dung nguồn."
+        ],
+        "warning_codes": [
+          "rerank_below_threshold"
+        ],
+        "threshold": null,
+        "retrieval_mode": "hybrid"
+      }
+    },
+    {
+      "case": "q_incident",
+      "expected": "incident",
+      "returned": [
+        "incident"
+      ],
+      "passed": true,
+      "search": {
+        "mode": "hybrid_fallback",
+        "warning": "Điểm xếp hạng thấp hơn ngưỡng. Chỉ hiển thị kết quả khớp từ khóa; cần kiểm tra nội dung nguồn.",
+        "warnings": [
+          "Điểm xếp hạng thấp hơn ngưỡng. Chỉ hiển thị kết quả khớp từ khóa; cần kiểm tra nội dung nguồn."
+        ],
+        "warning_codes": [
+          "rerank_below_threshold"
+        ],
+        "threshold": null,
+        "retrieval_mode": "hybrid"
+      }
+    },
+    {
+      "case": "q_meeting",
+      "expected": "meeting",
+      "returned": [
+        "meeting"
+      ],
+      "passed": true,
+      "search": {
+        "mode": "rerank",
+        "warning": null,
+        "warnings": [],
+        "warning_codes": [],
+        "threshold": 0.7,
+        "retrieval_mode": "hybrid"
+      }
+    },
+    {
+      "case": "q_training",
+      "expected": "training",
+      "returned": [
+        "training"
+      ],
+      "passed": true,
+      "search": {
+        "mode": "rerank",
+        "warning": null,
+        "warnings": [],
+        "warning_codes": [],
+        "threshold": 0.7,
+        "retrieval_mode": "hybrid"
+      }
+    },
+    {
+      "case": "q_storage",
+      "expected": "storage",
+      "returned": [
+        "storage"
+      ],
+      "passed": true,
+      "search": {
+        "mode": "rerank",
+        "warning": null,
+        "warnings": [],
+        "warning_codes": [],
+        "threshold": 0.7,
+        "retrieval_mode": "hybrid"
+      }
+    },
+    {
+      "case": "negative_topic",
+      "expected": null,
+      "returned": [],
+      "passed": true,
+      "search": {
+        "mode": "rerank",
+        "warning": null,
+        "warnings": [],
+        "warning_codes": [],
+        "threshold": 0.7,
+        "retrieval_mode": "hybrid"
+      }
+    },
+    {
+      "case": "negative_id",
+      "expected": null,
+      "returned": [],
+      "passed": true,
+      "search": {
+        "mode": "rerank",
+        "warning": null,
+        "warnings": [],
+        "warning_codes": [],
+        "threshold": 0.7,
+        "retrieval_mode": "hybrid"
+      }
+    }
+  ]
+}
