@@ -9,7 +9,7 @@ Mục tiêu: đưa các bản sửa Wiki đã triển khai/nghiệm thu vào `re
 - [x] Review và xử lý mọi lỗi chặn merge (hai lỗi quyền đọc có hồi quy RED/GREEN, review lại đạt).
 - [x] Chạy pytest (882 đạt, 30 bỏ qua), frontend tests (39 đạt) và Docker production build backend/frontend trên bản tích hợp.
 - [x] Commit theo nhóm mã, skill và báo cáo; kiểm tra staged diff và dữ liệu nhạy cảm.
-- [ ] Merge vào `release/cahy`, push nhánh tích hợp/release và xác nhận SHA remote.
+- [x] Merge vào `release/cahy` tại `577be89`; đã push atomic nhánh tích hợp và release lên origin, không force-push.
 
 Không đưa nguyên cây thay đổi từ worktree cũ vào release: 97 file ở checkout bàn giao đã khớp release, nhiều file khác là phiên bản cũ hơn hoặc tính năng độc lập chưa nghiệm thu (ví dụ quản trị prompt). Không xóa/reset/stash các cây đó. Các snapshot runtime, token phiên, log audit thô, cache, dependency và font binary không nằm trong commit.
 

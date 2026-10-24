@@ -40,3 +40,5 @@ Image dùng kiểm build: `cahy-wiki-backend:release-check-261024`, `cahy-wiki-f
 - [Manifest hash các bằng chứng đã đưa vào Git](evidence-manifest.json).
 
 Không commit raw audit log, token phiên, cache, bộ dependency, bản sao toàn bộ code runtime hoặc font binary. Các worktree cũ được giữ nguyên; các thay đổi cũ trùng release và các tính năng độc lập chưa nghiệm thu không được chép đè vào bản tích hợp. Repository Chat/Terminal được quản lý riêng, không nằm trong lượt push Wiki này.
+
+Merge commit: `577be89`. Nhánh `integration/wiki-fixes-261024` và `release/cahy` đã được push atomic lên origin sau kiểm thử; cây source của merge khớp hoàn toàn cây đã kiểm thử. Các checkout cũ không bị reset hoặc xóa.
