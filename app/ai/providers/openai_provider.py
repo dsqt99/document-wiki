@@ -14,6 +14,7 @@ from app.ai.providers.base import (
     TINY_PNG,
     EmbeddingProvider,
     LLMProvider,
+    LLMOutputTruncated,
     ProviderConfig,
     VisionProvider,
 )
@@ -100,6 +101,10 @@ class OpenAILLM(_OpenAIClientMixin, LLMProvider):
         return _is_reasoning(self.config.model_id)
 
     def _params(self, max_tokens: Optional[int], temperature: Optional[float]) -> dict:
+        from app.config import settings
+
+        if max_tokens is None:
+            max_tokens = max(1, int(settings.llm_max_output_tokens))
         params: dict = {"model": self.config.model_id}
         if self._is_reasoning_or_gpt5():
             if max_tokens:
@@ -134,25 +139,30 @@ class OpenAILLM(_OpenAIClientMixin, LLMProvider):
         calls: dict[int, list] = {}
         finish = None
         usage = None
-        async for chunk in stream:
-            if getattr(chunk, "usage", None):
-                usage = self._usage(chunk)
-            if not chunk.choices:
-                continue
-            choice = chunk.choices[0]
-            delta = choice.delta
-            if delta is not None:
-                if delta.content:
-                    parts.append(delta.content)
-                for tc in getattr(delta, "tool_calls", None) or []:
-                    slot = calls.setdefault(tc.index, [None, "", ""])
-                    if tc.id:
-                        slot[0] = tc.id
-                    if tc.function is not None:
-                        slot[1] += tc.function.name or ""
-                        slot[2] += tc.function.arguments or ""
-            if choice.finish_reason:
-                finish = choice.finish_reason
+        try:
+            async for chunk in stream:
+                if getattr(chunk, "usage", None):
+                    usage = self._usage(chunk)
+                if not chunk.choices:
+                    continue
+                choice = chunk.choices[0]
+                delta = choice.delta
+                if delta is not None:
+                    if delta.content:
+                        parts.append(delta.content)
+                    for tc in getattr(delta, "tool_calls", None) or []:
+                        slot = calls.setdefault(tc.index, [None, "", ""])
+                        if tc.id:
+                            slot[0] = tc.id
+                        if tc.function is not None:
+                            slot[1] += tc.function.name or ""
+                            slot[2] += tc.function.arguments or ""
+                if choice.finish_reason:
+                    finish = choice.finish_reason
+        finally:
+            # wait_for cancellation must close the HTTP response too. Otherwise a
+            # timed-out merge can leave generation occupying the shared upstream.
+            await stream.close()
         text = "".join(parts) if parts else None
         return text, [tuple(calls[i]) for i in sorted(calls)], finish, usage
 
@@ -175,7 +185,9 @@ class OpenAILLM(_OpenAIClientMixin, LLMProvider):
         upstream.ensure_available(self.config.model_id)
         start = _now()
         try:
-            text, _, _, usage = await self._complete(messages=messages, **params)
+            text, _, finish_reason, usage = await self._complete(messages=messages, **params)
+            if finish_reason == "length":
+                raise LLMOutputTruncated("LLM output truncated at token limit; incomplete content rejected")
         except Exception as e:
             upstream.record_failure(self.config.model_id, e)
             tracing.record_generation(
@@ -202,6 +214,8 @@ class OpenAILLM(_OpenAIClientMixin, LLMProvider):
             text, raw_calls, finish_reason, usage = await self._complete(
                 messages=msgs, tools=to_openai_tools(tools), **params
             )
+            if finish_reason == "length":
+                raise LLMOutputTruncated("LLM output truncated at token limit; incomplete tool turn rejected")
         except Exception as e:
             upstream.record_failure(self.config.model_id, e)
             tracing.record_generation(
@@ -234,6 +248,8 @@ class OpenAILLM(_OpenAIClientMixin, LLMProvider):
         try:
             text = await self.generate("Reply with OK.", max_tokens=10, temperature=0)
             return True, f"OK — model={self.config.model_id}: {text[:50]}"
+        except LLMOutputTruncated:
+            return True, f"OK — model={self.config.model_id}: server answered (probe token limit reached)"
         except Exception as e:
             return False, f"OpenAI error: {e}"
 

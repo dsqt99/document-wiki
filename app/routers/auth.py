@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.database import get_db
 from app.database.models import Employee
-from app.services import auth_service, permission_engine
+from app.services import auth_service, permission_engine, security_label
 
 router = APIRouter()
 
@@ -42,6 +42,7 @@ def user_summary(emp) -> dict:
         "department_ids": [str(d) for d in emp.department_ids],
         "scope_department_ids": [str(d) for d in permission_engine._user_department_ids(emp)],
         "department_names": department_names(emp),
+        "clearance_level": security_label.normalize(getattr(emp, "clearance_level", None)),
         "permissions": permission_engine.get_effective_permissions(emp),
         "workspace_memberships": [],
     }

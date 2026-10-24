@@ -168,12 +168,17 @@ async def ai_ready(db, need_ocr: bool = False) -> tuple[bool, str]:
     import asyncio
 
     from app.ai import registry, upstream
+    from app.ai.providers.base import LLMOutputTruncated
     from app.config import settings
 
     try:
         llm = await registry.ProviderRegistry(db).get_llm()
         upstream.record_success(llm.config.model_id)  # let the probe through an open breaker
-        await asyncio.wait_for(llm.generate("Reply with OK.", max_tokens=5, temperature=0), PROBE_TIMEOUT_S)
+        try:
+            await asyncio.wait_for(llm.generate("Reply with OK.", max_tokens=5, temperature=0), PROBE_TIMEOUT_S)
+        except LLMOutputTruncated:
+            # A capped probe proves connectivity; its text is never published.
+            upstream.record_success(llm.config.model_id)
     except Exception as e:  # noqa: BLE001
         return False, f"LLM: {type(e).__name__}: {str(e)[:200]}"
     if need_ocr:

@@ -114,11 +114,17 @@
           "minLength": 1
         },
         "ngay_ban_hanh": {
-          "type": "string",
+          "type": [
+            "string",
+            "null"
+          ],
           "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
         },
         "co_quan_ban_hanh": {
-          "type": "string",
+          "type": [
+            "string",
+            "null"
+          ],
           "minLength": 1
         },
         "trich_yeu": {
@@ -155,11 +161,17 @@
           "minLength": 1
         },
         "ngay_ban_hanh": {
-          "type": "string",
+          "type": [
+            "string",
+            "null"
+          ],
           "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
         },
         "co_quan_ban_hanh": {
-          "type": "string",
+          "type": [
+            "string",
+            "null"
+          ],
           "minLength": 1
         },
         "trich_yeu": {
@@ -211,11 +223,17 @@
           "minLength": 1
         },
         "ngay_ban_hanh": {
-          "type": "string",
+          "type": [
+            "string",
+            "null"
+          ],
           "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
         },
         "co_quan_ban_hanh": {
-          "type": "string",
+          "type": [
+            "string",
+            "null"
+          ],
           "minLength": 1
         },
         "trich_yeu": {

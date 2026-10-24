@@ -1,0 +1,23 @@
+[
+  {
+    "case": "original_failure",
+    "mode": "baseline",
+    "response": "{\"so_ky_hieu\": \"QA-UPLOAD-261023-321d948\", \"ngay_ban_hanh\": null, \"co_quan_ban_hanh\": null, \"trich_yeu\": \"Tài liệu là dữ liệu kiểm thử giả lập cho hệ thống CAHY, không phải văn bản nghiệp vụ.\", \"y_chinh\": [\"Tài liệu mang tên 'NGHIỆM THU - DỮ LIỆU GIẢ LẬP - 261023' và có mã đối chiếu QA-UPLOAD-261023-321d948.\", \"Nội dung xác nhận đây là dữ liệu kiểm thử giả lập, không phải tài liệu nghiệp vụ thực tế.\", \"Tài liệu không chứa các quy định pháp luật, quy trình nghiệp vụ hay văn bản hướng dẫn cụ thể.\"], \"thoi_han\": [], \"nhiem_vu_cong_an\": [], \"de_xuat_xu_ly\": \"Tài liệu không nêu đề xuất xử lý.\", \"qppl\": {\"pham_vi_dieu_chinh\": \"Dữ liệu kiểm thử giả lập\", \"doi_tuong_ap_dung\": \"Hệ thống CAHY\", \"diem_moi\": [\"(cán bộ pháp chế bổ sung)\"], \"ngay_hieu_luc\": null, \"van_ban_bi_thay_the\": []}}",
+    "finish_reason": "stop",
+    "usage": {
+      "input": 5146,
+      "output": 298
+    },
+    "tool_calls": 0,
+    "checks": {
+      "number": false,
+      "date": true,
+      "issuer": true,
+      "legal_branch": false,
+      "marker": true,
+      "normal_finish": true
+    },
+    "passed": false,
+    "seconds": 5.412
+  }
+]

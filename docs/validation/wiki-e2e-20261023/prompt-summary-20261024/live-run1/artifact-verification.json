@@ -1,0 +1,22 @@
+{
+  "case": "C04_source_to_word",
+  "artifact_id": "4aadc817-58cb-4ca9-88b6-a75ef04491c5",
+  "chat_id": "b43910f6-0a67-49b6-9592-9d861952ed57",
+  "bytes": 37148,
+  "sha256": "1de1ee72dee4d26dcd6be0cf85ef4cc72369bd6f38dcd011c25c2d9e34cfd213",
+  "valid_docx_zip": true,
+  "marker_present": true,
+  "source_identity_present": true,
+  "source_section_present": true,
+  "text": "Số, ký hiệu:\n Chưa có thông tin\nNgày ban hành:\n Chưa có thông tin\nCơ quan ban hành:\n Chưa có thông tin\nTrích yếu:\n Tài liệu nghiệm thu upload sử dụng dữ liệu kiểm thử giả lập.\nÝ chính\nTài liệu có tiêu đề NGHIỆM THU UPLOAD CAHY 261023.\nĐây là dữ liệu kiểm thử giả lập, không phải tài liệu nghiệp vụ.\nMã đối chiếu là QA-UPLOAD-261023-321d948.\nThời hạn\nNhiệm vụ Công an\nĐề xuất xử lý:\n Tài liệu không nêu đề xuất xử lý\nNguồn tài liệu\n[NGHIỆM THU - DỮ LIỆU GIẢ LẬP - 261023](http://localhost:3219/wiki/source/041d3b9c-bb3b-42b4-b82d-a6ff69a34c24)",
+  "relationships": "<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId3\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles\" Target=\"styles.xml\"/><Relationship Id=\"rId4\" Type=\"http://schemas.microsoft.com/office/2007/relationships/stylesWithEffects\" Target=\"stylesWithEffects.xml\"/><Relationship Id=\"rId5\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings\" Target=\"settings.xml\"/><Relationship Id=\"rId6\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/webSettings\" Target=\"webSettings.xml\"/><Relationship Id=\"rId7\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/fontTable\" Target=\"fontTable.xml\"/><Relationship Id=\"rId8\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme\" Target=\"theme/theme1.xml\"/><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml\" Target=\"../customXml/item1.xml\"/><Relationship Id=\"rId2\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering\" Target=\"numbering.xml\"/></Relationships>",
+  "source_versions": [
+    {
+      "source_id": "041d3b9c-bb3b-42b4-b82d-a6ff69a34c24",
+      "source_version": "bc0950d3269b1ada609c5468ac4f4312e7942d0ba6921d4b437658521711d34c"
+    }
+  ],
+  "missing_metadata_preserved_as_unknown": true,
+  "no_invented_legal_section": true,
+  "original_source_hash_verified": true
+}

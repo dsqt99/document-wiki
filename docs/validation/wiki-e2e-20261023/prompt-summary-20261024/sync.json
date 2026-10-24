@@ -1,0 +1,14 @@
+{
+  "sync": {
+    "ok": true,
+    "total": 9,
+    "added": 0,
+    "updated": 0,
+    "disabled": 0,
+    "at": 1792780906
+  },
+  "version": 5,
+  "version_hash": "0fd1f6cb2f896b74319199f774a15c73525af6c51aac49ff00437c1027d69bc0",
+  "prompt_match_after_newline_normalization": true,
+  "body_sha256": "4f441251aede0eca94e88f0ac5bec7f6117cbbcfd92050f5fd85eb3a79d07cbb"
+}

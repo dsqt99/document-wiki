@@ -1,0 +1,44 @@
+{
+  "at": "2026-10-24T02:59:20.5159360+07:00",
+  "services": [
+    {
+      "container": "cahy_chatbot",
+      "image": "cahy-chatbot:nd30-flow-261024-v20",
+      "image_id": "sha256:1ef5a196619d3b7bd789cbdcc9c14da9609220f58ea8452344ae2ba988eddc2f",
+      "health": "healthy"
+    },
+    {
+      "container": "cahy_open_terminal",
+      "image": "cahy-open-terminal:nd30-261024-v4",
+      "image_id": "sha256:972718b846913c7b14e2e7ba6ffb12a9c5a326f4fd0d9f8ff54258e62ab7fa63",
+      "health": "healthy"
+    }
+  ],
+  "font": "times.ttf: \"Times New Roman\" \"Regular\"",
+  "files": [
+    {
+      "container": "cahy_chatbot",
+      "file": "/app/backend/open_webui/utils/cahy_agent_policy.py",
+      "sha256": "6441d3ef63fb163f71b380bf6cbebceaa8a3ff27fdc5a26f8a47fd32a8498770",
+      "matches_build": true
+    },
+    {
+      "container": "cahy_chatbot",
+      "file": "/app/backend/open_webui/utils/cahy_decision_router.py",
+      "sha256": "ad60f3fe2fca9b794c175fc693f1d7ba9c93506370312385dfbd40b7a4e55b78",
+      "matches_build": true
+    },
+    {
+      "container": "cahy_chatbot",
+      "file": "/app/backend/open_webui/agents/langgraph/route_nodes.py",
+      "sha256": "5688de655cec85a4bb9ca9b850a6e2c22d4baad229697dc04e0212bc5728b870",
+      "matches_build": true
+    },
+    {
+      "container": "cahy_open_terminal",
+      "file": "/usr/local/bin/md2office",
+      "sha256": "efa00a0747604bb2247482cffc1ce8d9aca8e699becc0d8fdc3789208e44ea0c",
+      "matches_build": true
+    }
+  ]
+}

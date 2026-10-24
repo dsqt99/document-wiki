@@ -1,0 +1,296 @@
+{
+  "schema_version": 1,
+  "synthetic": true,
+  "font_sha256": "b3658eadae55e682b5f69eb64c439c1ecc8f196c0bb8d4756d145d13bc86476a",
+  "cases": [
+    {
+      "id": "extract_txt",
+      "kind": "extraction",
+      "file": "vietnamese.txt",
+      "reference_units": [
+        "NGHIỆM THU GIẢ LẬP CAHY 261023\nĐơn vị thử nghiệm: Phòng Kiểm định số 08.\nNgày tiếp nhận: 23/10/2026. Mã hồ sơ: QA-007/2026.\nSố lượng: 12 thiết bị; tổng giá trị: 1.250.000 đồng.\nĐây là dữ liệu giả lập để đo chất lượng, không dùng xử lý nghiệp vụ."
+      ],
+      "critical_values": [
+        "QA-007/2026",
+        "23/10/2026",
+        "1.250.000"
+      ],
+      "expect_blank": false,
+      "input_sha256": "118155f7ca6e7aa5331967fa5426ec9d432afe6913df10ad4392c03b3814142f",
+      "provenance": "independently authored synthetic QA blueprint"
+    },
+    {
+      "id": "extract_md",
+      "kind": "extraction",
+      "file": "vietnamese.md",
+      "reference_units": [
+        "NGHIỆM THU GIẢ LẬP CAHY 261023\nĐơn vị thử nghiệm: Phòng Kiểm định số 08.\nNgày tiếp nhận: 23/10/2026. Mã hồ sơ: QA-007/2026.\nSố lượng: 12 thiết bị; tổng giá trị: 1.250.000 đồng.\nĐây là dữ liệu giả lập để đo chất lượng, không dùng xử lý nghiệp vụ."
+      ],
+      "critical_values": [
+        "QA-007/2026",
+        "23/10/2026",
+        "1.250.000"
+      ],
+      "expect_blank": false,
+      "input_sha256": "118155f7ca6e7aa5331967fa5426ec9d432afe6913df10ad4392c03b3814142f",
+      "provenance": "independently authored synthetic QA blueprint"
+    },
+    {
+      "id": "extract_docx_text",
+      "kind": "extraction",
+      "file": "vietnamese.docx",
+      "reference_units": [
+        "NGHIỆM THU GIẢ LẬP CAHY 261023\nĐơn vị thử nghiệm: Phòng Kiểm định số 08.\nNgày tiếp nhận: 23/10/2026. Mã hồ sơ: QA-007/2026.\nSố lượng: 12 thiết bị; tổng giá trị: 1.250.000 đồng.\nĐây là dữ liệu giả lập để đo chất lượng, không dùng xử lý nghiệp vụ."
+      ],
+      "critical_values": [
+        "QA-007/2026",
+        "1.250.000"
+      ],
+      "expect_blank": false,
+      "input_sha256": "4e0c1fa22e0f7f685daf794fd2315534e1bd4cf18c16599fb95ef2df3ba60537",
+      "provenance": "independently authored synthetic QA blueprint"
+    },
+    {
+      "id": "extract_docx_table",
+      "kind": "extraction",
+      "file": "table.docx",
+      "reference_units": [
+        "Mã Hạng mục Số lượng\nQA-A01 Máy in 12\nQA-B02 Máy quét 0"
+      ],
+      "critical_values": [
+        "QA-A01",
+        "12",
+        "QA-B02",
+        "0"
+      ],
+      "expect_blank": false,
+      "input_sha256": "2da1765e2a59ba77da8a8a725ca7cd677f015cce421dcdce991e8479be221cf1",
+      "provenance": "independently authored synthetic QA blueprint"
+    },
+    {
+      "id": "extract_xlsx",
+      "kind": "extraction",
+      "file": "table.xlsx",
+      "reference_units": [
+        "Thiết bị QA\nMã Hạng mục Số lượng\nQA-A01 Máy in 12\nQA-B02 Máy quét 0"
+      ],
+      "critical_values": [
+        "QA-A01",
+        "12",
+        "QA-B02",
+        "0"
+      ],
+      "expect_blank": false,
+      "input_sha256": "790745ca35034b982cdf3875a8f844ba7f88a5d056125d43f893ef4b09454d1d",
+      "provenance": "independently authored synthetic QA blueprint"
+    },
+    {
+      "id": "extract_pptx",
+      "kind": "extraction",
+      "file": "slides.pptx",
+      "reference_units": [
+        "Kế hoạch kiểm thử\nMã QA-P01\nNgày 23/10/2026",
+        "Kết quả giả lập\n12 thiết bị đạt kiểm tra\n0 thiết bị bị mất"
+      ],
+      "critical_values": [
+        "QA-P01",
+        "23/10/2026",
+        "12",
+        "0"
+      ],
+      "expect_blank": false,
+      "input_sha256": "ccc4c322bbc79a7b8ada378f4d84e407afe561451689c1e613848c3b9395d86c",
+      "provenance": "independently authored synthetic QA blueprint"
+    },
+    {
+      "id": "extract_pdf_digital",
+      "kind": "extraction",
+      "file": "digital.pdf",
+      "reference_units": [
+        "NGHIỆM THU GIẢ LẬP CAHY 261023\nĐơn vị thử nghiệm: Phòng Kiểm định số 08.\nNgày tiếp nhận: 23/10/2026. Mã hồ sơ: QA-007/2026.",
+        "Số lượng: 12 thiết bị; tổng giá trị: 1.250.000 đồng.\nĐây là dữ liệu giả lập để đo chất lượng, không dùng xử lý nghiệp vụ.\nKẾT THÚC TRANG KIỂM THỬ 02."
+      ],
+      "critical_values": [
+        "QA-007/2026",
+        "1.250.000"
+      ],
+      "expect_blank": false,
+      "input_sha256": "a9da1b4a0e9b0d0f0a406ad29331d15b19634812ae76bd88509ef93cfab43ce2",
+      "provenance": "independently authored synthetic QA blueprint"
+    },
+    {
+      "id": "ocr_clean",
+      "kind": "ocr",
+      "file": "scan-clean.png",
+      "reference_units": [
+        "NGHIỆM THU OCR GIẢ LẬP\nHọ tên: Nguyễn Thị Ánh.\nMã tài liệu: QA-089/2026.\nNgày nhận: 23/10/2026.\nSố lượng: 12; số hỏng: 0.\nTổng cộng: 1.250.000 đồng."
+      ],
+      "critical_values": [
+        "QA-089/2026",
+        "23/10/2026",
+        "12",
+        "0",
+        "1.250.000"
+      ],
+      "expect_blank": false,
+      "input_sha256": "b4e6a84df76154577698440b3e113b9548e24cd72f002cb94ec0c34fe10e31d2",
+      "provenance": "independently authored synthetic QA blueprint"
+    },
+    {
+      "id": "ocr_rotated",
+      "kind": "ocr",
+      "file": "scan-rotated.png",
+      "reference_units": [
+        "NGHIỆM THU OCR GIẢ LẬP\nHọ tên: Nguyễn Thị Ánh.\nMã tài liệu: QA-089/2026.\nNgày nhận: 23/10/2026.\nSố lượng: 12; số hỏng: 0.\nTổng cộng: 1.250.000 đồng."
+      ],
+      "critical_values": [
+        "QA-089/2026",
+        "23/10/2026",
+        "12",
+        "0",
+        "1.250.000"
+      ],
+      "expect_blank": false,
+      "input_sha256": "62388e4c3f541930e3d012df15e030dced2b166e2b4e3341f3f745f33da16d79",
+      "provenance": "independently authored synthetic QA blueprint"
+    },
+    {
+      "id": "ocr_blurred",
+      "kind": "ocr",
+      "file": "scan-blurred.png",
+      "reference_units": [
+        "NGHIỆM THU OCR GIẢ LẬP\nHọ tên: Nguyễn Thị Ánh.\nMã tài liệu: QA-089/2026.\nNgày nhận: 23/10/2026.\nSố lượng: 12; số hỏng: 0.\nTổng cộng: 1.250.000 đồng."
+      ],
+      "critical_values": [
+        "QA-089/2026",
+        "23/10/2026",
+        "12",
+        "0",
+        "1.250.000"
+      ],
+      "expect_blank": false,
+      "input_sha256": "13b04137f02e920d02f42d7313e06e024544a94e55c36d5af9715950caee006a",
+      "provenance": "independently authored synthetic QA blueprint"
+    },
+    {
+      "id": "ocr_blank",
+      "kind": "ocr",
+      "file": "scan-blank.png",
+      "reference_units": [
+        ""
+      ],
+      "critical_values": [],
+      "expect_blank": true,
+      "input_sha256": "96c1a1ea191300bfb1f43eb950de443320057e0e130b02a8782a3c5612487473",
+      "provenance": "independently authored synthetic QA blueprint"
+    },
+    {
+      "id": "extract_pdf_scan",
+      "kind": "extraction",
+      "file": "scanned.pdf",
+      "reference_units": [
+        "NGHIỆM THU OCR GIẢ LẬP\nHọ tên: Nguyễn Thị Ánh.\nMã tài liệu: QA-089/2026.\nNgày nhận: 23/10/2026.\nSố lượng: 12; số hỏng: 0.\nTổng cộng: 1.250.000 đồng."
+      ],
+      "critical_values": [
+        "QA-089/2026",
+        "1.250.000"
+      ],
+      "expect_blank": false,
+      "input_sha256": "c20d7ff0132239c918cc79bf6daad019f862f997e204d7aa7b2ad4404a06b9d2",
+      "provenance": "independently authored synthetic QA blueprint"
+    },
+    {
+      "id": "extract_pdf_mixed",
+      "kind": "extraction",
+      "file": "mixed.pdf",
+      "reference_units": [
+        "TRANG CHỮ GIẢ LẬP QA-M01: 23/10/2026.",
+        "NGHIỆM THU OCR GIẢ LẬP\nHọ tên: Nguyễn Thị Ánh.\nMã tài liệu: QA-089/2026.\nNgày nhận: 23/10/2026.\nSố lượng: 12; số hỏng: 0.\nTổng cộng: 1.250.000 đồng."
+      ],
+      "critical_values": [
+        "QA-M01",
+        "QA-089/2026"
+      ],
+      "expect_blank": false,
+      "input_sha256": "6a83fd199bf85f882d66226d4c453a6896b97af06e80e6afa61f45d23e0545f8",
+      "provenance": "independently authored synthetic QA blueprint"
+    }
+  ],
+  "corpus": [
+    {
+      "id": "equipment",
+      "text": "Biên bản kiểm kê thiết bị giả lập: có 12 máy in, 8 máy quét. Khi tiếp nhận thiết bị phải kiểm tra mã và số sê-ri."
+    },
+    {
+      "id": "leave",
+      "text": "Quy trình nghỉ phép giả lập: nhân viên gửi đơn cho trưởng nhóm trước ba ngày, ghi rõ thời gian bắt đầu và kết thúc."
+    },
+    {
+      "id": "visitor",
+      "text": "Sổ khách giả lập: khách đến làm việc cần ghi họ tên, đơn vị liên hệ và giờ vào, giờ ra ở bàn tiếp nhận."
+    },
+    {
+      "id": "backup",
+      "text": "Hướng dẫn sao lưu thử nghiệm: dữ liệu được sao lưu mỗi đêm vào kho dự phòng; mỗi tuần thực hiện kiểm tra khôi phục."
+    },
+    {
+      "id": "incident",
+      "text": "Xử lý sự cố máy tính giả lập: ngắt kết nối mạng khi có mã độc và báo ngay bộ phận công nghệ thông tin, không tự xóa bằng chứng."
+    },
+    {
+      "id": "meeting",
+      "text": "Kế hoạch họp thử nghiệm: cuộc họp bắt đầu lúc 08 giờ 30 ngày 26/10/2026 tại phòng số 2. Người chủ trì nhận biên bản sau họp."
+    },
+    {
+      "id": "training",
+      "text": "Lịch tập huấn giả lập: học viên học kỹ năng số vào chiều thứ Tư, mang theo máy tính xách tay và đăng nhập tài khoản đào tạo."
+    },
+    {
+      "id": "storage",
+      "text": "Hướng dẫn lưu trữ hồ sơ giả lập: đánh mã hộp, lập danh mục theo năm và kiểm tra thời hạn bảo quản trước khi chuyển kho."
+    }
+  ],
+  "queries": [
+    {
+      "id": "q_equipment",
+      "query": "Có bao nhiêu máy quét trong biên bản kiểm kê?",
+      "relevant_id": "equipment"
+    },
+    {
+      "id": "q_leave",
+      "query": "Muốn xin nghỉ thì gửi đơn trước mấy ngày?",
+      "relevant_id": "leave"
+    },
+    {
+      "id": "q_visitor",
+      "query": "Khách tới liên hệ phải ghi thông tin gì ở lễ tân?",
+      "relevant_id": "visitor"
+    },
+    {
+      "id": "q_backup",
+      "query": "Làm thế nào kiểm tra bản backup có khôi phục được?",
+      "relevant_id": "backup"
+    },
+    {
+      "id": "q_incident",
+      "query": "May tinh nhiem ma doc can xu ly ra sao?",
+      "relevant_id": "incident"
+    },
+    {
+      "id": "q_meeting",
+      "query": "Cuộc họp thử nghiệm diễn ra lúc nào và ở đâu?",
+      "relevant_id": "meeting"
+    },
+    {
+      "id": "q_training",
+      "query": "Khi đi học kỹ năng số cần mang thiết bị gì?",
+      "relevant_id": "training"
+    },
+    {
+      "id": "q_storage",
+      "query": "Đánh mã hộp và lập danh mục hồ sơ theo tiêu chí gì?",
+      "relevant_id": "storage"
+    }
+  ],
+  "scope_note": "Synthetic smoke benchmark; not a representative corpus accuracy estimate."
+}

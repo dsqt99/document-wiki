@@ -12,6 +12,10 @@ from app.utils.text import strip_code_fence
 
 BODY_SHRINK_RATIO = 0.7
 MERGE_TIMEOUT_S = 120
+# Large full-page rewrites exceed the interactive gateway's budget. Preserve
+# both versions deterministically rather than enqueue an unbounded rewrite.
+MERGE_MAX_INPUT_CHARS = 12000
+MERGE_MAX_OUTPUT_TOKENS = 4096
 MAX_ROW_LOSS = 0.2
 MIN_EXISTING_CHARS = 50
 APPEND_FALLBACK_HEADING = "## Bổ sung từ nguồn mới"
@@ -63,11 +67,14 @@ async def merge_page_content(llm, existing_content: str, new_content: str, slug:
     incoming = new_content or ""
     if len(existing.strip()) < MIN_EXISTING_CHARS or existing.strip() == incoming.strip():
         return incoming
+    if len(existing) + len(incoming) > MERGE_MAX_INPUT_CHARS:
+        return append_fallback(existing, incoming)
 
     try:
         prompt = _MERGE_PROMPT.format(slug=slug, existing=existing, incoming=incoming)
         raw = await asyncio.wait_for(
-            llm.generate(prompt, system=MERGE_SYSTEM_PROMPT, temperature=0.1),
+            llm.generate(prompt, system=MERGE_SYSTEM_PROMPT, temperature=0.1,
+                         max_tokens=MERGE_MAX_OUTPUT_TOKENS),
             timeout=MERGE_TIMEOUT_S,
         )
     except Exception as e:

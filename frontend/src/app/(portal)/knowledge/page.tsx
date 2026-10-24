@@ -127,7 +127,8 @@ export default function KnowledgePage() {
 }
 
 function KnowledgePageContent() {
-  const { user, hasPermission } = useAuth();
+  const { user, hasPermission, canAccess } = useAuth();
+  const canUpload = canAccess("doc", "create");
   const { uploaded, showBatch, restoreError, retryRestore } = useUploadBatch(user?.id);
   const canManage = hasPermission("org:settings:manage");
   const onSummaryComplete = useCallback(() => {
@@ -316,7 +317,7 @@ function KnowledgePageContent() {
             <Icon name={refreshing ? "progress_activity" : "sync"} className={cn(refreshing && "animate-spin")} />
             Làm mới
           </Button>
-          {tab === "documents" && <Button size="sm" className="h-9 gap-1.5" onClick={() => setUploadOpen(true)}>
+          {tab === "documents" && canUpload && <Button size="sm" className="h-9 gap-1.5" onClick={() => setUploadOpen(true)}>
             <Icon name="upload" />
             Tải lên
           </Button>}
@@ -451,7 +452,7 @@ function KnowledgePageContent() {
             void loadList(query, true);
             void loadMeta();
           }}
-          onUpload={() => setUploadOpen(true)}
+          onUpload={canUpload ? () => setUploadOpen(true) : undefined}
         />
       ) : (
         <KnowledgeTypeCards
@@ -477,7 +478,7 @@ function KnowledgePageContent() {
       )}
       </div>
 
-      <UploadDialog
+      {canUpload && <UploadDialog
         open={uploadOpen}
         onOpenChange={setUploadOpen}
         types={types}
@@ -489,7 +490,7 @@ function KnowledgePageContent() {
           void loadList(next, true);
           void loadMeta();
         }}
-      />
+      />}
       <KnowledgeTypeDialog
         open={typeDialogOpen}
         onOpenChange={setTypeDialogOpen}

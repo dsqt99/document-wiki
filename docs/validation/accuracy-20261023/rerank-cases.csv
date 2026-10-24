@@ -1,0 +1,9 @@
+﻿id,mode,seconds,retained,rank,hit1,hit3,mrr,ndcg3
+q_equipment,rerank,0.6805,1,1,1,1,1.0,1.0
+q_leave,rerank,0.5739,1,1,1,1,1.0,1.0
+q_visitor,rerank,0.5791,1,1,1,1,1.0,1.0
+q_backup,rerank,0.5875,0,,0,0,0,0
+q_incident,rerank,1.8457,0,,0,0,0,0
+q_meeting,rerank,0.9028,1,1,1,1,1.0,1.0
+q_training,rerank,0.5939,1,1,1,1,1.0,1.0
+q_storage,rerank,0.6231,1,1,1,1,1.0,1.0

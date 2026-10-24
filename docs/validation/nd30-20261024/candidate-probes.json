@@ -1,0 +1,101 @@
+[
+  {
+    "case": "review_month",
+    "mode": "candidate",
+    "response": "{\"hop_le\": true, \"so_loi\": 0, \"loi\": []}",
+    "usage": {
+      "input": 5679,
+      "output": 20
+    },
+    "checks": {
+      "normal_finish": true,
+      "consistent_count": true,
+      "no_false_positive": true
+    },
+    "passed": true,
+    "seconds": 3.501
+  },
+  {
+    "case": "review_parent",
+    "mode": "candidate",
+    "response": "{\"hop_le\": true, \"so_loi\": 0, \"loi\": []}",
+    "usage": {
+      "input": 5699,
+      "output": 20
+    },
+    "checks": {
+      "normal_finish": true,
+      "consistent_count": true,
+      "no_false_positive": true
+    },
+    "passed": true,
+    "seconds": 0.717
+  },
+  {
+    "case": "review_style",
+    "mode": "candidate",
+    "response": "{\"hop_le\": true, \"so_loi\": 0, \"loi\": []}",
+    "usage": {
+      "input": 5687,
+      "output": 20
+    },
+    "checks": {
+      "normal_finish": true,
+      "consistent_count": true,
+      "no_false_positive": true
+    },
+    "passed": true,
+    "seconds": 0.704
+  },
+  {
+    "case": "review_valid_draft",
+    "mode": "candidate",
+    "response": "{\"hop_le\": true, \"so_loi\": 0, \"loi\": []}",
+    "usage": {
+      "input": 5668,
+      "output": 20
+    },
+    "checks": {
+      "normal_finish": true,
+      "consistent_count": true,
+      "no_false_positive": true
+    },
+    "passed": true,
+    "seconds": 0.709
+  },
+  {
+    "case": "review_wrong_day",
+    "mode": "candidate",
+    "response": "{\"hop_le\":false,\"so_loi\":1,\"loi\":[{\"ma_loi\":\"TT_DIA_DANH_NGAY_THANG\",\"vi_tri\":\"dia_danh_ngay_thang\",\"trich_doan\":\"Hưng Yên, ngày 5 tháng 02 năm 2026\",\"mo_ta\":\"Ngày nhỏ hơn 10 phải có số 0 ở trước (05) và tháng 2 cũng phải có số 0 ở trước (02).\",\"de_xuat_sua\":\"Hưng Yên, ngày 05 tháng 02 năm 2026\",\"can_cu\":\"Phụ lục I, Khoản 2 Điều 8; Mục II.4 Nghị định số 30/2020/NĐ-CP\"}]}",
+    "usage": {
+      "input": 5655,
+      "output": 162
+    },
+    "checks": {
+      "normal_finish": true,
+      "consistent_count": true,
+      "detect_wrong_day": true
+    },
+    "passed": true,
+    "seconds": 2.564
+  },
+  {
+    "case": "draft_report",
+    "mode": "candidate",
+    "response": "---\ntype: vanban\noutput: bao_cao_thu_nghiem.docx\nquoc_hieu: CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM\ntieu_ngu: Độc lập - Tự do - Hạnh phúc\nco_quan_chu_quan: CÔNG AN TỈNH HƯNG YÊN\nco_quan: PHÒNG THAM MƯU\nso: .../BC-...\ndia_danh: Hưng Yên\nngay: ngày ... tháng ... năm ...\nloai: BÁO CÁO\ntrich_yeu: Kết quả kiểm tra 3 hồ sơ thử nghiệm\nkinh_gui:\n  - Công an tỉnh Hưng Yên\nnoi_nhan:\n  - Như trên;\n  - Lưu: VT.\nchuc_vu: ...\nnguoi_ky: ...\n---\nĐã kiểm tra 3 hồ sơ thử nghiệm./.",
+    "usage": {
+      "input": 6040,
+      "output": 190
+    },
+    "checks": {
+      "normal_finish": true,
+      "recipient_present": true,
+      "source_fact_preserved": true,
+      "no_invented_signer": true,
+      "vanban_frontmatter": true,
+      "no_invented_signing_year": true
+    },
+    "passed": true,
+    "seconds": 5.251
+  }
+]

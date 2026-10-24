@@ -1,0 +1,6 @@
+{
+  "baseline_sha256": "9d0a921716b6499de11fe55f5f21e56825a4040d7bfbfb3fc8d9fe004321772b",
+  "result_sha256": "efa00a0747604bb2247482cffc1ce8d9aca8e699becc0d8fdc3789208e44ea0c",
+  "only_function_changed": "make_vanban",
+  "outside_function_unchanged": true
+}

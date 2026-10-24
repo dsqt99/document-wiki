@@ -30,6 +30,9 @@ class _Stream:
             raise StopAsyncIteration
         return self._chunks.pop(0)
 
+    async def close(self):
+        pass
+
 
 class _Completions:
     def __init__(self, chunks=None, response=None):

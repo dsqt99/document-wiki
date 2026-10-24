@@ -1,0 +1,25 @@
+[
+  {
+    "case": "KN3_report_word",
+    "chat_id": "20d38f93-ca16-436e-ab70-b8d150c723bc",
+    "checks": {
+      "source_fact": true,
+      "unknown_signing_date": true,
+      "no_invented_year": true,
+      "one_national_header": true,
+      "no_raw_frontmatter": true,
+      "page_field": true,
+      "first_page_hidden": true,
+      "no_invented_signer": true,
+      "font": true
+    },
+    "passed": true,
+    "seconds": 42.588
+  },
+  {
+    "case": "KN7_wrong_day",
+    "chat_id": "2eb2f516-4a0c-4c8e-8143-6accd04e5f97",
+    "passed": true,
+    "seconds": 6.581
+  }
+]
