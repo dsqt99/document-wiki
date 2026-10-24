@@ -179,6 +179,7 @@ export const dictionaries = {
 
     // Scope
     "scope.global": "Toàn hệ thống",
+    "scope.personal": "Cá nhân",
     "scope.department": "Phòng ban",
     "knowledge.scope.workspace": "Không gian làm việc",
     "scope.project": "Không gian làm việc",
@@ -650,6 +651,7 @@ export const dictionaries = {
 
     // Scope
     "scope.global": "Global",
+    "scope.personal": "Personal",
     "scope.department": "Department",
     "knowledge.scope.workspace": "Workspace",
     "scope.project": "Workspace",

@@ -80,7 +80,7 @@ type Props = {
   query: SourceQuery;
   onQueryChange: (patch: Partial<SourceQuery>) => void;
   onRefresh: () => void;
-  onUpload: () => void;
+  onUpload?: () => void;
   onReviewBatch?: (sources: Source[]) => void;
 };
 
@@ -445,11 +445,11 @@ export function KnowledgeTable({
             <EmptyState
               icon="cloud_upload"
               title="Chưa có tài liệu nào"
-              description="Tải lên văn bản đầu tiên để bắt đầu xây dựng kho tri thức."
+              description={onUpload ? "Tải lên văn bản đầu tiên để bắt đầu xây dựng kho tri thức." : "Chưa có tài liệu trong phạm vi bạn được xem."}
               action={
-                <Button size="sm" onClick={onUpload}>
+                onUpload ? <Button size="sm" onClick={onUpload}>
                   Tải lên tài liệu
-                </Button>
+                </Button> : undefined
               }
             />
           )

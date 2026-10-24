@@ -161,10 +161,8 @@ function LoginOrchestrator() {
         const allowPassword = !!cfg.allow_password_login;
 
         if (isEmbedded()) {
-          if ((chatbot || keycloak) && !error && !loggedOut && !wantForm) {
-            go(chatbot ? chatbotUrl(next, true) : keycloakUrl(next, true));
-            return;
-          }
+          // Interactive identity providers may refuse framing. Let the trusted
+          // host open top-level SSO instead of trapping the iframe in redirects.
           postToHost({ type: "auth-required", path: next });
           setView({ kind: "message", tone: "info", text: errorText("sso_login_required") });
           return;

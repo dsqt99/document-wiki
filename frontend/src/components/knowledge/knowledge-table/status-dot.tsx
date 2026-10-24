@@ -28,23 +28,29 @@ const TONES: Record<string, Tone> = {
 type SubLine = { text: string; error: boolean } | null;
 
 function subLineFor(source: Source, showWikiCount: boolean): SubLine {
+  // Provider diagnostics can contain internal URLs and response bodies. Describe
+  // branch state here; detailed diagnostics belong in administrator logs.
+  if (source.chunk_status === "error" && source.wiki_status === "error") {
+    return { text: "Chỉ mục và Wiki gặp lỗi. Cần xử lý lại.", error: true };
+  }
+  if (source.chunk_status === "error") {
+    return { text: "Chỉ mục tìm kiếm gặp lỗi; kiểm tra và thử lại nhánh chỉ mục.", error: true };
+  }
+  if (source.wiki_status === "error") {
+    return { text: "Biên soạn Wiki gặp lỗi; kiểm tra và thử lại nhánh Wiki.", error: true };
+  }
   switch (source.status) {
     case "processing": {
       const parts: string[] = [];
-      if (typeof source.progress === "number") parts.push(`${source.progress}%`);
-      if (source.progress_message) parts.push(source.progress_message);
+      if (typeof source.progress === "number" && Number.isFinite(source.progress)) parts.push(`${Math.min(100, Math.max(0, source.progress))}%`);
+      parts.push(source.wiki_status === "refining" ? "Đang biên soạn Wiki" : "Đang xử lý tài liệu");
       return parts.length ? { text: parts.join(" · "), error: false } : null;
     }
     case "pending":
-      return { text: source.progress_message || "Đang xếp hàng", error: false };
+      return { text: "Đang xếp hàng", error: false };
     case "error":
     case "partial": {
-      const msg =
-        source.error_message ||
-        source.wiki_error_message ||
-        source.chunk_error_message ||
-        source.progress_message;
-      return msg ? { text: msg, error: true } : null;
+      return { text: "Xử lý tài liệu gặp lỗi. Liên hệ quản trị để kiểm tra và thử lại.", error: true };
     }
     case "plan_ready":
     case "awaiting_approval":

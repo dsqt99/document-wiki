@@ -87,6 +87,8 @@ class Settings(BaseSettings):
     # Per-request limits for the OpenAI-compatible clients; analyze_image already retries 3 times itself.
     vision_request_timeout_s: int = 120
     llm_request_timeout_s: int = 480
+    # Requests without a task-specific budget must never inherit the server's huge context limit.
+    llm_max_output_tokens: int = 8192
     ai_client_max_retries: int = 1
     # Stream LLM completions: a proxy in front of the model (Cloudflare: 120s read timeout, 524) cuts long
     # non-streamed answers even though the model is still generating. Turn off for endpoints without SSE.

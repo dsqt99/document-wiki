@@ -269,7 +269,7 @@ class _FakeLLM:
     def __init__(self, result=None, exc=None):
         self.result, self.exc = result, exc
 
-    async def generate(self, prompt, system=None, temperature=None):
+    async def generate(self, prompt, system=None, temperature=None, max_tokens=None):
         if self.exc:
             raise self.exc
         return self.result

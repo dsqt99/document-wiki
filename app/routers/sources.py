@@ -106,9 +106,9 @@ async def _maybe_await(value):
     return value
 
 
-async def _enqueue(task_name: str, *args):
+async def _enqueue(task_name: str, *args, **kwargs):
     pool = await _maybe_await(_self().get_arq_pool())
-    return await _maybe_await(pool.enqueue_job(task_name, *args))
+    return await _maybe_await(pool.enqueue_job(task_name, *args, **kwargs))
 
 
 def _job_id_of(job) -> Optional[str]:
@@ -435,17 +435,6 @@ def _has_all(user, action: str) -> bool:
     return _is_admin(user) or f"doc:{action}:all" in _self()._get_user_permissions(user)
 
 
-def _checked_create_scope(user, scope, dept_ids) -> str:
-    scope = scope or "global"
-    if scope not in SCOPE_TYPES:
-        raise HTTPException(400, SCOPE_ERROR)
-    if scope == "global" and not _has_all(user, "create"):
-        raise HTTPException(403, "Phạm vi toàn hệ thống cần quyền doc:create:all")
-    if scope == "department" and not dept_ids:
-        raise HTTPException(400, "Hãy chọn ít nhất một phòng ban được xem tài liệu")
-    return scope
-
-
 def _check_own_departments(user, dept_ids, action: str) -> None:
     if not dept_ids or _has_all(user, action):
         return
@@ -610,6 +599,19 @@ async def processing_summary(
 
     _, clause = source_read_filter(user)
     return await processing_ops.summary(db, clause)
+
+
+@router.get("/sources/jobs")
+async def worker_jobs(
+    db: AsyncSession = Depends(get_db),
+    user: Employee = require_permission("org:settings:manage"),
+):
+    """Running and queued worker jobs, for the progress strip on the documents page."""
+    from app.services import job_queue
+
+    _, clause = source_read_filter(user)
+    pool = await _maybe_await(_self().get_arq_pool())
+    return await job_queue.list_jobs(db, pool, clause, include_unbound=_is_admin(user))
 
 
 @router.post("/sources/retry-failed")
@@ -1310,6 +1312,7 @@ async def source_delete_impact(
         "slug": p.slug, "title": p.title, "scope_type": p.scope_type,
         "scope_id": str(p.scope_id) if p.scope_id else None,
         "source_ids": [str(sid) for sid in (p.source_ids or [])],
+        "origin_tag": p.origin_tag,
     } for p in rows]}
 
 
@@ -1502,6 +1505,17 @@ async def delete_source(
     if not own_personal and not await can_access_document(db, user, source, "delete"):
         raise HTTPException(403, "Permission required: doc:delete")
 
+    # Keep the source and its ACL intact while any shared page still contains
+    # its text. Detaching first would expose old body/summary/chunks under the
+    # remaining sources' broader permissions, even if an async rewrite fails.
+    linked = (await db.execute(
+        select(WikiPage.id, WikiPage.slug, WikiPage.title, WikiPage.source_ids, WikiPage.origin_tag)
+        .where(WikiPage.source_ids.any(source.id))
+    )).all()
+    if any(set(row.source_ids or []) - {source.id} for row in linked):
+        raise HTTPException(409, "Tài liệu đang được dùng trong trang Wiki có nhiều nguồn. "
+                            "Cần xử lý các trang dùng chung trước khi xoá tài liệu.")
+
     from app.services import storage_service as storage_module
 
     try:
@@ -1514,6 +1528,7 @@ async def delete_source(
         await delete_source_chunk_embeddings(db, source.id)
     except Exception as e:  # noqa: BLE001
         logger.warning("delete_source_chunk_embeddings(%s) failed: %s", source.id, e)
+    removed = [{"slug": row.slug, "title": row.title} for row in linked]
     try:
         from app.services import wiki_service
 
@@ -1522,7 +1537,29 @@ async def delete_source(
     except Exception as e:  # noqa: BLE001
         logger.warning("wiki detach for source %s failed: %s", source.id, e)
 
+    # Some titles hold a whole extracted paragraph; keep the first line so notices stay readable.
+    title = (source.title or source.file_name or str(source.id)).strip().split("\n", 1)[0].strip()
+    title = title if len(title) <= 120 else title[:119].rstrip() + "…"
     await _self().log_audit(db, user, "delete", "source", source.id, reason=source.title)
     await db.delete(source)
     await db.commit()
-    return {"deleted": True}
+    return {
+        "deleted": True,
+        "source_title": title,
+        "removed_pages": removed,
+        "rewrite_pages": [],
+        "rewrite_queued": False,
+        "kept_pages": [],
+        "reason": f"Trang có dùng nội dung từ tài liệu «{title}» đã bị xoá",
+    }
+
+
+def _checked_create_scope(user, scope, dept_ids) -> str:
+    scope = scope or "global"
+    if scope not in SCOPE_TYPES:
+        raise HTTPException(400, SCOPE_ERROR)
+    if scope == "global" and not _has_all(user, "create"):
+        raise HTTPException(403, "Phạm vi toàn hệ thống cần quyền doc:create:all")
+    if scope == "department" and not dept_ids:
+        raise HTTPException(400, "Hãy chọn ít nhất một phòng ban được xem tài liệu")
+    return scope

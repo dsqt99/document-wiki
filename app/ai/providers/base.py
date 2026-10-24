@@ -81,6 +81,10 @@ class LLMProvider(_Provider, ABC):
     async def test_connection(self) -> tuple[bool, str]: ...
 
 
+class LLMOutputTruncated(RuntimeError):
+    """The server answered, but its incomplete generation must not be published."""
+
+
 class VisionProvider(_Provider, ABC):
     @abstractmethod
     async def analyze_image(

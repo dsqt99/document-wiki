@@ -4,9 +4,14 @@ import { Badge } from "@/components/ui/badge";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
-export type ScopeType = "global" | "project" | "department" | "team";
+export type ScopeType = "global" | "project" | "department" | "team" | "personal";
 
 const KNOWN: Record<ScopeType, { icon: string; labelKey: string; tone: string }> = {
+  personal: {
+    icon: "person",
+    labelKey: "scope.personal",
+    tone: "border-slate-500/30 bg-slate-50 text-slate-700 dark:bg-slate-500/10 dark:text-slate-300",
+  },
   global: {
     icon: "public",
     labelKey: "scope.global",

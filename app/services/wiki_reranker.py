@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import math
+import re
 from dataclasses import dataclass
 
 import httpx
@@ -13,11 +14,13 @@ from app.ai import custom_models as cm
 from app.ai.llm_catalog import LLM_CATALOG
 from app.ai.providers.base import ProviderConfig, ProviderType
 from app.services.config_service import ConfigService
+from app.core.vi_tokenizer import DOC_NUMBER_RE, keyword_terms, strip_accents, term_coverage
 
 ACTIVE_KEY = "active_reranker_model_spec_id"
 LEGACY_ID = "legacy/http"
 WARNING = "Chưa rerank: model xếp hạng không khả dụng. Đang hiển thị kết quả hybrid; ngưỡng điểm chưa được áp dụng."
 EMBEDDING_WARNING = "Model embedding không khả dụng. Đang tìm theo từ khóa; kết quả có thể chưa đầy đủ."
+LOW_SCORE_WARNING = "Điểm xếp hạng thấp hơn ngưỡng. Chỉ hiển thị kết quả khớp từ khóa; cần kiểm tra nội dung nguồn."
 
 
 def validate_scores(results, count: int) -> list[float]:
@@ -37,6 +40,9 @@ def validate_scores(results, count: int) -> list[float]:
 
 
 class HTTPReranker:
+    # Cross-encoder ranking scores are not calibrated answer probabilities.
+    score_semantics = "ranking"
+
     def __init__(self, base_url, model, api_key):
         self.base_url, self.model, self.api_key = base_url.rstrip('/'), model, api_key
 
@@ -144,6 +150,7 @@ class RankedCandidates:
     mode: str
     warning: str | None = None
     threshold: float | None = None
+    warning_code: str | None = None
 
 
 async def configured_rank_candidates(db, query, candidates, *, enabled=True):
@@ -173,7 +180,7 @@ async def configured_rank_candidates(db, query, candidates, *, enabled=True):
 
 def search_metadata(result, *, lexical_fallback=False, **extra):
     warnings = ([EMBEDDING_WARNING] if lexical_fallback else []) + ([result.warning] if result.warning else [])
-    codes = (['embedding_unavailable'] if lexical_fallback else []) + (['reranker_unavailable'] if result.warning else [])
+    codes = (['embedding_unavailable'] if lexical_fallback else []) + ([result.warning_code or 'reranker_unavailable'] if result.warning else [])
     return {'mode': result.mode, 'warning': ' '.join(warnings) or None,
             'warnings': warnings, 'warning_codes': codes, 'threshold': result.threshold,
             'retrieval_mode': 'lexical_fallback' if lexical_fallback else 'hybrid', **extra}
@@ -188,6 +195,28 @@ async def close_scorer(scorer):
             logger.warning('Wiki reranker client cleanup failed: {}', type(exc).__name__)
 
 
+def _lexically_corroborated(query, text):
+    """Conservative recovery over the caller's already authorized candidates.
+
+    Explicit document identifiers must match even when surrounding topic words do.
+    This gate supplies no relevance score and never expands the candidate set.
+    """
+    folded = strip_accents(query.lower())
+    hay = strip_accents(text.lower())
+    identifiers = [m.group(0) for m in DOC_NUMBER_RE.finditer(folded)]
+    identifiers += re.findall(r"(?<![\w])(?:[\w]+[-/])+[\w]*\d[\w-]*(?![\w])", folded)
+    identifiers += re.findall(r"(?<![\w])[^\s/\\\"<>]+\.(?:pdf|docx?|xlsx?|txt|md|csv|pptx?)(?![\w])", folded)
+    for identifier in identifiers:
+        parts = re.split(r"\s+", identifier)
+        pattern = r"(?<!\w)" + r"\s*".join(re.escape(p) for p in parts) + r"(?!\w)"
+        if not re.search(pattern, hay):
+            return False
+    terms = keyword_terms(query)
+    matched = [term for term in terms if term_coverage([term], text) == 1.]
+    return (len(matched) >= 2 and term_coverage(terms, text) >= .6
+            or sum('_' in term for term in matched) >= 2)
+
+
 async def rank_candidates(query, candidates, *, scorer, threshold):
     if not candidates:
         return RankedCandidates([], 'rerank', threshold=threshold)
@@ -196,6 +225,11 @@ async def rank_candidates(query, candidates, *, scorer, threshold):
         scores = validate_scores([{'index': i, 'score': score} for i, score in enumerate(scores)], len(candidates))
         ranked = [dict(d, rerank_score=score) for d, score in zip(candidates, scores) if score > threshold]
         ranked.sort(key=lambda d: d['rerank_score'], reverse=True)
+        if not ranked and getattr(scorer, 'score_semantics', None) == 'ranking':
+            corroborated = [d for d in candidates if _lexically_corroborated(query, d.get('text', ''))]
+            if corroborated:
+                return RankedCandidates(corroborated, 'hybrid_fallback', LOW_SCORE_WARNING,
+                                        warning_code='rerank_below_threshold')
         return RankedCandidates(ranked, 'rerank', threshold=threshold)
     except Exception as exc:
         # Do not include provider responses, endpoint URLs or credentials in logs/UI.
