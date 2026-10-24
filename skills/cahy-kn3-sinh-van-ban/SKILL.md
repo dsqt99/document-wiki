@@ -7,21 +7,24 @@ allowed-tools: mcp__arkon__search_wiki mcp__arkon__read_wiki_page mcp__arkon__li
 # KN3 - Sinh văn bản theo mẫu (`sinh_van_ban`)
 
 Soạn dự thảo văn bản hành chính dạng văn bản thuần, sau đó xuất DOCX đúng thể thức NĐ 30/2020.
-Nguồn quy tắc: Guideline xây dựng dữ liệu 07 skill, mục 3 và mục 6 (R6.1-R6.16).
+Nguồn thể thức: Nghị định 30/2020/NĐ-CP do người dùng cung cấp, Điều 8–9, Phụ lục I–III;
+đối chiếu và số trang trong `references/nd30-the-thuc.md`. Quy ước dự thảo nội bộ ở dưới không phải quy định của Nghị định.
 
 ## Câu lệnh hệ thống (dùng nguyên văn)
 
 ```text
-Bạn là cán bộ văn phòng Công an tỉnh, làm nhiệm vụ soạn dự thảo văn bản hành chính. Soạn đúng thể thức Nghị định số 30/2020/NĐ-CP và văn phong Công an nhân dân; thông tin không có trong đầu vào thì để "...".
+Bạn soạn dự thảo văn bản hành chính theo Nghị định 30/2020/NĐ-CP và dữ kiện được cung cấp. Đọc references/nd30-the-thuc.md; phân biệt quy định pháp luật với quy ước dự thảo nội bộ. Không tự tạo số văn bản, ngày ký, thẩm quyền ký, người ký, căn cứ hoặc dữ kiện. Thiếu thông tin thì để "...", cả năm ký cũng để ... nếu chưa có. Yêu cầu tạo/xuất Word phải trả frontmatter type: vanban và thân Markdown theo mẫu dưới đây để hệ thống kiểm tra trước; không chỉ trả văn bản thuần hoặc chép các khối header vào thân. Chưa gọi xuất tệp trước khi được cấp công cụ.
 ```
 
 ## Quy tắc chung (bắt buộc)
+
+Các giới hạn bảo mật, dữ liệu cá nhân, để trống số/ngày/người ký và cách trao đổi dữ liệu với công cụ là **quy ước sản phẩm cho dự thảo**, không quy kết là yêu cầu của Nghị định 30.
 
 1. Chỉ soạn văn bản mức "Thường". Yêu cầu hoặc tài liệu kèm theo có dấu "MẬT", "TỐI MẬT", "TUYỆT MẬT" thì dừng, báo cán bộ.
 2. Không đưa thông tin cá nhân vào dự thảo; đầu vào có nhãn `[HO_TEN_n]`, `[DIA_CHI_n]`… thì không chép vào nội dung
    (trừ biểu mẫu có trường cá nhân: giữ nhãn để cán bộ điền).
 3. Chỉ chạy trên hạ tầng nội bộ; không dùng dịch vụ AI công cộng.
-4. Văn xuôi: ngày "15/10/2026", số "1.248", tiền "98.000.000 đồng". Không dùng Markdown trong văn bản.
+4. Văn xuôi: ngày "15/10/2026", số "1.248", tiền "98.000.000 đồng". Markdown chỉ là định dạng trung gian khi xuất Word; không để dấu cú pháp Markdown in nguyên vào văn bản.
 5. Mọi tệp là dự thảo: không ghi "đã ký", không tự điền số văn bản, ngày ký, họ tên người ký.
 
 ## Loại văn bản
@@ -45,9 +48,9 @@ Bạn là cán bộ văn phòng Công an tỉnh, làm nhiệm vụ soạn dự t
   `can_cu`, `noi_dung_chinh`, `noi_nhan`, `chuc_vu_ky` (nhiều dòng ngăn bởi " / "), `thanh_phan` (biên bản, giấy mời).
 - **Yêu cầu ngắn**: lời tự nhiên của cán bộ. Thiếu thông tin thì để "...", không hỏi lại những gì có thể để trống.
 
-## Đầu ra: văn bản thuần, khối trái trước, khối phải sau
+## Đầu ra khi trả dự thảo trong chat
 
-Các khối cách nhau **đúng 01 dòng trống**:
+Văn bản thuần, khối trái trước, khối phải sau; một dòng trống phân tách khối là quy ước dữ liệu nội bộ, không phải khoảng cách in trên Word:
 
 ```text
 CÔNG AN TỈNH HƯNG YÊN
@@ -57,7 +60,7 @@ V/v tăng cường bảo đảm an ninh, trật tự
 
 CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM
 Độc lập - Tự do - Hạnh phúc
-Hưng Yên, ngày ... tháng ... năm 2026
+Hưng Yên, ngày ... tháng ... năm ...
 
 Kính gửi:
 - Công an các xã, phường;
@@ -81,28 +84,32 @@ PHÓ TRƯỞNG PHÒNG
 - Loại khác công văn: bỏ dòng "V/v", thêm sau khối quốc hiệu một khối gồm tên loại IN HOA và dòng trích yếu
   (ví dụ "KẾ HOẠCH" / "Tổ chức tập huấn nghiệp vụ gán nhãn dữ liệu").
 
-## Thể thức (R6.1-R6.9)
+## Thể thức theo Nghị định 30
 
-- Đủ 09 thành phần: quốc hiệu, tiêu ngữ; tên cơ quan; số, ký hiệu; địa danh, ngày tháng; tên loại, trích yếu; nội dung;
-  chức vụ, họ tên người ký; nơi nhận; (dấu, chữ ký để trống).
-- Cơ quan chủ quản, cơ quan ban hành IN HOA, mỗi tên 01 dòng; yêu cầu ngắn chỉ nêu phòng thì cơ quan chủ quản là "CÔNG AN TỈNH HƯNG YÊN".
+- Điều 8 khoản 2 có 09 nhóm thành phần: quốc hiệu/tiêu ngữ; cơ quan; số/ký hiệu; địa danh/ngày; tên loại/trích yếu;
+  nội dung; chức vụ/họ tên/chữ ký người có thẩm quyền; dấu/chữ ký số cơ quan; nơi nhận. Dự thảo chưa ký để phần ký/dấu trống; không tự tạo chữ ký, dấu hoặc ghi đã ký.
+- Cơ quan ban hành dùng tên chính thức đầy đủ. Chủ quản ghi khi có, được viết tắt cụm từ thông dụng;
+  hai tên IN HOA, tên dài được nhiều dòng. Ngữ cảnh sản phẩm là Công an tỉnh Hưng Yên, nhưng không đoán cơ quan ban hành hay thẩm quyền ký khi đầu vào chưa nêu.
 - Quốc hiệu, tiêu ngữ đúng nguyên văn "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM" / "Độc lập - Tự do - Hạnh phúc" (gạch nối ngắn có cách).
-- Viết đúng "V/v ", "Kính gửi:", "Nơi nhận:", "Lưu: VT, …". Kính gửi 01 nơi: cùng dòng, kết thúc ".";
-  từ 02 nơi: mỗi nơi một dòng "- …;", nơi cuối kết thúc ".".
+- Viết đúng "V/v ", "Kính gửi:", "Nơi nhận:", "Lưu: VT, …". Công văn, tờ trình và báo cáo cấp dưới gửi cấp trên có cả Kính gửi và Nơi nhận.
+  Kính gửi 01 nơi viết cùng dòng; không tự coi thiếu dấu chấm cuối dòng này là lỗi. Từ 02 nơi: từng dòng "- …;", nơi cuối dấu ".".
 - Viết hoa theo Phụ lục II NĐ 30; không viết hoa tùy tiện danh từ chung.
 - **Không sinh số, ký hiệu**: slot `"/PV01-..."` → `Số: .../PV01-...`; không có → `Số: .../...`.
 - **Họ tên người ký luôn là "..."** (dòng cuối), kể cả khi đầu vào có tên hoặc nhãn `[HO_TEN_n]`.
-- Địa danh, ngày chép nguyên văn slot; yêu cầu ngắn: "Hưng Yên, ngày ... tháng ... năm ..." (năm theo đầu vào nếu có).
+- Địa danh, ngày giữ đúng giá trị trong slot và chuẩn hóa cách trình bày theo Nghị định; yêu cầu ngắn: "Hưng Yên, ngày ... tháng ... năm ..." (năm chỉ theo đầu vào nếu có).
+- Ngày ban hành đã biết: ngày 1–9 thêm 0; tháng 1, 2 thêm 0; không bắt tháng 3–12 luôn có 2 chữ số. Không lấy ngày hiện tại làm ngày ký.
 - Chức vụ ký theo slot, mỗi phần " / " một dòng; "ký thay" → "KT. <CHỨC VỤ ĐỨNG ĐẦU>" + "<CHỨC VỤ CẤP PHÓ>";
   không nêu người ký → "..." thay dòng chức vụ.
 
-## Bố cục nội dung theo loại (R6.10)
+## Bố cục nghiệp vụ gợi ý theo loại
 
-| Loại | Bố cục bắt buộc |
+Các đề mục và số điều dưới đây là mẫu nội bộ để gợi ý, không bắt buộc mọi kế hoạch có 03 mục, mọi báo cáo có 04 mục hoặc quyết định có đúng 03 điều. Điều chỉnh theo nội dung, thẩm quyền và mẫu được cung cấp, không tự sinh tồn tại/kiến nghị để lấp mục trống.
+
+| Loại | Bố cục gợi ý, điều chỉnh theo dữ kiện và mẫu áp dụng |
 |---|---|
 | Công văn | Kính gửi → căn cứ, lý do ("Thực hiện…", "Theo đề nghị của…") → yêu cầu (đánh số khi từ 02 ý) → câu kết ("Đề nghị các đơn vị quan tâm, triển khai thực hiện./.") |
 | Kế hoạch | `I. MỤC ĐÍCH, YÊU CẦU` (1. Mục đích; 2. Yêu cầu) → `II. NỘI DUNG` → `III. TỔ CHỨC THỰC HIỆN` → "Trên đây là Kế hoạch…/." |
-| Báo cáo | Mở đầu (căn cứ, phạm vi) → `I. KẾT QUẢ …` → `II. TỒN TẠI, HẠN CHẾ …` → `III. PHƯƠNG HƯỚNG, NHIỆM VỤ …` → `IV. KIẾN NGHỊ, ĐỀ XUẤT` |
+| Báo cáo | Kính gửi nếu báo cáo cấp dưới gửi cấp trên → mở đầu → kết quả; tồn tại, phương hướng, kiến nghị chỉ khi có dữ kiện |
 | Thông báo kết luận | Thời gian, chủ trì, thành phần → "ý kiến kết luận như sau:" → kết luận đánh số → câu kết |
 | Giấy mời | Trân trọng kính mời → nội dung → thời gian → địa điểm → đề nghị chuẩn bị (nếu có) |
 | Tờ trình | Kính gửi → sự cần thiết → nội dung đề nghị → kiến nghị phê duyệt |
@@ -114,10 +121,20 @@ PHÓ TRƯỞNG PHÒNG
 
 - Câu rõ, ngắn; không "!", không "đáng báo động", "vô cùng", "cực kỳ", "hết sức nguy hiểm", không "tôi", "chúng tôi".
 - Không viết tắt (CSGT, TNGT, CA xã…), trừ chữ có trong slot hoặc thông dụng ở "Nơi nhận" ("Đ/c", "b/c", "t/h", "VT").
-- Mọi giá trị slot xuất hiện nguyên văn; mọi ngày, con số trong đầu ra có trong đầu vào.
+- Giữ nguyên dữ kiện và danh tính của slot; được chuẩn hóa chữ hoa, ngày và cách viện dẫn theo Nghị định. Mọi ngày, con số trong đầu ra phải có trong đầu vào.
   Không thêm đơn vị, thời hạn, số liệu, căn cứ, kênh gửi ("qua thư điện tử") mà đầu vào không có.
 - Được viết câu mở đầu, chuyển ý, câu kết thông dụng; mỗi phần tử `noi_dung_chinh` phải được thể hiện.
 - Nội dung kết thúc bằng "./.".
+
+Văn phong, hạn chế viết tắt và câu kết trên là quy ước nội bộ. Không gán mọi từ "tôi", "chúng tôi", dấu "!" hoặc tên cơ quan chủ quản viết tắt thành vi phạm Nghị định 30.
+
+## Căn cứ và viện dẫn
+
+- Chỉ đưa căn cứ khi được cung cấp/được yêu cầu và đã xác minh; không tự chọn căn cứ để làm dự thảo có vẻ đầy đủ.
+- Căn cứ ban hành là từng đoạn chữ nghiêng, cuối mỗi đoạn ";", đoạn cuối "." (Phụ lục I, Phần I, II.6.a).
+- Luật, Pháp lệnh trong căn cứ không ghi số/ký hiệu/cơ quan ban hành; khi viện dẫn lần đầu chỉ ghi tên loại và tên.
+  Các loại khác viện dẫn lần đầu đầy đủ metadata đã có; lần sau theo II.6.b. Không bịa metadata còn thiếu.
+- Kiểu trình bày pháp lý được phép chuẩn hóa cách dẫn, nhưng không đổi danh tính/nội dung văn bản căn cứ.
 
 ## Dùng kho tri thức Arkon
 
@@ -127,21 +144,48 @@ PHÓ TRƯỞNG PHÒNG
 
 ## Terminal CAHY (xuất Word)
 
-Theo `/opt/cahy/huong_dan/KY_NANG.md`, mục KN3:
+Khi yêu cầu có Word/DOCX, ưu tiên mẫu dữ liệu này thay ví dụ văn bản thuần ở trên. Ví dụ giả lập, không sao chép dữ kiện ví dụ:
 
-1. Lưu văn bản thuần vào `~/ket_qua/kn3/<ten>.txt` (tên không dấu, không khoảng trắng).
-2. `vb-sang-docx ~/ket_qua/kn3/<ten>.txt -o ~/ket_qua/kn3/<ten>.docx`. Mã thoát 1 là sai quy ước hoặc thể thức:
-   sửa tệp .txt rồi chạy lại, không sửa DOCX bằng tay.
-3. DOCX: A4, Times New Roman, cỡ nội dung 13-14, lề trên 20 mm, dưới 20 mm, trái 30 mm, phải 15 mm.
-4. Biểu mẫu dạng bảng: python-docx (bảng có viền, tiêu đề đậm) hoặc openpyxl; số trong bảng chỉ từ đầu vào hoặc CSDL.
+```markdown
+---
+type: vanban
+output: bao_cao_thu_nghiem.docx
+quoc_hieu: CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM
+tieu_ngu: Độc lập - Tự do - Hạnh phúc
+co_quan_chu_quan: CÔNG AN TỈNH HƯNG YÊN
+co_quan: PHÒNG THAM MƯU
+so: .../BC-...
+dia_danh: Hưng Yên
+ngay: ngày ... tháng ... năm ...
+loai: BÁO CÁO
+trich_yeu: Kết quả kiểm tra hồ sơ thử nghiệm
+kinh_gui:
+  - Công an tỉnh Hưng Yên
+noi_nhan:
+  - Như trên;
+  - Lưu: VT.
+chuc_vu: ...
+nguoi_ky: ...
+---
+Đã kiểm tra 3 hồ sơ thử nghiệm./.
+```
+
+1. Đọc `references/nd30-the-thuc.md`. Khi người dùng muốn Word, trả dự thảo gồm frontmatter `type: vanban` và thân Markdown theo mẫu ở đó, chưa gọi xuất trước khi hệ thống kiểm tra.
+2. Thông tin header, tên loại, trích yếu, Kính gửi, Nơi nhận và chức vụ ký nằm trong frontmatter; thân chỉ có nội dung. Không viết lặp các khối được công cụ dàn trang. Frontmatter có `quoc_hieu`/`tieu_ngu` đúng nguyên văn để bộ rà soát biết phần đầu được khai báo.
+3. Sau khi hệ thống kiểm tra đạt, dùng `write_file` tên `.md` đơn giản và `md2office <ten>.md`; output phải đúng tên/hậu tố của lượt được cấp. Không dùng `vb-sang-docx`, `kiem-json`, `kiem-tra-docx` hoặc đường dẫn `/opt/cahy/huong_dan` chưa tồn tại; không chạy Python/shell tùy ý.
+4. Profile xuất: A4 dọc, TNR Unicode đen, nội dung 14pt, lề trên/dưới 20mm, trái 30mm, phải 15mm; đây là một cấu hình hợp lệ trong các khoảng NĐ30, không phải cấu hình duy nhất. Số trang 13pt giữa lề trên, không hiện trang đầu. Xem bảng cỡ chữ và khoảng cách từng thành phần trong reference.
+5. Không coi tạo tệp thành công hoặc render được là chứng nhận đầy đủ thể thức. Chỉ nói đã kiểm phông/lề/số trang nếu có báo cáo công cụ trên đúng DOCX. Mẫu chuyên biệt, nhiều người ký, phụ lục đánh số riêng hoặc biểu mẫu BCA phải có mẫu và bộ dàn trang tương ứng; không ép vào mẫu một khối ký rồi cam kết đúng.
 
 ## Tự kiểm trước khi trả
 
-- [ ] Đủ 09 thành phần, đúng thứ tự khối, đúng 01 dòng trống giữa các khối.
+- [ ] Đủ thành phần phù hợp dự thảo; phần ký/dấu chưa thực hiện không bị coi là đã ký.
 - [ ] Không tự sinh số văn bản; dòng cuối là "...".
-- [ ] Bố cục đúng loại; đề mục Kế hoạch đúng nguyên văn; nội dung kết thúc "./.".
+- [ ] Bố cục đúng loại và mẫu áp dụng; không áp số mục/số điều cố định khi không có căn cứ; nội dung kết thúc "./.".
 - [ ] Mọi thông tin có trong đầu vào; không chữ viết tắt; không từ cảm xúc.
 
 ## Tham chiếu
 
 - `references/s3_slot.schema.json`: lược đồ slot đầu vào.
+- `references/nd30-the-thuc.md`: căn cứ từ PDF và hợp đồng xuất Word thực tế.
+
+**Chốt định dạng khi được yêu cầu Word:** ký tự đầu tiên của phản hồi là `---`, không có hàng rào mã ```markdown/```text, không có lời dẫn hoặc câu kết ngoài dự thảo. Frontmatter đóng bằng `---`; phần sau chỉ là thân nội dung. Không viết lặp header, Kính gửi, Nơi nhận, chữ ký đã khai báo trong frontmatter. Thiếu năm ký vẫn ghi `năm ...`, không lấy năm từ ví dụ hoặc đồng hồ hệ thống.
