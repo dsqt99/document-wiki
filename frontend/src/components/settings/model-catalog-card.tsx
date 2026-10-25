@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import type { CustomModelKind } from "./custom-model-form";
 import { ActiveModelChip, ProviderModelPicker } from "./provider-model-picker";
 
@@ -69,7 +70,7 @@ export function ActivateBar({
       <Button
         type="button"
         size="sm"
-        className="h-9 text-sm"
+        className="h-9 text-sm font-medium"
         onClick={onActivate}
         disabled={!willSwitch || !ready || busy || disabled}
       >
@@ -96,6 +97,7 @@ export function ActivateBar({
 }
 
 export function ModelCatalogCard({
+  id,
   title,
   description,
   icon,
@@ -104,7 +106,9 @@ export function ModelCatalogCard({
   kind,
   renderMeta,
   renderControls,
+  testUrl,
 }: {
+  id?: string;
   title: string;
   description: string;
   icon: string;
@@ -113,6 +117,7 @@ export function ModelCatalogCard({
   kind: CustomModelKind;
   renderMeta?: (spec: ModelSpec) => ReactNode;
   renderControls?: (selected: ModelSpec | null) => ReactNode;
+  testUrl?: string;
 }) {
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [settings, setSettings] = useState<Record<string, unknown>>({});
@@ -121,6 +126,18 @@ export function ModelCatalogCard({
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Ping / test connection state
+  const [pinging, setPinging] = useState(false);
+  const [pingResult, setPingResult] = useState<{
+    id: string;
+    success: boolean;
+    message?: string;
+    latency_ms?: number;
+  } | null>(null);
+
+  const effectiveTestUrl =
+    testUrl ?? (kind === "llm" ? "/api/settings/test-llm" : kind === "vision" ? "/api/settings/test-vision" : undefined);
 
   async function load() {
     try {
@@ -139,19 +156,36 @@ export function ModelCatalogCard({
   }
 
   useEffect(() => {
-    // load() only sets state after awaiting the network, so no cascading render.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
     return () => {
       if (savedTimer.current) clearTimeout(savedTimer.current);
     };
-    // Load once per catalog endpoint.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [catalogUrl]);
 
   const selected = catalog?.specs.find((s) => s.id === selectedId) ?? null;
   const active = catalog?.specs.find((s) => s.id === catalog.active_spec_id) ?? null;
   const willSwitch = !!selected && selected.id !== catalog?.active_spec_id;
+
+  async function handlePing() {
+    if (!selected || !effectiveTestUrl) return;
+    setPinging(true);
+    setPingResult(null);
+    try {
+      const res = await api<{ success: boolean; message?: string; latency_ms?: number }>(effectiveTestUrl, {
+        method: "POST",
+        body: { model_spec_id: selected.id },
+      });
+      setPingResult({ id: selected.id, ...res });
+    } catch (err) {
+      setPingResult({
+        id: selected.id,
+        success: false,
+        message: err instanceof Error ? err.message : "Kiểm tra kết nối thất bại",
+      });
+    } finally {
+      setPinging(false);
+    }
+  }
 
   async function activate() {
     if (!selected) return;
@@ -173,7 +207,7 @@ export function ModelCatalogCard({
 
   if (!catalog) {
     return (
-      <div className="flex flex-col gap-1 rounded-2xl border border-border/80 bg-card p-6 shadow-lift">
+      <div id={id} className="flex flex-col gap-1 rounded-2xl border border-border/80 bg-card p-6 shadow-lift">
         <p className="text-sm text-muted-foreground">Loading {title}…</p>
         {error && <p className="text-xs text-destructive">{error}</p>}
       </div>
@@ -181,7 +215,7 @@ export function ModelCatalogCard({
   }
 
   return (
-    <div className="flex flex-col gap-5 rounded-2xl border border-border/80 bg-card p-6 shadow-lift">
+    <div id={id} className="flex flex-col gap-5 rounded-2xl border border-border/80 bg-card p-6 shadow-lift">
       <div className="flex flex-wrap items-start gap-3">
         <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
           <span className="material-symbols-outlined text-[20px]">{icon}</span>
@@ -198,7 +232,10 @@ export function ModelCatalogCard({
         specs={catalog.specs}
         activeId={catalog.active_spec_id}
         selectedId={selectedId}
-        onSelect={setSelectedId}
+        onSelect={(newId) => {
+          setSelectedId(newId);
+          setPingResult(null);
+        }}
         settings={settings}
         onChanged={load}
         renderMeta={renderMeta}
@@ -212,7 +249,43 @@ export function ModelCatalogCard({
         error={error}
         label={selected?.label}
         onActivate={() => void activate()}
-      />
+      >
+        {effectiveTestUrl && (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-9 gap-1.5 text-xs font-medium"
+              onClick={() => void handlePing()}
+              disabled={pinging || !selected || !canActivate(selected)}
+            >
+              <span className={cn("material-symbols-outlined text-sm", pinging && "animate-spin")}>
+                {pinging ? "progress_activity" : "network_ping"}
+              </span>
+              {pinging ? "Đang kiểm tra…" : "Kiểm tra kết nối"}
+            </Button>
+
+            {pingResult && pingResult.id === selectedId && (
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1.5 text-xs font-medium rounded-md px-2 py-1",
+                  pingResult.success
+                    ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                    : "bg-destructive/10 text-destructive",
+                )}
+              >
+                <span className="material-symbols-outlined text-sm">
+                  {pingResult.success ? "check_circle" : "cancel"}
+                </span>
+                {pingResult.success
+                  ? `Kết nối OK · ${pingResult.latency_ms ?? 0}ms`
+                  : (pingResult.message || "Lỗi kết nối")}
+              </span>
+            )}
+          </div>
+        )}
+      </ActivateBar>
       {renderControls?.(selected)}
     </div>
   );

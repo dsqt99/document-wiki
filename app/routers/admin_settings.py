@@ -151,15 +151,25 @@ async def test_providers(db: AsyncSession = Depends(get_db)):
     return out
 
 
+class ModelTestRequest(BaseModel):
+    model_spec_id: Optional[str] = None
+
+
 async def _run_test(build):
+    started = time.perf_counter()
     try:
-        provider = await build()
+        if callable(build):
+            provider = await build()
+        else:
+            provider = await build
         if provider is None:
             return None
         ok, msg = (await provider.test_connection())[:2]
-        return {"success": bool(ok), "message": msg}
+        latency = max(1, int((time.perf_counter() - started) * 1000))
+        return {"success": bool(ok), "message": msg, "latency_ms": latency}
     except Exception as e:
-        return {"success": False, "message": str(e)}
+        latency = max(1, int((time.perf_counter() - started) * 1000))
+        return {"success": False, "message": str(e), "latency_ms": latency}
 
 
 @router.post("/settings/test-embedding")
@@ -168,13 +178,16 @@ async def test_embedding(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/settings/test-llm")
-async def test_llm(db: AsyncSession = Depends(get_db)):
-    return await _run_test(_registry(db).get_llm)
+async def test_llm(body: Optional[ModelTestRequest] = None, db: AsyncSession = Depends(get_db)):
+    spec_id = body.model_spec_id if body else None
+    res = await _run_test(lambda: _registry(db).get_llm(spec_id=spec_id))
+    return res or {"success": False, "message": "No LLM provider configured"}
 
 
 @router.post("/settings/test-vision")
-async def test_vision(db: AsyncSession = Depends(get_db)):
-    res = await _run_test(_registry(db).get_vision)
+async def test_vision(body: Optional[ModelTestRequest] = None, db: AsyncSession = Depends(get_db)):
+    spec_id = body.model_spec_id if body else None
+    res = await _run_test(lambda: _registry(db).get_vision(spec_id=spec_id))
     return res or {"success": False, "message": "No vision provider configured"}
 
 

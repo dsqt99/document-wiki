@@ -122,6 +122,7 @@ function SettingsContent() {
           <EmbeddingSettingsCard />
           <RerankSettingsCard />
           <ModelCatalogCard
+            id="llm-model-card"
             title="LLM Model"
             description="Used for entity extraction, planning, and wiki compilation."
             icon="psychology"
@@ -131,6 +132,7 @@ function SettingsContent() {
             renderMeta={llmMeta}
           />
           <ModelCatalogCard
+            id="vision-model-card"
             title="Vision Model"
             description="Used for image analysis during document ingestion."
             icon="visibility"

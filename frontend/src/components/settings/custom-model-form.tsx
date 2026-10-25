@@ -33,55 +33,7 @@ export type EditableModel = {
   dimension?: number;
 };
 
-type Suggestion = { id: string; dim?: number; hint?: string };
 
-/** Well-known embedding models per provider (dim = native output size). */
-const EMBEDDING_SUGGESTIONS: Record<ProviderGroup, Suggestion[]> = {
-  anthropic: [],
-  openai: [
-    { id: "text-embedding-3-small", dim: 1536 },
-    { id: "text-embedding-3-large", dim: 3072 },
-    { id: "text-embedding-ada-002", dim: 1536, hint: "thế hệ cũ" },
-  ],
-  google: [
-    { id: "gemini-embedding-001", dim: 3072 },
-    { id: "gemini-embedding-2", dim: 3072 },
-    { id: "text-embedding-004", dim: 768 },
-  ],
-  // Common models served by vLLM / TEI / Ollama.
-  custom: [
-    { id: "BAAI/bge-m3", dim: 1024, hint: "đa ngôn ngữ, tốt cho tiếng Việt" },
-    { id: "Qwen/Qwen3-Embedding-4B", dim: 2560, hint: "khuyên dùng CAHY 4B" },
-    { id: "Qwen/Qwen3-Embedding-0.6B", dim: 1024 },
-    { id: "intfloat/multilingual-e5-large", dim: 1024 },
-    { id: "intfloat/multilingual-e5-base", dim: 768 },
-    { id: "AITeamVN/Vietnamese_Embedding", dim: 1024, hint: "tiếng Việt" },
-    { id: "dangvantuan/vietnamese-embedding", dim: 768, hint: "tiếng Việt" },
-    { id: "nomic-embed-text", dim: 768, hint: "Ollama" },
-  ],
-};
-
-const OCR_SUGGESTIONS: Record<ProviderGroup, Suggestion[]> = {
-  anthropic: [
-    { id: "claude-sonnet-5-5", hint: "Claude Sonnet 5.5" },
-    { id: "claude-haiku-5-5", hint: "Claude Haiku 5.5" },
-  ],
-  openai: [
-    { id: "gpt-6-luna", hint: "GPT-6 Luna" },
-    { id: "gpt-4o", hint: "GPT-4o Vision" },
-    { id: "gpt-4o-mini", hint: "GPT-4o Mini" },
-  ],
-  google: [
-    { id: "gemini-3.5-flash", hint: "Gemini 3.5 Flash" },
-    { id: "gemini-3.1-flash-lite", hint: "Gemini 3.1 Flash-Lite" },
-  ],
-  custom: [
-    { id: "senocr-vi", hint: "SenOCR-Vi (PaddleOCR-VL 0.95B tiếng Việt - vLLM)" },
-    { id: "PaddleOCR-VL-1.6", hint: "PaddleOCR-VL 1.6 (vLLM)" },
-    { id: "tencent/HunyuanOCR", hint: "HunyuanOCR (vLLM / GPU 3)" },
-    { id: "ggml-org/GLM-OCR-GGUF:f16", hint: "GLM-OCR GGUF" },
-  ],
-};
 
 const MANUAL = "__manual__";
 
@@ -123,17 +75,8 @@ export function CustomModelForm({
   const [manual, setManual] = useState(editing);
   const [probe, setProbe] = useState<{ busy: boolean; ok: boolean; text: string } | null>(null);
 
-  const known = (
-    kind === "embedding"
-      ? EMBEDDING_SUGGESTIONS[provider]
-      : kind === "ocr"
-        ? (OCR_SUGGESTIONS[provider] ?? [])
-        : []
-  ).filter((o) => !existingModelIds.includes(o.id));
-  const fromEndpoint = (discovered ?? []).filter(
-    (id) => !existingModelIds.includes(id) && !known.some((k) => k.id === id),
-  );
-  const showSelect = known.length + fromEndpoint.length > 0 && !manual;
+  const fromEndpoint = (discovered ?? []).filter((id) => !existingModelIds.includes(id));
+  const showSelect = fromEndpoint.length > 0 && !manual;
   const canReachEndpoint = !isCustom || /^https?:\/\//.test(baseUrl.trim());
 
   function pickModel(id: string) {
@@ -144,8 +87,6 @@ export function CustomModelForm({
       return;
     }
     setModelId(id);
-    const dim = known.find((o) => o.id === id)?.dim;
-    if (dim && EMBEDDING_DIMENSIONS.includes(dim)) setDimension(dim);
   }
 
   function endpointBody() {
@@ -256,28 +197,13 @@ export function CustomModelForm({
               className="h-9 rounded-md border border-input bg-background px-2 font-mono text-xs"
             >
               <option value="" disabled>
-                — Chọn model —
+                — Chọn model từ endpoint —
               </option>
-              {known.length > 0 && (
-                <optgroup label="Gợi ý">
-                  {known.map((o) => (
-                    <option key={o.id} value={o.id}>
-                      {o.id}
-                      {o.dim ? ` · ${o.dim}d` : ""}
-                      {o.hint ? ` · ${o.hint}` : ""}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-              {fromEndpoint.length > 0 && (
-                <optgroup label="Từ endpoint">
-                  {fromEndpoint.map((id) => (
-                    <option key={id} value={id}>
-                      {id}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
+              {fromEndpoint.map((id) => (
+                <option key={id} value={id}>
+                  {id}
+                </option>
+              ))}
               <option value={MANUAL}>Khác — nhập tay…</option>
             </OptionSelect>
           ) : (
@@ -298,7 +224,7 @@ export function CustomModelForm({
                 maxLength={100}
                 className="bg-background font-mono text-xs"
               />
-              {manual && known.length + fromEndpoint.length > 0 && (
+              {manual && fromEndpoint.length > 0 && (
                 <button
                   type="button"
                   onClick={() => setManual(false)}

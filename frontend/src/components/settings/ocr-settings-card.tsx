@@ -82,11 +82,10 @@ export function OcrSettingsCard() {
   const [targetPage, setTargetPage] = useState(1);
   const [testLoading, setTestLoading] = useState(false);
   const [testResult, setTestResult] = useState<OCRResponse | null>(null);
-  // null = follow the saved processing mode.
-  const [labRefine, setLabRefine] = useState<boolean | null>(null);
   const [resultTab, setResultTab] = useState<"refined" | "raw">("refined");
   const [modeSaving, setModeSaving] = useState(false);
   const [modeError, setModeError] = useState("");
+  const [visionCatalog, setVisionCatalog] = useState<{ active_spec_id: string | null; specs: Array<{ id: string; label: string }> } | null>(null);
 
   // Prompt configuration
   const [promptMode, setPromptMode] = useState<PromptMode>("plain");
@@ -102,12 +101,14 @@ export function OcrSettingsCard() {
 
   async function refresh() {
     try {
-      const [s, cat] = await Promise.all([
+      const [s, cat, vCat] = await Promise.all([
         api<Record<string, unknown>>("/api/settings"),
         api<OcrCatalog>("/api/settings/ocr/catalog"),
+        api<{ active_spec_id: string | null; specs: Array<{ id: string; label: string }> }>("/api/settings/vision/catalog").catch(() => null),
       ]);
       setCatalog(cat);
       setSettings(s);
+      setVisionCatalog(vCat);
 
       const rawMode = (s.ocr_prompt_mode as string) || "plain";
       const validMode: PromptMode =
@@ -137,10 +138,10 @@ export function OcrSettingsCard() {
 
   const selectedModel = catalog?.specs.find((x) => x.id === selectedId) ?? null;
   const activeModel = catalog?.specs.find((x) => x.id === catalog.active_spec_id) ?? null;
+  const activeVisionModel = visionCatalog?.specs.find((x) => x.id === visionCatalog.active_spec_id) ?? null;
   const willSwitch = !!selectedModel && selectedModel.id !== catalog?.active_spec_id;
   const conn = connResult && connResult.id === selectedId ? connResult : null;
   const refineMode = settings.ocr_llm_refine === "true" || settings.ocr_llm_refine === true;
-  const runRefine = labRefine ?? refineMode;
 
   const isDedicatedOcr = (model: OcrModel | null) => {
     if (!model) return false;
@@ -283,7 +284,7 @@ export function OcrSettingsCard() {
     formData.append("file", testFile);
     formData.append("target_page", String(targetPage));
     formData.append("model_spec_id", selectedModel.id);
-    formData.append("llm_refine", String(runRefine));
+    formData.append("llm_refine", String(refineMode));
     formData.append("override_prompt", effectivePrompt);
     setResultTab("refined");
 
@@ -291,7 +292,7 @@ export function OcrSettingsCard() {
       const res = await api<OCRResponse>("/api/settings/test-ocr", {
         method: "POST",
         body: formData,
-        timeoutMs: runRefine ? 360_000 : 180_000,
+        timeoutMs: refineMode ? 360_000 : 180_000,
       });
       setTestResult(res);
       if (res.page_number) setTargetPage(res.page_number);
@@ -664,6 +665,37 @@ export function OcrSettingsCard() {
                 );
               })}
             </div>
+            {refineMode && (
+              <div className="mt-1 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/80 bg-muted/40 p-2.5 text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-base text-primary">visibility</span>
+                  <span className="text-muted-foreground">Vision Model dùng để hiệu đính:</span>
+                  {activeVisionModel ? (
+                    <span className="inline-flex items-center gap-1.5 font-semibold text-foreground">
+                      {activeVisionModel.label}
+                      <span className="rounded bg-emerald-500/15 px-1.5 py-0.2 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                        Đang hoạt động
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 font-medium text-amber-600 dark:text-amber-400">
+                      <span className="material-symbols-outlined text-sm">warning</span>
+                      Chưa cấu hình Vision Model
+                    </span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    document.getElementById("vision-model-card")?.scrollIntoView({ behavior: "smooth" });
+                  }}
+                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary hover:underline"
+                >
+                  {activeVisionModel ? "Xem Vision Model" : "Cấu hình Vision Model ngay"}
+                  <span className="material-symbols-outlined text-xs">arrow_downward</span>
+                </button>
+              </div>
+            )}
             <p className="text-[11px] text-muted-foreground">
               {refineMode
                 ? "Bước hiệu đính sẽ dùng model đang chọn ở mục Vision Model để đối chiếu văn bản thô."
@@ -750,11 +782,15 @@ export function OcrSettingsCard() {
                   </div>
                 )}
 
-                <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-background p-2 text-xs">
-                  <input type="checkbox" checked={runRefine} onChange={(e) => setLabRefine(e.target.checked)} />
-                  <span className="flex-1">Kèm hiệu đính bằng LLM</span>
-                  <span className="material-symbols-outlined text-sm text-muted-foreground">auto_fix_high</span>
-                </label>
+                <div className="flex items-center justify-between rounded-lg border border-border/80 bg-background px-3 py-2 text-xs">
+                  <span className="text-muted-foreground">Chế độ đang dùng:</span>
+                  <span className="inline-flex items-center gap-1 font-semibold text-foreground">
+                    <span className="material-symbols-outlined text-sm text-primary">
+                      {refineMode ? "auto_fix_high" : "bolt"}
+                    </span>
+                    {refineMode ? "OCR + LLM hiệu đính" : "Chỉ OCR"}
+                  </span>
+                </div>
 
                 <Button
                   size="sm"
@@ -763,14 +799,14 @@ export function OcrSettingsCard() {
                   className="h-9 w-full gap-2 text-xs font-medium"
                 >
                   <span className={`material-symbols-outlined text-sm ${testLoading ? "animate-spin" : ""}`}>
-                    {testLoading ? "progress_activity" : "document_scanner"}
+                    {testLoading ? "progress_activity" : refineMode ? "auto_fix_high" : "document_scanner"}
                   </span>
                   {testLoading
-                    ? runRefine
+                    ? refineMode
                       ? "Đang OCR + hiệu đính..."
                       : "Đang nhận diện OCR..."
-                    : runRefine
-                      ? "Chạy OCR + LLM"
+                    : refineMode
+                      ? "Chạy OCR + LLM hiệu đính"
                       : "Chạy OCR"}
                 </Button>
                 <p className="text-[11px] text-muted-foreground">
@@ -787,7 +823,7 @@ export function OcrSettingsCard() {
                   title="Kết quả OCR"
                   icon="text_fields"
                   loading={testLoading}
-                  loadingTitle={runRefine ? "Đang nhận diện và hiệu đính văn bản..." : "Đang trích xuất nội dung văn bản..."}
+                  loadingTitle={refineMode ? "Đang nhận diện và hiệu đính văn bản..." : "Đang trích xuất nội dung văn bản..."}
                   content={
                     testResult?.success
                       ? resultTab === "raw" && testResult.raw_text
