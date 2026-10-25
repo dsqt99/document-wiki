@@ -33,6 +33,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse
 from loguru import logger
 from sqlalchemy import delete, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -343,10 +344,21 @@ async def _provision(
             auth_provider=provider,
             is_active=True,
         )
-        db.add(employee)
-        await db.flush()
-        created = True
-        logger.info(f"SSO: provisioned employee {employee.id} (admin={is_admin})")
+        try:
+            async with db.begin_nested():
+                db.add(employee)
+                await db.flush()
+        except IntegrityError:
+            # Lần đăng nhập đầu, giao diện gọi song song nhiều API: yêu cầu khác vừa tạo cùng sub.
+            employee = (
+                await db.execute(select(Employee).where(Employee.external_id == sub))
+            ).scalar_one_or_none()
+            if employee is None:
+                raise
+            logger.info(f"SSO: concurrent provision for employee {employee.id}, reusing existing row")
+        else:
+            created = True
+            logger.info(f"SSO: provisioned employee {employee.id} (admin={is_admin})")
 
     if not employee.is_active:
         return "sso_inactive"
