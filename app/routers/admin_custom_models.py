@@ -38,12 +38,13 @@ from app.ai.custom_models import (
 )
 from app.database import get_db
 from app.database.models import Employee
+from app.services import ocr_service
 from app.services.audit_service import log_audit
 from app.services.auth_service import require_permission
 
 router = APIRouter()
 
-OCR_MODEL_SPEC_KEY = "ocr_model_spec_id"
+OCR_MODEL_SPEC_KEY = ocr_service.OCR_MODEL_SPEC_KEY
 
 # OCR goes through an OpenAI-compatible chat endpoint (ocr_service), so the
 # Claude and Gemini presets use their providers' OpenAI-compatible base URLs.

@@ -27,6 +27,7 @@ _PDF_KWARG_KEYS = (
     ("ocr_api_key", "ocr_api_key"),
     ("ocr_model", "ocr_model"),
     ("ocr_prompt", "ocr_prompt"),
+    ("ocr_model_prompt", "ocr_model_prompt"),
 )
 
 _CONTENT_TYPES = {
@@ -75,6 +76,11 @@ async def _load_doc_processing_config() -> dict:
     try:
         import app.database as _db
         from app.services.config_service import ConfigService
+        from app.services.ocr_service import (
+            OCR_MODEL_SPEC_KEY,
+            OCR_PROMPT_MODE_KEY,
+            resolve_ocr_prompt,
+        )
 
         async with _db.async_session_factory() as session:
             svc = ConfigService(session)
@@ -94,6 +100,11 @@ async def _load_doc_processing_config() -> dict:
                 "ocr_api_key": _as_str(await get("ocr_api_key")),
                 "ocr_model": _as_str(await get("ocr_model")),
                 "ocr_prompt": _as_str(await get("ocr_prompt")),
+                "ocr_model_prompt": resolve_ocr_prompt(
+                    await get(OCR_MODEL_SPEC_KEY),
+                    await get(OCR_PROMPT_MODE_KEY),
+                    await get("ocr_prompt"),
+                ),
             }
     except Exception as e:  # noqa: BLE001 - config is optional at extraction time
         logger.warning(f"Could not load document processing config, using parser defaults: {e}")

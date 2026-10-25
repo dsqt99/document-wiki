@@ -322,7 +322,14 @@ async def test_ocr(
         result["error"] = str(e.detail)
         return result
     model = model or getattr(settings, "ocr_model", None)
-    prompt = override_prompt or await _config(db).get("ocr_prompt")
+    prompt = (override_prompt.strip() if override_prompt and override_prompt.strip() else None)
+    if not prompt:
+        cfg = _config(db)
+        prompt = ocr_service.resolve_ocr_prompt(
+            model_spec_id,
+            await cfg.get(ocr_service.OCR_PROMPT_MODE_KEY),
+            await cfg.get("ocr_prompt"),
+        )
     result["model"] = model
 
     t0 = time.perf_counter()

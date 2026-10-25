@@ -121,7 +121,8 @@ def test_nonstream_reads_message_content_and_finish_reason(finish_reason):
     def create(**request):
         assert request["stream"] is False
         assert request["model"] == "m"
-        assert request["messages"][0]["content"][1]["image_url"]["url"] == "data:image/png;base64,b64"
+        img_part = next(p for p in request["messages"][0]["content"] if p.get("type") == "image_url")
+        assert img_part["image_url"]["url"] == "data:image/png;base64,b64"
         return SimpleNamespace(choices=[SimpleNamespace(
             message=SimpleNamespace(content="  Điều 1. Phạm vi  "), finish_reason=finish_reason,
         )])

@@ -12,7 +12,60 @@ from typing import Any, Optional
 
 from loguru import logger
 
+from app.ai.custom_models import is_custom
 from app.config import settings
+
+
+# ---------------------------------------------------------------------------
+# Prompts
+# ---------------------------------------------------------------------------
+
+# Specialised OCR models (kind "ocr": senocr-vi, PaddleOCR-VL, ...) are trained
+# on fixed task prompts. A long free-form instruction makes them emit layout
+# tags (<LOC_...>), LaTeX and invented text, so they only get one of these.
+OCR_PROMPT_PLAIN = "OCR:"
+OCR_PROMPT_MARKDOWN = (
+    "Convert the document in this image into Markdown format, preserving layout, tables, and formulas."
+)
+OCR_PROMPT_MODES = {"plain": OCR_PROMPT_PLAIN, "markdown": OCR_PROMPT_MARKDOWN}
+DEFAULT_OCR_PROMPT_MODE = "plain"
+
+# General vision models (the GPT / Claude / Gemini OCR presets, Vision fallback)
+# follow instructions, so they keep the descriptive prompt (config "ocr_prompt").
+VISION_OCR_PROMPT = (
+    "Hãy trích xuất toàn bộ chữ trong ảnh trang tài liệu này, đúng nguyên văn từng chữ. "
+    "Giữ nguyên số hiệu văn bản, ngày tháng, con số và chữ viết tắt. "
+    "Nếu có bảng, dựng lại thành bảng Markdown. "
+    "Dựng lại cấu trúc Phần, Chương, Mục, Điều, Khoản, Điểm thành tiêu đề Markdown tương ứng. "
+    "Chỉ trả về nội dung đã trích xuất, không thêm bình luận, giải thích hay lời dẫn."
+)
+
+OCR_MODEL_SPEC_KEY = "ocr_model_spec_id"
+OCR_PROMPT_MODE_KEY = "ocr_prompt_mode"
+
+
+def standard_ocr_prompt(mode: Optional[str]) -> str:
+    """Standard task prompt of a specialised OCR model; unknown modes = plain text."""
+    return OCR_PROMPT_MODES.get((mode or "").strip().lower(), OCR_PROMPT_PLAIN)
+
+
+def is_dedicated_ocr_spec(spec_id: Optional[str]) -> bool:
+    """True when the OCR slot holds a specialised OCR model.
+
+    Admin-added OCR models ("custom/<id>") are kind "ocr"; the presets
+    ("<provider>/<id>") are general vision models. No spec id = the endpoint
+    set through env (OCR_BASE_URL / OCR_MODEL), a dedicated OCR server.
+    """
+    return not spec_id or is_custom(spec_id)
+
+
+def resolve_ocr_prompt(
+    spec_id: Optional[str], prompt_mode: Optional[str], vision_prompt: Optional[str] = None
+) -> str:
+    """Prompt sent to the model in the OCR slot."""
+    if is_dedicated_ocr_spec(spec_id):
+        return standard_ocr_prompt(prompt_mode)
+    return (vision_prompt or "").strip() or VISION_OCR_PROMPT
 
 
 # ---------------------------------------------------------------------------
@@ -284,15 +337,17 @@ class OCRService:
             messages=[
                 {
                     "role": "user",
+                    # Image first: OCR models read the task prompt after the page.
                     "content": [
-                        {"type": "text", "text": prompt},
                         {
                             "type": "image_url",
                             "image_url": {"url": data_url},
                         },
+                        {"type": "text", "text": prompt},
                     ],
                 }
             ],
+            temperature=0,
             stream=False,
         )
 
@@ -358,6 +413,7 @@ class OCRService:
         """
         Run OCR on image bytes using the configured OpenAI-compatible OCR model.
         Returns extracted text, or None if not configured or on failure.
+        Without ``prompt`` the active OCR model picks it (see resolve_ocr_prompt).
         """
         effective_base_url = base_url
         effective_api_key = api_key
@@ -376,7 +432,11 @@ class OCRService:
                 if not effective_model:
                     effective_model = await cfg.get("ocr_model")
                 if not effective_prompt:
-                    effective_prompt = await cfg.get("ocr_prompt")
+                    effective_prompt = resolve_ocr_prompt(
+                        await cfg.get(OCR_MODEL_SPEC_KEY),
+                        await cfg.get(OCR_PROMPT_MODE_KEY),
+                        await cfg.get("ocr_prompt"),
+                    )
             except Exception as e:
                 logger.warning(f"Error fetching dynamic OCR config from DB: {e}")
 
@@ -387,9 +447,7 @@ class OCRService:
         if not self.is_configured(base_url=effective_base_url, api_key=effective_api_key):
             return None
 
-        ocr_prompt = effective_prompt or (
-            "Convert the document in this image into Markdown format, preserving layout, tables, and formulas."
-        )
+        ocr_prompt = effective_prompt or standard_ocr_prompt(None)
 
         from app.ai import upstream
 

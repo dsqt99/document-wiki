@@ -44,15 +44,25 @@ const OCR_MODES = [
     refine: false,
     icon: "bolt",
     title: "Chỉ OCR",
-    desc: "Nhanh, chi phí thấp. Phù hợp bản scan rõ nét.",
+    desc: "Nhanh, chi phí thấp, giữ nguyên văn bản gốc. Tối ưu cho SenOCR-Vi.",
+    badge: "Khuyên dùng cho SenOCR-Vi",
   },
   {
     refine: true,
     icon: "auto_fix_high",
     title: "OCR + LLM hiệu đính",
-    desc: "Model Vision đối chiếu ảnh và sửa bản OCR — chính xác nhất, thời gian xử lý ~2×.",
+    desc: "Model Vision đối chiếu ảnh và sửa lỗi ký tự — tốn thêm thời gian xử lý ~2×.",
+    badge: "Dành cho ảnh scan mờ",
   },
 ];
+
+const PROMPT_PLAIN = "OCR:";
+const PROMPT_MARKDOWN =
+  "Convert the document in this image into Markdown format, preserving layout, tables, and formulas.";
+const PROMPT_VISION_DEFAULT =
+  "Hãy trích xuất toàn bộ chữ trong ảnh trang tài liệu này, đúng nguyên văn từng chữ. Giữ nguyên số hiệu văn bản, ngày tháng, con số và chữ viết tắt. Nếu có bảng, dựng lại thành bảng Markdown. Dựng lại cấu trúc Phần, Chương, Điều, Khoản nếu có. Chỉ trả về nội dung đã trích xuất, không thêm lời chào, giải thích hay nhận xét.";
+
+type PromptMode = "plain" | "markdown" | "custom";
 
 export function OcrSettingsCard() {
   const [catalog, setCatalog] = useState<OcrCatalog | null>(null);
@@ -79,10 +89,12 @@ export function OcrSettingsCard() {
   const [modeError, setModeError] = useState("");
 
   // Prompt configuration
-  const [promptInput, setPromptInput] = useState<string>("");
+  const [promptMode, setPromptMode] = useState<PromptMode>("plain");
+  const [customPrompt, setCustomPrompt] = useState<string>("");
   const [promptSaving, setPromptSaving] = useState(false);
   const [promptSaved, setPromptSaved] = useState(false);
   const [promptError, setPromptError] = useState("");
+  const [showPromptDetails, setShowPromptDetails] = useState(false);
 
   useEffect(() => {
     void refresh();
@@ -96,11 +108,18 @@ export function OcrSettingsCard() {
       ]);
       setCatalog(cat);
       setSettings(s);
+
+      const rawMode = (s.ocr_prompt_mode as string) || "plain";
+      const validMode: PromptMode =
+        rawMode === "plain" || rawMode === "markdown" || rawMode === "custom" ? rawMode : "plain";
+      setPromptMode(validMode);
+
       if (typeof s.ocr_prompt === "string" && s.ocr_prompt.trim()) {
-        setPromptInput(s.ocr_prompt);
+        setCustomPrompt(s.ocr_prompt);
       } else {
-        setPromptInput("Convert the document in this image into Markdown format, preserving layout, tables, and formulas.");
+        setCustomPrompt(PROMPT_VISION_DEFAULT);
       }
+
       setSelectedId((prev) =>
         prev && cat.specs.some((x) => x.id === prev) ? prev : cat.active_spec_id ?? cat.specs[0]?.id ?? null,
       );
@@ -123,6 +142,29 @@ export function OcrSettingsCard() {
   const refineMode = settings.ocr_llm_refine === "true" || settings.ocr_llm_refine === true;
   const runRefine = labRefine ?? refineMode;
 
+  const isDedicatedOcr = (model: OcrModel | null) => {
+    if (!model) return false;
+    if (model.custom) return true;
+    const lower = (model.model_id + " " + model.label).toLowerCase();
+    return (
+      lower.includes("senocr") ||
+      lower.includes("paddle") ||
+      lower.includes("hunyuan") ||
+      lower.includes("glm-ocr") ||
+      lower.includes("ocr")
+    );
+  };
+
+  const selectedIsDedicated = isDedicatedOcr(selectedModel);
+
+  // Compute what prompt string will be sent
+  const effectivePrompt =
+    promptMode === "plain"
+      ? PROMPT_PLAIN
+      : promptMode === "markdown"
+        ? PROMPT_MARKDOWN
+        : customPrompt.trim() || PROMPT_PLAIN;
+
   async function saveMode(refine: boolean) {
     if (refine === refineMode) return;
     setModeSaving(true);
@@ -140,20 +182,32 @@ export function OcrSettingsCard() {
     }
   }
 
-  async function handleSavePrompt() {
+  async function handleSavePromptConfig(targetMode: PromptMode, promptText?: string) {
     setPromptSaving(true);
     setPromptSaved(false);
     setPromptError("");
+    const textToSave = promptText !== undefined ? promptText : customPrompt;
     try {
       await api("/api/settings", {
         method: "PUT",
-        body: { settings: { ocr_prompt: promptInput.trim() } },
+        body: {
+          settings: {
+            ocr_prompt_mode: targetMode,
+            ocr_prompt: textToSave.trim(),
+          },
+        },
       });
-      setSettings((s) => ({ ...s, ocr_prompt: promptInput.trim() }));
+      setPromptMode(targetMode);
+      if (promptText !== undefined) setCustomPrompt(promptText);
+      setSettings((s) => ({
+        ...s,
+        ocr_prompt_mode: targetMode,
+        ocr_prompt: textToSave.trim(),
+      }));
       setPromptSaved(true);
       setTimeout(() => setPromptSaved(false), 2500);
     } catch (err) {
-      setPromptError(err instanceof Error ? err.message : "Không lưu được prompt OCR");
+      setPromptError(err instanceof Error ? err.message : "Không lưu được cấu hình prompt");
     } finally {
       setPromptSaving(false);
     }
@@ -230,9 +284,7 @@ export function OcrSettingsCard() {
     formData.append("target_page", String(targetPage));
     formData.append("model_spec_id", selectedModel.id);
     formData.append("llm_refine", String(runRefine));
-    if (promptInput.trim()) {
-      formData.append("override_prompt", promptInput.trim());
-    }
+    formData.append("override_prompt", effectivePrompt);
     setResultTab("refined");
 
     try {
@@ -260,18 +312,27 @@ export function OcrSettingsCard() {
 
   const isPdf = !!testFile?.name.toLowerCase().endsWith(".pdf");
   const totalPages = testResult?.total_pages ?? null;
+  const hasGarbageTokens = !!(
+    testResult?.text &&
+    (testResult.text.includes("LOC_") || testResult.text.includes("boldsymbol"))
+  );
 
   return (
-    <div className="rounded-2xl border border-border/80 bg-card p-6 shadow-sahara flex flex-col gap-5">
+    <div className="rounded-2xl border border-border/80 bg-card p-6 shadow-sahara flex flex-col gap-6">
       {/* Header */}
       <div className="flex flex-wrap items-start gap-3">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
           <span className="material-symbols-outlined text-[22px]">photo_camera</span>
         </div>
         <div className="flex-1 min-w-0">
-          <h2 className="text-base font-semibold tracking-tight text-foreground">Dịch vụ OCR</h2>
-          <p className="text-xs text-muted-foreground">
-            Model đọc trang scan / ảnh chụp văn bản khi bóc tách tài liệu.
+          <div className="flex items-center gap-2">
+            <h2 className="text-base font-semibold tracking-tight text-foreground">Dịch vụ OCR</h2>
+            <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+              vLLM / Vision Engine
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Model trích xuất văn bản từ trang scan hoặc ảnh chụp tài liệu phục vụ lập chỉ mục RAG &amp; Wiki.
           </p>
         </div>
         <ActiveModelChip spec={activeModel} />
@@ -290,59 +351,281 @@ export function OcrSettingsCard() {
         </div>
       ) : (
         <>
-          <ProviderModelPicker
-            kind="ocr"
-            specs={catalog.specs}
-            activeId={catalog.active_spec_id}
-            selectedId={selectedId}
-            onSelect={setSelectedId}
-            settings={settings}
-            onChanged={refresh}
-            onProviderKeySaved={handleProviderKeySaved}
-            keyFallbackHint="Dùng key Vision cùng nhà cung cấp"
-          />
+          {/* Model picker & activation */}
+          <div className="flex flex-col gap-3">
+            <ProviderModelPicker
+              kind="ocr"
+              specs={catalog.specs}
+              activeId={catalog.active_spec_id}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+              settings={settings}
+              onChanged={refresh}
+              onProviderKeySaved={handleProviderKeySaved}
+              keyFallbackHint="Dùng key Vision cùng nhà cung cấp"
+            />
 
-          <ActivateBar
-            willSwitch={willSwitch}
-            ready={canActivate(selectedModel)}
-            busy={switching}
-            saved={saved}
-            error={saveError}
-            label={selectedModel?.label}
-            onActivate={handleActivate}
-          >
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleTestConnection}
-              disabled={testingConn || !selectedModel}
-              className="h-9 gap-1 text-xs"
-              title="Gửi 1 request nhỏ tới model đang chọn"
+            <ActivateBar
+              willSwitch={willSwitch}
+              ready={canActivate(selectedModel)}
+              busy={switching}
+              saved={saved}
+              error={saveError}
+              label={selectedModel?.label}
+              onActivate={handleActivate}
             >
-              <span className={`material-symbols-outlined text-sm ${testingConn ? "animate-spin" : ""}`}>
-                {testingConn ? "progress_activity" : "network_ping"}
-              </span>
-              Ping
-            </Button>
-            {conn && (
-              <span
-                className={`flex items-center gap-1 text-xs ${
-                  conn.success ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleTestConnection}
+                disabled={testingConn || !selectedModel}
+                className="h-9 gap-1.5 text-xs font-medium"
+                title="Gửi request kiểm tra tới endpoint OCR đang chọn"
+              >
+                <span className={`material-symbols-outlined text-sm ${testingConn ? "animate-spin" : ""}`}>
+                  {testingConn ? "progress_activity" : "network_ping"}
+                </span>
+                Kiểm tra kết nối
+              </Button>
+              {conn && (
+                <span
+                  className={`flex items-center gap-1.5 text-xs ${
+                    conn.success ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-sm">{conn.success ? "check_circle" : "error"}</span>
+                  <span className="max-w-[320px] truncate" title={conn.message}>
+                    {conn.message}
+                  </span>
+                  {conn.latency_ms > 0 && <span className="font-mono text-[11px]">({conn.latency_ms} ms)</span>}
+                </span>
+              )}
+            </ActivateBar>
+          </div>
+
+          {/* Model guidance banner when selecting SenOCR-Vi */}
+          {selectedIsDedicated && (
+            <div className="flex items-start gap-3 rounded-xl border border-primary/20 bg-primary/5 p-3 text-xs">
+              <span className="material-symbols-outlined text-primary text-lg mt-0.5">verified</span>
+              <div className="flex-1 space-y-1">
+                <p className="font-semibold text-foreground">
+                  Đang chọn Model OCR chuyên dụng ({selectedModel?.label})
+                </p>
+                <p className="text-[11px] leading-relaxed text-muted-foreground">
+                  Model lightweight (0.95B) được tinh chỉnh chuyên sâu cho tiếng Việt. Cần sử dụng prompt chuẩn tác vụ{" "}
+                  <code className="rounded bg-primary/10 px-1 py-0.5 font-mono font-semibold text-primary">OCR:</code>{" "}
+                  để giữ nguyên văn bản, bảng biểu và tránh sinh toạ độ rác <code>&lt;LOC_...&gt;</code>.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Prompt configuration */}
+          <div className="flex flex-col gap-3 rounded-xl border border-border/70 bg-muted/15 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-base text-primary">chat</span>
+                <div>
+                  <span className="text-xs font-semibold text-foreground">Prompt OCR tiêu chuẩn</span>
+                  <p className="text-[11px] text-muted-foreground">
+                    Câu lệnh chỉ dẫn tác vụ gửi kèm ảnh văn bản tới model OCR.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {promptSaved && (
+                  <span className="flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+                    <span className="material-symbols-outlined text-sm">check</span>
+                    Đã lưu cấu hình prompt!
+                  </span>
+                )}
+                {promptError && <span className="text-[11px] text-destructive">{promptError}</span>}
+              </div>
+            </div>
+
+            {/* Prompt Mode Radio Cards */}
+            <div role="radiogroup" aria-label="Chế độ Prompt OCR" className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+              {/* Option 1: OCR: (Plain) */}
+              <button
+                type="button"
+                role="radio"
+                aria-checked={promptMode === "plain"}
+                onClick={() => void handleSavePromptConfig("plain")}
+                disabled={promptSaving}
+                className={`relative flex flex-col items-start gap-1.5 rounded-xl border p-3 text-left transition-all ${
+                  promptMode === "plain"
+                    ? "border-primary bg-primary/10 shadow-sm"
+                    : "border-border/80 bg-card hover:border-primary/40 hover:bg-accent/30"
                 }`}
               >
-                <span className="material-symbols-outlined text-sm">{conn.success ? "check_circle" : "error"}</span>
-                <span className="max-w-[320px] truncate" title={conn.message}>
-                  {conn.message}
+                <div className="flex w-full items-center justify-between">
+                  <span className="font-mono text-xs font-bold text-foreground">OCR:</span>
+                  <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-bold text-emerald-600 dark:text-emerald-400">
+                    Khuyên dùng
+                  </span>
+                </div>
+                <span className="text-xs font-medium text-foreground">Tối giản chuẩn (Plain)</span>
+                <span className="text-[11px] leading-snug text-muted-foreground">
+                  Gửi lệnh chuẩn <code className="font-mono font-semibold">OCR:</code>. Chống sinh toạ độ <code>LOC_</code>, LaTeX, tiếng Trung cho SenOCR-Vi.
                 </span>
-                {conn.latency_ms > 0 && <span className="font-mono">· {conn.latency_ms} ms</span>}
-              </span>
-            )}
-          </ActivateBar>
+                {promptMode === "plain" && (
+                  <span className="material-symbols-outlined absolute top-2 right-2 text-sm text-primary">
+                    check_circle
+                  </span>
+                )}
+              </button>
 
-          {/* Processing mode */}
+              {/* Option 2: Markdown */}
+              <button
+                type="button"
+                role="radio"
+                aria-checked={promptMode === "markdown"}
+                onClick={() => void handleSavePromptConfig("markdown")}
+                disabled={promptSaving}
+                className={`relative flex flex-col items-start gap-1.5 rounded-xl border p-3 text-left transition-all ${
+                  promptMode === "markdown"
+                    ? "border-primary bg-primary/10 shadow-sm"
+                    : "border-border/80 bg-card hover:border-primary/40 hover:bg-accent/30"
+                }`}
+              >
+                <div className="flex w-full items-center justify-between">
+                  <span className="font-mono text-xs font-bold text-foreground">Markdown</span>
+                  <span className="rounded bg-blue-500/15 px-1.5 py-0.5 text-[9px] font-medium text-blue-600 dark:text-blue-400">
+                    Bảng biểu
+                  </span>
+                </div>
+                <span className="text-xs font-medium text-foreground">Cấu trúc Markdown</span>
+                <span className="text-[11px] leading-snug text-muted-foreground">
+                  Yêu cầu trích xuất bảng và công thức sang Markdown. Phù hợp HunyuanOCR hoặc model đa năng.
+                </span>
+                {promptMode === "markdown" && (
+                  <span className="material-symbols-outlined absolute top-2 right-2 text-sm text-primary">
+                    check_circle
+                  </span>
+                )}
+              </button>
+
+              {/* Option 3: Custom */}
+              <button
+                type="button"
+                role="radio"
+                aria-checked={promptMode === "custom"}
+                onClick={() => {
+                  setPromptMode("custom");
+                  setShowPromptDetails(true);
+                }}
+                disabled={promptSaving}
+                className={`relative flex flex-col items-start gap-1.5 rounded-xl border p-3 text-left transition-all ${
+                  promptMode === "custom"
+                    ? "border-primary bg-primary/10 shadow-sm"
+                    : "border-border/80 bg-card hover:border-primary/40 hover:bg-accent/30"
+                }`}
+              >
+                <div className="flex w-full items-center justify-between">
+                  <span className="font-mono text-xs font-bold text-foreground">Custom</span>
+                  <span className="rounded bg-muted px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground">
+                    Tùy biến
+                  </span>
+                </div>
+                <span className="text-xs font-medium text-foreground">Prompt tự chọn</span>
+                <span className="text-[11px] leading-snug text-muted-foreground">
+                  Nhập câu lệnh riêng biệt hoặc dùng prompt bóc tách chi tiết cho các Vision LLM lớn.
+                </span>
+                {promptMode === "custom" && (
+                  <span className="material-symbols-outlined absolute top-2 right-2 text-sm text-primary">
+                    check_circle
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {/* Prompt preview / details */}
+            <div className="rounded-lg border border-border/80 bg-background/80 p-3">
+              <div className="flex items-center justify-between text-[11px] text-muted-foreground mb-1.5">
+                <span className="flex items-center gap-1 font-medium text-foreground">
+                  <span className="material-symbols-outlined text-sm text-primary">terminal</span>
+                  Nội dung prompt thực tế sẽ gửi tới model:
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowPromptDetails(!showPromptDetails)}
+                  className="text-primary hover:underline flex items-center gap-0.5"
+                >
+                  <span className="material-symbols-outlined text-xs">
+                    {showPromptDetails ? "expand_less" : "tune"}
+                  </span>
+                  {showPromptDetails ? "Thu gọn tùy chỉnh" : "Chỉnh sửa câu lệnh"}
+                </button>
+              </div>
+
+              {showPromptDetails || promptMode === "custom" ? (
+                <div className="flex flex-col gap-2 mt-2">
+                  <textarea
+                    value={promptMode === "custom" ? customPrompt : effectivePrompt}
+                    onChange={(e) => {
+                      setCustomPrompt(e.target.value);
+                      if (promptMode !== "custom") setPromptMode("custom");
+                    }}
+                    rows={3}
+                    placeholder="Nhập prompt gửi kèm ảnh..."
+                    className="w-full rounded-md border border-input bg-muted/20 p-2 font-mono text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11px]">
+                    <div className="flex flex-wrap gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCustomPrompt(PROMPT_PLAIN);
+                          void handleSavePromptConfig("plain", PROMPT_PLAIN);
+                        }}
+                        className="rounded border border-border bg-card px-2 py-0.5 text-foreground hover:bg-accent"
+                      >
+                        Đặt lại &quot;OCR:&quot;
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCustomPrompt(PROMPT_MARKDOWN);
+                          void handleSavePromptConfig("markdown", PROMPT_MARKDOWN);
+                        }}
+                        className="rounded border border-border bg-card px-2 py-0.5 text-foreground hover:bg-accent"
+                      >
+                        Đặt lại &quot;Markdown&quot;
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCustomPrompt(PROMPT_VISION_DEFAULT);
+                          setPromptMode("custom");
+                        }}
+                        className="rounded border border-border bg-card px-2 py-0.5 text-foreground hover:bg-accent"
+                      >
+                        Nạp mẫu Vision Tiếng Việt
+                      </button>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => void handleSavePromptConfig(promptMode, customPrompt)}
+                      disabled={promptSaving}
+                      className="h-7 text-xs font-medium"
+                    >
+                      {promptSaving ? "Đang lưu..." : "Lưu prompt tùy chỉnh"}
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded border border-border/50 bg-muted/30 px-3 py-2 font-mono text-xs text-foreground select-all break-words">
+                  {effectivePrompt}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Processing mode (Chỉ OCR vs OCR + LLM hiệu đính) */}
           <div className="flex flex-col gap-2">
-            <span className="text-xs font-medium text-foreground">Chế độ xử lý trang scan</span>
-            <div role="radiogroup" className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <span className="text-xs font-semibold text-foreground">Chế độ xử lý trang scan</span>
+            <div role="radiogroup" aria-label="Chế độ xử lý trang scan" className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
               {OCR_MODES.map((m) => {
                 const on = refineMode === m.refine;
                 return (
@@ -353,15 +636,28 @@ export function OcrSettingsCard() {
                     aria-checked={on}
                     disabled={modeSaving}
                     onClick={() => void saveMode(m.refine)}
-                    className={`flex items-start gap-2.5 rounded-lg border p-3 text-left transition-colors disabled:opacity-60 ${
-                      on ? "border-primary bg-primary/5" : "border-border hover:bg-accent/30"
+                    className={`flex items-start gap-2.5 rounded-xl border p-3 text-left transition-colors disabled:opacity-60 ${
+                      on ? "border-primary bg-primary/5 shadow-sm" : "border-border hover:bg-accent/30"
                     }`}
                   >
                     <span className={`material-symbols-outlined text-lg ${on ? "text-primary" : "text-muted-foreground"}`}>
                       {m.icon}
                     </span>
-                    <span className="flex flex-col gap-0.5">
-                      <span className="text-sm font-medium text-foreground">{m.title}</span>
+                    <span className="flex flex-col gap-0.5 flex-1 min-w-0">
+                      <span className="flex items-center justify-between">
+                        <span className="text-sm font-semibold text-foreground">{m.title}</span>
+                        {m.badge && (
+                          <span
+                            className={`rounded px-1.5 py-0.2 text-[9px] font-medium ${
+                              m.refine
+                                ? "bg-muted text-muted-foreground"
+                                : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-semibold"
+                            }`}
+                          >
+                            {m.badge}
+                          </span>
+                        )}
+                      </span>
                       <span className="text-[11px] leading-snug text-muted-foreground">{m.desc}</span>
                     </span>
                   </button>
@@ -370,84 +666,41 @@ export function OcrSettingsCard() {
             </div>
             <p className="text-[11px] text-muted-foreground">
               {refineMode
-                ? "Bước hiệu đính dùng model đang chọn ở mục Vision Model."
-                : "Áp dụng cho các tài liệu tải lên sau khi lưu."}
+                ? "Bước hiệu đính sẽ dùng model đang chọn ở mục Vision Model để đối chiếu văn bản thô."
+                : "Chế độ 'Chỉ OCR' bảo đảm giữ nguyên 100% số hiệu, ngày tháng và bảng biểu công văn theo kết quả quét."}
               {modeSaving && " Đang lưu…"}
             </p>
             {modeError && <p className="text-xs text-destructive">{modeError}</p>}
           </div>
 
-          {/* OCR Prompt configuration */}
-          <div className="flex flex-col gap-2.5 rounded-xl border border-border/70 bg-muted/20 p-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-sm text-primary">chat</span>
-                Prompt OCR (Tác vụ trích xuất)
-              </span>
-              <button
-                type="button"
-                onClick={() => setPromptInput("Convert the document in this image into Markdown format, preserving layout, tables, and formulas.")}
-                className="text-[11px] text-primary hover:underline"
-              >
-                Khôi phục prompt chuẩn (Markdown)
-              </button>
-            </div>
-            <p className="text-[11px] text-muted-foreground">
-              Đối với model OCR chuyên dụng (như SenOCR-Vi / PaddleOCR-VL, HunyuanOCR), hãy dùng câu chỉ dẫn tác vụ chuẩn ngắn gọn để tránh lỗi sinh tọa độ <code>LOC_...</code> hoặc ảo giác.
-            </p>
-            <div className="flex flex-wrap items-center gap-2 text-[11px]">
-              <span className="text-muted-foreground">Chọn nhanh:</span>
-              <button
-                type="button"
-                onClick={() => setPromptInput("Convert the document in this image into Markdown format, preserving layout, tables, and formulas.")}
-                className="rounded border border-border bg-background px-2 py-0.5 text-xs text-foreground hover:bg-accent transition-colors"
-              >
-                Markdown (Bảng biểu, Tiêu đề, Công thức)
-              </button>
-              <button
-                type="button"
-                onClick={() => setPromptInput("OCR:")}
-                className="rounded border border-border bg-background px-2 py-0.5 text-xs text-foreground hover:bg-accent transition-colors"
-              >
-                OCR: (Chỉ trích xuất văn bản)
-              </button>
-            </div>
-            <textarea
-              value={promptInput}
-              onChange={(e) => setPromptInput(e.target.value)}
-              rows={2}
-              placeholder="Nhập prompt OCR..."
-              className="w-full rounded-md border border-input bg-background p-2.5 font-mono text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-            />
-            <div className="flex items-center justify-end gap-2">
-              {promptSaved && <span className="text-xs text-emerald-600 dark:text-emerald-400">Đã lưu prompt OCR!</span>}
-              {promptError && <span className="text-xs text-destructive">{promptError}</span>}
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => void handleSavePrompt()}
-                disabled={promptSaving || promptInput.trim() === ((settings.ocr_prompt as string) ?? "")}
-                className="h-8 text-xs"
-              >
-                {promptSaving ? "Đang lưu…" : "Lưu prompt"}
-              </Button>
-            </div>
-          </div>
-
           {/* Test lab */}
           <div className="rounded-xl border border-border/70 bg-muted/10 p-4">
-            <div className="mb-3 flex items-center justify-between">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 <span className="material-symbols-outlined text-sm text-primary">science</span>
-                Thử OCR
+                Thử nghiệm OCR trực tiếp
               </span>
-              {selectedModel && (
-                <span className="truncate text-[11px] text-muted-foreground">
-                  Model thử: <span className="font-medium text-foreground">{selectedModel.label}</span>
+              <div className="flex items-center gap-2 text-[11px]">
+                {selectedModel && (
+                  <span className="rounded bg-background px-2 py-0.5 border border-border/80 text-muted-foreground">
+                    Model: <strong className="text-foreground">{selectedModel.label}</strong>
+                  </span>
+                )}
+                <span className="rounded bg-background px-2 py-0.5 border border-border/80 text-muted-foreground">
+                  Prompt: <strong className="font-mono text-foreground">{promptMode === "plain" ? "OCR:" : promptMode}</strong>
                 </span>
-              )}
+              </div>
             </div>
+
+            {hasGarbageTokens && (
+              <div className="mb-3 flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs text-amber-700 dark:text-amber-300">
+                <span className="material-symbols-outlined text-sm">warning</span>
+                <span>
+                  Phát hiện ký tự lạ hoặc mã toạ độ layout trong kết quả. Hãy chọn chế độ Prompt <strong>&quot;OCR:&quot;</strong> ở trên để loại bỏ hoàn toàn các ký tự này.
+                </span>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
               <div className="flex flex-col gap-3 lg:col-span-4">
                 <TestFileDropzone
@@ -499,7 +752,7 @@ export function OcrSettingsCard() {
 
                 <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-background p-2 text-xs">
                   <input type="checkbox" checked={runRefine} onChange={(e) => setLabRefine(e.target.checked)} />
-                  <span className="flex-1">Hiệu đính bằng LLM</span>
+                  <span className="flex-1">Kèm hiệu đính bằng LLM</span>
                   <span className="material-symbols-outlined text-sm text-muted-foreground">auto_fix_high</span>
                 </label>
 
@@ -515,13 +768,17 @@ export function OcrSettingsCard() {
                   {testLoading
                     ? runRefine
                       ? "Đang OCR + hiệu đính..."
-                      : "Đang quét OCR..."
+                      : "Đang nhận diện OCR..."
                     : runRefine
                       ? "Chạy OCR + LLM"
                       : "Chạy OCR"}
                 </Button>
                 <p className="text-[11px] text-muted-foreground">
-                  Chạy bằng model đang chọn ở trên (không cần bấm &quot;Dùng model này&quot;), với API key đã lưu.
+                  Gửi ảnh tới model đang chọn với prompt{" "}
+                  <code className="font-mono font-semibold text-foreground">
+                    {promptMode === "plain" ? "OCR:" : promptMode}
+                  </code>
+                  .
                 </p>
               </div>
 
@@ -530,7 +787,7 @@ export function OcrSettingsCard() {
                   title="Kết quả OCR"
                   icon="text_fields"
                   loading={testLoading}
-                  loadingTitle={runRefine ? "Đang nhận diện và hiệu đính văn bản..." : "Đang nhận diện văn bản..."}
+                  loadingTitle={runRefine ? "Đang nhận diện và hiệu đính văn bản..." : "Đang trích xuất nội dung văn bản..."}
                   content={
                     testResult?.success
                       ? resultTab === "raw" && testResult.raw_text
@@ -541,8 +798,8 @@ export function OcrSettingsCard() {
                   tabs={
                     testResult?.success && testResult.raw_text
                       ? [
-                          { key: "refined", label: "Sau LLM" },
-                          { key: "raw", label: "OCR thô" },
+                          { key: "refined", label: "Sau hiệu đính" },
+                          { key: "raw", label: "Bản thô OCR" },
                         ]
                       : undefined
                   }

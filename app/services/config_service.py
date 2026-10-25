@@ -50,12 +50,18 @@ def vision_api_key_for(p) -> str:
     return f"vision_api_key__{_provider_value(p)}"
 
 
+# Prompt for general vision models; kind="ocr" models use ocr_prompt_mode.
 DEFAULT_OCR_PROMPT = (
-    "Convert the document in this image into Markdown format, preserving layout, tables, and formulas."
+    "Hãy trích xuất toàn bộ chữ trong ảnh trang tài liệu này, đúng nguyên văn từng chữ. "
+    "Giữ nguyên số hiệu văn bản, ngày tháng, con số và chữ viết tắt. "
+    "Nếu có bảng, dựng lại thành bảng Markdown. "
+    "Dựng lại cấu trúc Phần, Chương, Mục, Điều, Khoản, Điểm thành tiêu đề Markdown tương ứng. "
+    "Chỉ trả về nội dung đã trích xuất, không thêm bình luận, giải thích hay lời dẫn."
 )
 
 DEFAULT_CONFIG_VALUES: dict[str, str] = {
     "ocr_prompt": DEFAULT_OCR_PROMPT,
+    "ocr_prompt_mode": "plain",
     "ocr_mode": "auto",
     "ocr_fallback_vision": "true",
     "ocr_llm_refine": "false",
@@ -81,7 +87,7 @@ ALL_CONFIG_KEYS: list[str] = [
     "vision_api_key", "vision_base_url",
     # OCR
     "ocr_base_url", "ocr_api_key", "ocr_api_key__openai", "ocr_api_key__anthropic", "ocr_api_key__google",
-    "ocr_model", "ocr_prompt", "ocr_mode", "ocr_fallback_vision", "ocr_llm_refine",
+    "ocr_model", "ocr_prompt", "ocr_prompt_mode", "ocr_mode", "ocr_fallback_vision", "ocr_llm_refine",
     # Parsers
     "pdf_parser_engine", "excel_parser_engine", "pdf_strip_headers_footers", "pdf_enhance_headings",
     # Legacy LLM / vision

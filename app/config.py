@@ -134,7 +134,10 @@ class Settings(BaseSettings):
     ocr_base_url: str = ""
     ocr_api_key: str = ""
     ocr_model: str = "ggml-org/GLM-OCR-GGUF:f16"
-    ocr_prompt: str = "Convert the document in this image into Markdown format, preserving layout, tables, and formulas."
+    # Prompt for general vision models doing OCR; empty = built-in default.
+    ocr_prompt: str = ""
+    # Standard prompt of kind="ocr" models: "plain" ("OCR:") or "markdown".
+    ocr_prompt_mode: str = "plain"
 
     # Reranker
     reranker_enabled: bool = True

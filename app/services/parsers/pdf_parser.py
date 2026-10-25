@@ -20,6 +20,7 @@ from loguru import logger
 
 from app.core.legal_headings import is_bare_article_continuation, is_legal_structure_candidate, legal_heading_level
 from app.core.text_normalizer import normalize_text
+from app.services.ocr_service import VISION_OCR_PROMPT
 from app.services.parsers import pdf_backend
 from app.services.parsers.base import BaseParser
 from app.services.parsers.pdf_backend import PdfPageView, Rect  # noqa: F401 - re-exported
@@ -471,9 +472,8 @@ def extract_markdown_pages(
 class PDFParser(BaseParser):
     """High-fidelity PDF parser (pdfplumber tables + PDFium text layer) with OCR fallback."""
 
-    DEFAULT_OCR_PROMPT = (
-        "Convert the document in this image into Markdown format, preserving layout, tables, and formulas."
-    )
+    # Vision-model prompt; the OCR slot's model gets ocr_model_prompt.
+    DEFAULT_OCR_PROMPT = VISION_OCR_PROMPT
 
     async def parse(
         self,
@@ -491,6 +491,7 @@ class PDFParser(BaseParser):
         ocr_api_key: Optional[str] = None,
         ocr_model: Optional[str] = None,
         ocr_prompt: Optional[str] = None,
+        ocr_model_prompt: Optional[str] = None,
         ocr_fallback_vision: bool = True,
         ocr_llm_refine: bool = False,
         db: Optional[Any] = None,
@@ -523,6 +524,7 @@ class PDFParser(BaseParser):
                 ocr_api_key=ocr_api_key,
                 ocr_model=ocr_model,
                 ocr_prompt=ocr_prompt,
+                ocr_model_prompt=ocr_model_prompt,
                 ocr_fallback_vision=ocr_fallback_vision,
                 ocr_llm_refine=ocr_llm_refine,
                 db=db,
@@ -553,6 +555,7 @@ class PDFParser(BaseParser):
         ocr_api_key: Optional[str],
         ocr_model: Optional[str],
         ocr_prompt: Optional[str],
+        ocr_model_prompt: Optional[str],
         ocr_fallback_vision: bool,
         ocr_llm_refine: bool,
         db: Optional[Any],
@@ -644,7 +647,9 @@ class PDFParser(BaseParser):
             progress_lock = asyncio.Lock()
             completed = 0
             outage: List[upstream.UpstreamUnavailable] = []
-            prompt_to_use = ocr_prompt or self.DEFAULT_OCR_PROMPT
+            # ocr_prompt is for vision models. The OCR slot's model gets
+            # ocr_model_prompt, else ocr_service resolves it ("OCR:" for kind="ocr").
+            vision_prompt = ocr_prompt or self.DEFAULT_OCR_PROMPT
 
             async def _run_ocr_one(idx: int, img_bytes: bytes) -> None:
                 nonlocal completed
@@ -655,7 +660,7 @@ class PDFParser(BaseParser):
                             ocr_res = await ocr_service.ocr_image(
                                 img_bytes,
                                 mime_type="image/jpeg",
-                                prompt=prompt_to_use,
+                                prompt=ocr_model_prompt,
                                 base_url=ocr_base_url,
                                 api_key=ocr_api_key,
                                 model=ocr_model,
@@ -680,7 +685,7 @@ class PDFParser(BaseParser):
                             ocr_res = await vision_provider.analyze_image(
                                 img_bytes,
                                 mime_type="image/jpeg",
-                                prompt=prompt_to_use,
+                                prompt=vision_prompt,
                             )
                         except upstream.UpstreamUnavailable as e:
                             outage.append(e)
