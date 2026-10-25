@@ -134,6 +134,7 @@ class Settings(BaseSettings):
     ocr_base_url: str = ""
     ocr_api_key: str = ""
     ocr_model: str = "ggml-org/GLM-OCR-GGUF:f16"
+    ocr_prompt: str = "Convert the document in this image into Markdown format, preserving layout, tables, and formulas."
 
     # Reranker
     reranker_enabled: bool = True

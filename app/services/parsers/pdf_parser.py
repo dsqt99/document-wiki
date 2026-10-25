@@ -472,12 +472,7 @@ class PDFParser(BaseParser):
     """High-fidelity PDF parser (pdfplumber tables + PDFium text layer) with OCR fallback."""
 
     DEFAULT_OCR_PROMPT = (
-        "Trích xuất TOÀN BỘ văn bản từ hình ảnh trang tài liệu này một cách chính xác tuyệt đối.\n"
-        "Yêu cầu nghiêm ngặt:\n"
-        "1. Giữ nguyên số hiệu văn bản, tiêu đề, dấu câu, ngày tháng, các cụm từ viết tắt ngành (CAND, CSGT, PCCC, ANTT, QĐ, NĐ, TT...).\n"
-        "2. Tái tạo chính xác cấu trúc bảng biểu dạng Markdown Table (| Cột 1 | Cột 2 |).\n"
-        "3. Tái tạo cấu trúc thứ bậc đề mục: Phần, Chương, Mục, Điều, Khoản, Điểm.\n"
-        "4. Tuyệt đối không thêm lời bình, không tóm tắt hay tự ý suy diễn từ ngữ."
+        "Convert the document in this image into Markdown format, preserving layout, tables, and formulas."
     )
 
     async def parse(

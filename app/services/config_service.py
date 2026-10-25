@@ -51,11 +51,7 @@ def vision_api_key_for(p) -> str:
 
 
 DEFAULT_OCR_PROMPT = (
-    "Hãy trích xuất toàn bộ chữ trong ảnh trang tài liệu này, đúng nguyên văn từng chữ. "
-    "Giữ nguyên số hiệu văn bản, ngày tháng, con số và chữ viết tắt. "
-    "Nếu có bảng, dựng lại thành bảng Markdown. "
-    "Dựng lại cấu trúc Phần, Chương, Mục, Điều, Khoản, Điểm thành tiêu đề Markdown tương ứng. "
-    "Chỉ trả về nội dung đã trích xuất, không thêm bình luận, giải thích hay lời dẫn."
+    "Convert the document in this image into Markdown format, preserving layout, tables, and formulas."
 )
 
 DEFAULT_CONFIG_VALUES: dict[str, str] = {

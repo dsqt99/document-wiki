@@ -343,11 +343,16 @@ async def get_ocr_catalog(
             or await svc.get(vision_api_key_for(provider))
         )
 
-    if active is None:
+    custom_ocr_models = await list_custom(db, "ocr")
+    if active is None and current_model:
         # Configs from before model selection existed: match by model name.
         active = next(
             (sid for sid, p in OCR_PRESETS.items() if p["model_id"] == current_model), None
         )
+        if active is None:
+            active = next(
+                (m.id for m in custom_ocr_models if m.model_id == current_model), None
+            )
 
     specs = []
     for spec_id, p in OCR_PRESETS.items():
@@ -357,7 +362,7 @@ async def get_ocr_catalog(
             api_key_configured=(current_key and active == spec_id)
             or await _provider_has_key(p["provider"]),
         ))
-    for m in await list_custom(db, "ocr"):
+    for m in custom_ocr_models:
         specs.append(OcrModelOut(
             id=m.id, provider="custom", label=m.label, base_url=m.base_url,
             model_id=m.model_id, custom=True, group=m.provider,

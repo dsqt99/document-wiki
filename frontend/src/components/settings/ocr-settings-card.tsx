@@ -78,6 +78,12 @@ export function OcrSettingsCard() {
   const [modeSaving, setModeSaving] = useState(false);
   const [modeError, setModeError] = useState("");
 
+  // Prompt configuration
+  const [promptInput, setPromptInput] = useState<string>("");
+  const [promptSaving, setPromptSaving] = useState(false);
+  const [promptSaved, setPromptSaved] = useState(false);
+  const [promptError, setPromptError] = useState("");
+
   useEffect(() => {
     void refresh();
   }, []);
@@ -90,6 +96,11 @@ export function OcrSettingsCard() {
       ]);
       setCatalog(cat);
       setSettings(s);
+      if (typeof s.ocr_prompt === "string" && s.ocr_prompt.trim()) {
+        setPromptInput(s.ocr_prompt);
+      } else {
+        setPromptInput("Convert the document in this image into Markdown format, preserving layout, tables, and formulas.");
+      }
       setSelectedId((prev) =>
         prev && cat.specs.some((x) => x.id === prev) ? prev : cat.active_spec_id ?? cat.specs[0]?.id ?? null,
       );
@@ -126,6 +137,25 @@ export function OcrSettingsCard() {
       setModeError(err instanceof Error ? err.message : "Không lưu được chế độ OCR");
     } finally {
       setModeSaving(false);
+    }
+  }
+
+  async function handleSavePrompt() {
+    setPromptSaving(true);
+    setPromptSaved(false);
+    setPromptError("");
+    try {
+      await api("/api/settings", {
+        method: "PUT",
+        body: { settings: { ocr_prompt: promptInput.trim() } },
+      });
+      setSettings((s) => ({ ...s, ocr_prompt: promptInput.trim() }));
+      setPromptSaved(true);
+      setTimeout(() => setPromptSaved(false), 2500);
+    } catch (err) {
+      setPromptError(err instanceof Error ? err.message : "Không lưu được prompt OCR");
+    } finally {
+      setPromptSaving(false);
     }
   }
 
@@ -200,6 +230,9 @@ export function OcrSettingsCard() {
     formData.append("target_page", String(targetPage));
     formData.append("model_spec_id", selectedModel.id);
     formData.append("llm_refine", String(runRefine));
+    if (promptInput.trim()) {
+      formData.append("override_prompt", promptInput.trim());
+    }
     setResultTab("refined");
 
     try {
@@ -342,6 +375,64 @@ export function OcrSettingsCard() {
               {modeSaving && " Đang lưu…"}
             </p>
             {modeError && <p className="text-xs text-destructive">{modeError}</p>}
+          </div>
+
+          {/* OCR Prompt configuration */}
+          <div className="flex flex-col gap-2.5 rounded-xl border border-border/70 bg-muted/20 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-sm text-primary">chat</span>
+                Prompt OCR (Tác vụ trích xuất)
+              </span>
+              <button
+                type="button"
+                onClick={() => setPromptInput("Convert the document in this image into Markdown format, preserving layout, tables, and formulas.")}
+                className="text-[11px] text-primary hover:underline"
+              >
+                Khôi phục prompt chuẩn (Markdown)
+              </button>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Đối với model OCR chuyên dụng (như SenOCR-Vi / PaddleOCR-VL, HunyuanOCR), hãy dùng câu chỉ dẫn tác vụ chuẩn ngắn gọn để tránh lỗi sinh tọa độ <code>LOC_...</code> hoặc ảo giác.
+            </p>
+            <div className="flex flex-wrap items-center gap-2 text-[11px]">
+              <span className="text-muted-foreground">Chọn nhanh:</span>
+              <button
+                type="button"
+                onClick={() => setPromptInput("Convert the document in this image into Markdown format, preserving layout, tables, and formulas.")}
+                className="rounded border border-border bg-background px-2 py-0.5 text-xs text-foreground hover:bg-accent transition-colors"
+              >
+                Markdown (Bảng biểu, Tiêu đề, Công thức)
+              </button>
+              <button
+                type="button"
+                onClick={() => setPromptInput("OCR:")}
+                className="rounded border border-border bg-background px-2 py-0.5 text-xs text-foreground hover:bg-accent transition-colors"
+              >
+                OCR: (Chỉ trích xuất văn bản)
+              </button>
+            </div>
+            <textarea
+              value={promptInput}
+              onChange={(e) => setPromptInput(e.target.value)}
+              rows={2}
+              placeholder="Nhập prompt OCR..."
+              className="w-full rounded-md border border-input bg-background p-2.5 font-mono text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+            <div className="flex items-center justify-end gap-2">
+              {promptSaved && <span className="text-xs text-emerald-600 dark:text-emerald-400">Đã lưu prompt OCR!</span>}
+              {promptError && <span className="text-xs text-destructive">{promptError}</span>}
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => void handleSavePrompt()}
+                disabled={promptSaving || promptInput.trim() === ((settings.ocr_prompt as string) ?? "")}
+                className="h-8 text-xs"
+              >
+                {promptSaving ? "Đang lưu…" : "Lưu prompt"}
+              </Button>
+            </div>
           </div>
 
           {/* Test lab */}
