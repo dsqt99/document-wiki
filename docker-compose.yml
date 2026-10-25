@@ -14,6 +14,7 @@ x-backend: &backend
       condition: service_healthy
   volumes:
     - ./temp_uploads:/app/temp_uploads
+    - ./alembic/versions:/app/alembic/versions
 
 services:
   postgres:

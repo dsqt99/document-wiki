@@ -58,6 +58,10 @@ def upgrade() -> None:
 
     # global_role_source belongs to revision 050.
     op.execute("ALTER TABLE employees DROP COLUMN IF EXISTS global_role_source")
+    # origin_tag belongs to revision 052.
+    op.execute("ALTER TABLE wiki_pages DROP COLUMN IF EXISTS origin_tag CASCADE")
+    # managing_department_id belongs to revision 053.
+    op.execute("ALTER TABLE sources DROP COLUMN IF EXISTS managing_department_id CASCADE")
 
     # Legacy (pre hash chain) audit_log.
     # Columns as (name, type, required); order matches the original physical layout.
