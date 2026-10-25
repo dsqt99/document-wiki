@@ -64,7 +64,7 @@ const PROMPT_VISION_DEFAULT =
 
 type PromptMode = "plain" | "markdown" | "custom";
 
-export function OcrSettingsCard() {
+export function OcrSettingsCard({ id = "ocr-settings-card" }: { id?: string } = {}) {
   const [catalog, setCatalog] = useState<OcrCatalog | null>(null);
   const [settings, setSettings] = useState<Record<string, unknown>>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -319,7 +319,7 @@ export function OcrSettingsCard() {
   );
 
   return (
-    <div className="rounded-2xl border border-border/80 bg-card p-6 shadow-sahara flex flex-col gap-6">
+    <div id={id} className="rounded-2xl border border-border/80 bg-card p-6 shadow-sahara flex flex-col gap-6 scroll-mt-6">
       {/* Header */}
       <div className="flex flex-wrap items-start gap-3">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">

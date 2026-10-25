@@ -161,7 +161,7 @@ function SwitchRow({
   );
 }
 
-export function DocumentProcessingSettingsCard() {
+export function DocumentProcessingSettingsCard({ id = "doc-processing-settings-card" }: { id?: string } = {}) {
   const [config, setConfig] = useState<Config>(DEFAULT_CONFIG);
   const [savedConfig, setSavedConfig] = useState<Config>(DEFAULT_CONFIG);
   const [loading, setLoading] = useState(true);
@@ -282,7 +282,7 @@ export function DocumentProcessingSettingsCard() {
   const stats = testResult?.success ? testResult.stats : undefined;
 
   return (
-    <div className="rounded-2xl border border-border/80 bg-card p-6 shadow-sahara flex flex-col gap-5">
+    <div id={id} className="rounded-2xl border border-border/80 bg-card p-6 shadow-sahara flex flex-col gap-5 scroll-mt-6">
       {/* Header */}
       <div className="flex flex-wrap items-start gap-3">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-blue-500/20 bg-blue-500/10 text-blue-600 dark:text-blue-400">

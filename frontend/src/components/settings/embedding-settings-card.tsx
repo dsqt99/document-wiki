@@ -131,7 +131,7 @@ function MetricTile({
   );
 }
 
-export function EmbeddingSettingsCard() {
+export function EmbeddingSettingsCard({ id = "embedding-settings-card" }: { id?: string } = {}) {
   const { t } = useI18n();
 
   const [catalog, setCatalog] = useState<EmbeddingCatalog | null>(null);
@@ -309,7 +309,7 @@ export function EmbeddingSettingsCard() {
   const pct = job && job.total_pages > 0 ? Math.round((job.done_pages / job.total_pages) * 100) : 0;
 
   return (
-    <div className="flex flex-col gap-5 rounded-2xl border border-border/80 bg-card p-6 shadow-lift">
+    <div id={id} className="flex flex-col gap-5 rounded-2xl border border-border/80 bg-card p-6 shadow-lift scroll-mt-6">
       {/* Header */}
       <div className="flex flex-wrap items-start gap-3">
         <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">

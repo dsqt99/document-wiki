@@ -9,8 +9,8 @@ import { ModelCatalogCard } from "./model-catalog-card";
 
 type TestResult = { success: boolean; latency_ms: number; message?: string; results?: { index: number; score: number; text: string }[] };
 
-export function RerankSettingsCard() {
-  return <ModelCatalogCard title="Rerank tìm kiếm Wiki" icon="sort" kind="rerank"
+export function RerankSettingsCard({ id = "rerank-settings-card" }: { id?: string } = {}) {
+  return <ModelCatalogCard id={id} title="Rerank tìm kiếm Wiki" icon="sort" kind="rerank"
     description="Xếp hạng lại nội dung tìm được bằng model riêng, rồi lọc theo ngưỡng điểm. Không đổi model LLM đang dùng."
     catalogUrl="/api/settings/rerank/catalog" switchUrl="/api/settings/rerank/switch"
     renderMeta={(spec) => <span>{spec.protocol === "rerank" || spec.id === "legacy/http" ? "Rerank API chuyên dụng" : "LLM chấm mức liên quan 0–1"}</span>}

@@ -215,7 +215,7 @@ export function ModelCatalogCard({
   }
 
   return (
-    <div id={id} className="flex flex-col gap-5 rounded-2xl border border-border/80 bg-card p-6 shadow-lift">
+    <div id={id} className="flex flex-col gap-5 rounded-2xl border border-border/80 bg-card p-6 shadow-lift scroll-mt-6">
       <div className="flex flex-wrap items-start gap-3">
         <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
           <span className="material-symbols-outlined text-[20px]">{icon}</span>
