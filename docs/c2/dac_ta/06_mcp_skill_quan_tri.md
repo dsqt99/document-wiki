@@ -1283,7 +1283,7 @@ Các endpoint test-* **không có** dependency xác thực; test c2 dựa vào �
 | KINDS | llm, vision, embedding, ocr |
 | PROTOCOLS | openai, anthropic |
 | PROVIDERS | openai, anthropic, google, custom |
-| EMBEDDING_DIMENSIONS | (768, 1024, 1536, 3072) |
+| EMBEDDING_DIMENSIONS | (768, 1024, 1536, 2560, 3072) |
 | MAX_MODEL_ID_LEN | 100 |
 
 **URL tương thích OpenAI**
@@ -1433,7 +1433,7 @@ Kiểm tra, theo thứ tự:
 | protocol anthropic mà kind khác llm | 400 "Anthropic protocol is only supported for LLM; use an OpenAI-compatible URL." |
 | model_id sau strip ngoài 1–100 | 400 "Model name must be 1–100 characters" |
 | base_url không bắt đầu bằng http:// hoặc https:// | 400 "Base URL must start with http:// or https://" |
-| embedding với dimension ngoài danh sách | 400 "dimension must be one of 768, 1024, 1536, 3072" |
+| embedding với dimension ngoài danh sách | 400 "dimension must be one of 768, 1024, 1536, 2560, 3072" |
 
 Provider custom dùng protocol và base_url từ body. Provider khác dùng `provider_endpoint`.
 

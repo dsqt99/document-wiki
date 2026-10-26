@@ -283,7 +283,7 @@ Quy ước chung: model_id là phần sau dấu "/" của id, provider là phầ
 Xem 04 §4.1. Các điểm bổ sung:
 
 - Label có dạng "<Nhà cung cấp> <model> (<d>d)".
-- Custom id "custom/<d>/<model>" chỉ hợp lệ khi d thuộc EMBEDDING_DIMENSIONS (768, 1024, 1536, 3072). Spec của nó có max_input_tokens 8191 và label "<model> (<d>d)".
+- Custom id "custom/<d>/<model>" chỉ hợp lệ khi d thuộc EMBEDDING_DIMENSIONS (768, 1024, 1536, 2560, 3072). Spec của nó có max_input_tokens 8191 và label "<model> (<d>d)".
 - `SUPPORTED_DIMENSIONS` là tuple các chiều trong danh mục, sắp tăng dần.
 - `specs_for_dimension(d)`.
 

@@ -23,7 +23,7 @@ KINDS = ("llm", "vision", "embedding", "ocr", "rerank")
 # Wire protocol of the endpoint: "openai" = any OpenAI-compatible API
 # (vLLM, Ollama, LiteLLM, Azure, ...); "anthropic" = Anthropic Messages API.
 PROTOCOLS = ("openai", "anthropic", "rerank")
-EMBEDDING_DIMENSIONS = (768, 1024, 1536, 3072)  # tables that exist (migration 015)
+EMBEDDING_DIMENSIONS = (768, 1024, 1536, 2560, 3072)  # tables that exist (migrations 048, 054)
 MAX_MODEL_ID_LEN = 100  # spec ids land in String(128) columns
 
 # Settings groups models by provider. A model added under a known provider

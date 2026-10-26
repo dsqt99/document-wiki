@@ -486,7 +486,7 @@ export function EmbeddingSettingsCard({ id = "embedding-settings-card" }: { id?:
         </div>
         {actionError && <p className="text-xs text-destructive">{actionError}</p>}
         <p className="text-[11px] text-muted-foreground">
-          Đổi model embedding luôn chạy lại toàn bộ vector vì số chiều có thể khác (hỗ trợ 768, 1024, 1536, 3072). Trong
+          Đổi model embedding luôn chạy lại toàn bộ vector vì số chiều có thể khác (hỗ trợ 768, 1024, 1536, 2560, 3072). Trong
           lúc tiến trình chạy, danh sách model bị khóa.
         </p>
       </div>

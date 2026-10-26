@@ -19,7 +19,7 @@ export const PROVIDER_LABELS: Record<ProviderGroup, string> = {
   custom: "Custom",
 };
 
-const EMBEDDING_DIMENSIONS = [768, 1024, 1536, 3072];
+const EMBEDDING_DIMENSIONS = [768, 1024, 1536, 2560, 3072];
 
 type SavedModel = { id: string };
 

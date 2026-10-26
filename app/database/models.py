@@ -633,11 +633,13 @@ class LegalRelation(Base):
 # Embedding tables, one set per supported dimension
 # ---------------------------------------------------------------------------
 
-EMBEDDING_TABLE_DIMENSIONS = (768, 1024, 1536, 3072)
+EMBEDDING_TABLE_DIMENSIONS = (768, 1024, 1536, 2560, 3072)
+# pgvector HNSW indexes cap vector at 2000 dims; halfvec goes up to 4000.
+HALFVEC_MIN_DIMENSION = 2001
 
 
 def _vector_type(dim: int):
-    return HALFVEC(dim) if dim == 3072 else Vector(dim)
+    return HALFVEC(dim) if dim >= HALFVEC_MIN_DIMENSION else Vector(dim)
 
 
 _PAGE_EMBEDDING_MODELS: dict[int, type] = {}
