@@ -91,9 +91,9 @@ Các file này import những symbol dưới đây. Người viết code **phả
 
 ### 3.1. Chiều vector hỗ trợ
 
-`SUPPORTED_DIMENSIONS` = 768, 1024, 1536, 3072. Mỗi chiều có một bộ bảng riêng, hậu tố `_<dim>`.
+`SUPPORTED_DIMENSIONS` = 768, 1024, 1536, 2560, 3072. Mỗi chiều có một bộ bảng riêng, hậu tố `_<dim>`.
 
-Cột `embedding` trong PostgreSQL **cho phép NULL** và khi ghi luôn để NULL: vector thật nằm trong Milvus. Cột vẫn tồn tại để giữ tương thích (kiểu `vector(dim)`; riêng 3072 dùng `halfvec(3072)`). Lưu ý: migration cũ khai báo NOT NULL; bản c2 phải là nullable.
+Cột `embedding` trong PostgreSQL **cho phép NULL** và khi ghi luôn để NULL: vector thật nằm trong Milvus. Cột vẫn tồn tại để giữ tương thích (kiểu `vector(dim)`; 2560 và 3072 dùng `halfvec(dim)` vì HNSW chỉ index `vector` tới 2000 chiều). Lưu ý: migration cũ khai báo NOT NULL; bản c2 phải là nullable.
 
 ### 3.2. `wiki_page_embeddings_<dim>`
 
@@ -103,7 +103,7 @@ Cột `embedding` trong PostgreSQL **cho phép NULL** và khi ghi luôn để NU
 | model_spec_id | varchar(128) | PK |
 | content_hash | varchar(64) | NOT NULL |
 | embedded_at | timestamptz | mặc định now() |
-| embedding | vector(dim) / halfvec(3072) | nullable |
+| embedding | vector(dim) / halfvec(dim) khi dim > 2000 | nullable |
 
 Index: theo `model_spec_id`; HNSW cosine trên `embedding` (m=16, ef_construction=64).
 

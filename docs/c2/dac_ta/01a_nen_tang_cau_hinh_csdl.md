@@ -190,7 +190,7 @@ Enum có giá trị là chuỗi (lớp con của str), trừ khi tài liệu mi�
 | wiki_page_revisions, wiki_page_drafts, wiki_draft_rounds, wiki_branches, source_chunk_extracts | | 05a §2 |
 | legal_units, legal_relations | LegalUnit, LegalRelation | 05a, 05b, 04 §3.7 |
 | concept_relations | (loại C) | 05a |
-| wiki_page_embeddings_<d>, source_chunk_embeddings_<d>, wiki_page_chunk_embeddings_<d> (d ∈ 768, 1024, 1536, 3072) | | 04 §3.2–3.4 |
+| wiki_page_embeddings_<d>, source_chunk_embeddings_<d>, wiki_page_chunk_embeddings_<d> (d ∈ 768, 1024, 1536, 2560, 3072) | | 04 §3.2–3.4 |
 | embedding_jobs | EmbeddingJob | 04 §3.6 |
 | skills, skill_versions, skill_departments, skill_contributions | Skill, … | 06 |
 | prompt_templates | PromptTemplate | 06 |
@@ -222,7 +222,7 @@ Các đối tượng sau phải được tạo trong migration baseline (§5.3),
 | extension `unaccent` | |
 | hàm `f_unaccent(text) -> text` | Hàm SQL IMMUTABLE, PARALLEL SAFE, bọc `public.unaccent` với từ điển `public.unaccent`. Cần IMMUTABLE để dùng được trong index biểu thức. Tìm kiếm toàn văn (04 §3.5) gọi hàm này |
 
-**Index HNSW và B-tree trên bảng embedding.** Với mỗi d trong {768, 1024, 1536, 3072}:
+**Index HNSW và B-tree trên bảng embedding.** Với mỗi d trong {768, 1024, 1536, 2560, 3072}:
 
 | Bảng | Index |
 |---|---|
