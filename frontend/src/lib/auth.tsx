@@ -51,7 +51,7 @@ function withStorage<T>(op: (store: Storage) => T, fallback: T): T {
   }
 }
 
-/** Flag the current session as coming from Keycloak SSO. */
+/** Flag the current session as coming from Google SSO. */
 export function markSsoSession(): void {
   withStorage((store) => store.setItem(storageKeys.ssoFlag, "1"), undefined);
 }

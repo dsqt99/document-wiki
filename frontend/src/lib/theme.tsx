@@ -1,7 +1,6 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState, useSyncExternalStore } from "react";
-import { isEmbedded, useHostTheme } from "@/lib/embed";
 
 export type Theme = "light" | "dark" | "system";
 
@@ -12,16 +11,14 @@ type ThemeContextType = {
 };
 
 // Lựa chọn của người dùng đọc từ localStorage như một store ngoài, để không phải
-// setState trong effect lúc mount. Khi nhúng trong chatbot chỉ giữ trong phiên.
+// setState trong effect lúc mount.
 const THEME_KEY = "dw-theme";
 const themeListeners = new Set<() => void>();
-let embeddedTheme: Theme | null = null;
 
 const asTheme = (value: unknown): Theme | null =>
   value === "light" || value === "dark" || value === "system" ? value : null;
 
 function readSavedTheme(): Theme {
-  if (embeddedTheme) return embeddedTheme;
   try {
     return asTheme(localStorage.getItem(THEME_KEY)) ?? "system";
   } catch {
@@ -42,14 +39,10 @@ function subscribeSavedTheme(onChange: () => void) {
 }
 
 function saveTheme(value: Theme) {
-  if (isEmbedded()) {
-    embeddedTheme = value;
-  } else {
-    try {
-      localStorage.setItem(THEME_KEY, value);
-    } catch {
-      embeddedTheme = value;
-    }
+  try {
+    localStorage.setItem(THEME_KEY, value);
+  } catch {
+    // localStorage bị chặn: lựa chọn chỉ áp dụng cho lần xem này.
   }
   themeListeners.forEach((listener) => listener());
 }
@@ -61,16 +54,8 @@ const ThemeContext = createContext<ThemeContextType>({
 });
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const theme = useSyncExternalStore(subscribeSavedTheme, readSavedTheme, () => "system" as Theme);
+  const activeTheme = useSyncExternalStore(subscribeSavedTheme, readSavedTheme, () => "system" as Theme);
   const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">("light");
-
-  // Nhúng trong chatbot: theo giao diện trang cha, không ghi đè lựa chọn khi mở wiki trực tiếp.
-  const hostTheme = useHostTheme();
-  const activeTheme: Theme = hostTheme ?? theme;
-
-  useEffect(() => {
-    if (isEmbedded()) document.documentElement.dataset.embed = "1";
-  }, []);
 
   // Apply theme class to documentElement
   useEffect(() => {

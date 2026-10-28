@@ -10,7 +10,6 @@ import { WikiGraph } from "@/components/wiki/wiki-graph";
 import { encodeSlugPath } from "@/components/wiki/wiki-pages-loader";
 import { wikiTypeColor, wikiTypeGroupLabel, wikiTypeIcon } from "@/components/wiki/wiki-type-badge";
 import { api } from "@/lib/api";
-import { useIsEmbedded } from "@/lib/embed";
 import { cn } from "@/lib/utils";
 import type { WikiGraphData, WikiGraphEdge, WikiGraphNode, WikiPageDetail } from "@/types/wiki";
 
@@ -40,7 +39,6 @@ type Preview = { slug: string; status: "loading" | "ok" | "error"; page?: WikiPa
 function GraphScreen() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const embedded = useIsEmbedded();
   const projectId = searchParams.get("projectId");
 
   const baseUrl = projectId ? `/api/projects/${encodeURIComponent(projectId)}/wiki/graph` : "/api/wiki/graph";
@@ -141,7 +139,7 @@ function GraphScreen() {
   };
   const fullHref = (slug: string) => `/wiki/${encodeSlugPath(slug)}${pageScopeQs}`;
 
-  const fill = embedded ? "-m-4 md:-m-5" : "-mx-6 -mt-4 -mb-6 md:-mx-8 md:-mb-8 lg:-mx-10 lg:-mb-10";
+  const fill = "-mx-6 -mt-4 -mb-6 md:-mx-8 md:-mb-8 lg:-mx-10 lg:-mb-10";
   const progress = total > 0 ? Math.min(100, (allNodes.length / total) * 100) : 0;
 
   return (

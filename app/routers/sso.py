@@ -1,21 +1,14 @@
 """
-SSO router — wiki không có trang đăng nhập riêng.
+SSO router — đăng nhập Google qua OpenID Connect.
 
-Mặc định (CHATBOT_URL + CHATBOT_WIKI_SSO_SECRET): đăng nhập ở Trợ lý ảo AI.
-  GET /api/auth/sso/chatbot/login     — sang chatbot; chưa đăng nhập thì chatbot hiện trang
-                                        đăng nhập của nó, xong chatbot cấp vé HS256 (60 giây)
-  GET /api/auth/sso/chatbot/callback  — xác thực vé (secret, aud, state), cấp JWT cục bộ
-
-Dự phòng khi chưa cấu hình chatbot: OpenID Connect qua Keycloak.
-  GET /api/auth/sso/login     — chuyển sang Keycloak (Authorization Code + PKCE)
+  GET /api/auth/sso/login     — chuyển sang Google (Authorization Code + PKCE)
   GET /api/auth/sso/callback  — đổi code, xác thực id_token, cấp JWT cục bộ
 
   GET /api/auth/sso/config    — cấu hình công khai cho trang /login
-  GET /api/auth/sso/logout    — đăng xuất phiên dùng chung (chatbot hoặc Keycloak)
+  GET /api/auth/sso/logout    — đăng xuất phiên OIDC, rồi quay về /login
 
 Sau khi xác thực, JWT wiki bị giới hạn bởi hạn phiên nguồn; mỗi API xác thực lại
-trạng thái phiên nguồn. Tài khoản được tạo/liên kết theo cột external_id (sub Keycloak, hoặc
-"chatbot:<id>"), rồi theo email.
+trạng thái phiên nguồn. Tài khoản được tạo/liên kết theo cột external_id (sub OIDC), rồi theo email.
 """
 
 import asyncio
@@ -55,14 +48,6 @@ DISCOVERY_TTL_SECONDS = 3600
 MAX_COOKIE_BYTES = 3800
 SIGNING_ALGORITHMS = ["RS256", "RS384", "RS512", "PS256", "ES256", "ES384"]
 
-# Vé đăng nhập do chatbot cấp (backend/src/routers/arkon.py bên chatbot).
-CHATBOT_RETURN_PATH = "/api/v1/arkon/sso/return"
-CHATBOT_LOGOUT_PATH = "/api/v1/arkon/sso/logout"
-CHATBOT_TICKET_ISSUER = "cahy-chatbot"
-CHATBOT_TICKET_AUDIENCE = "cahy-wiki"
-CHATBOT_SUB_PREFIX = "chatbot:"
-CHATBOT_PROVIDER = "chatbot"
-
 _discovery_cache: dict = {}
 _jwk_clients: dict[str, jwt.PyJWKClient] = {}
 
@@ -82,18 +67,6 @@ class _Endpoints(NamedTuple):
 
 def _enabled() -> bool:
     return bool(settings.sso_enabled and settings.sso_issuer and settings.sso_client_id)
-
-
-def _chatbot_base() -> str:
-    return settings.chatbot_url.strip().rstrip("/")
-
-
-def _chatbot_secret() -> str:
-    return settings.chatbot_wiki_sso_secret.strip()
-
-
-def _chatbot_enabled() -> bool:
-    return bool(_chatbot_base() and len(_chatbot_secret()) >= 32)
 
 
 def _public_issuer() -> str:
@@ -288,9 +261,9 @@ async def _provision(
 ):
     """Tìm hoặc tạo Employee cho tài khoản SSO. Trả Employee hoặc mã lỗi (str).
 
-    is_admin=None → suy từ realm role Keycloak (SSO_ADMIN_ROLES).
-    roles=None → không biết vai trò Keycloak (vé chatbot cũ): không đổi global_role của tài khoản đã có.
-    unit_ids (vé chatbot) = id nhóm Keycloak của cán bộ: phòng ban đồng bộ được đặt đúng theo
+    is_admin=None → suy từ role claim của OIDC (SSO_ADMIN_ROLES).
+    roles=None → không biết vai trò: không đổi global_role của tài khoản đã có.
+    unit_ids = id nhóm từ OIDC: phòng ban đồng bộ được đặt đúng theo
     danh sách này (thêm và gỡ). Không có unit_ids thì chỉ thêm phòng ban theo groups.
     """
     sub = str(claims["sub"])
@@ -314,12 +287,7 @@ async def _provision(
             await db.execute(select(Employee).where(func.lower(Employee.email) == email))
         ).scalars().first()
         if candidate is not None:
-            # "chatbot:<id>" chỉ là định danh tạm: cho phép gắn lại sang sub Keycloak.
-            if (
-                candidate.external_id
-                and candidate.external_id != sub
-                and not candidate.external_id.startswith(CHATBOT_SUB_PREFIX)
-            ):
+            if candidate.external_id and candidate.external_id != sub:
                 return "sso_email_conflict"
             if not (claims.get("email_verified") or settings.sso_trust_email):
                 return "sso_email_unverified"
@@ -432,7 +400,7 @@ async def _provision(
 
 
 async def employee_from_access_token(db: AsyncSession, token: str):
-    """Access token Keycloak mà chatbot chuyển tiếp khi gọi MCP (auth_type system_oauth).
+    """Access token OIDC do MCP client chuyển tiếp (auth_type system_oauth).
 
     Chỉ nhận access token (typ=Bearer, không nhận id_token) do client trong
     SSO_MCP_CLIENTS cấp. Trả Employee (tạo/đồng bộ như khi đăng nhập SSO) hoặc mã lỗi (str).
@@ -466,14 +434,11 @@ async def employee_from_access_token(db: AsyncSession, token: str):
 async def sso_config():
     """Cấu hình công khai để trang /login chọn đường đăng nhập."""
     enabled = _enabled()
-    chatbot = _chatbot_enabled()
     return {
         "enabled": enabled,
-        # Đăng nhập ở trang của chatbot; ưu tiên hơn Keycloak.
-        "chatbot_login": chatbot,
         "provider_name": settings.sso_provider_name,
-        "auto_redirect": (enabled or chatbot) and settings.sso_auto_redirect,
-        "allow_password_login": (not (enabled or chatbot)) or settings.sso_allow_password_login,
+        "auto_redirect": enabled and settings.sso_auto_redirect,
+        "allow_password_login": (not enabled) or settings.sso_allow_password_login,
     }
 
 
@@ -486,139 +451,6 @@ def _session_redirect(request: Request, employee: Employee, nxt: Optional[str], 
     fragment = urlencode({"token": token, "next": _safe_next(nxt)})
     resp = RedirectResponse(f"{_public_base(request)}/login/sso#{fragment}", status_code=302)
     resp.delete_cookie(TX_COOKIE, path=COOKIE_PATH)
-    return resp
-
-
-@router.get("/auth/sso/chatbot/login")
-async def chatbot_login(request: Request, next: Optional[str] = None, prompt: Optional[str] = None):
-    """Sang chatbot: đã đăng nhập thì chatbot cấp vé ngay, chưa thì hiện trang đăng nhập của nó.
-
-    prompt=none (wiki nằm trong iframe chatbot): chatbot không hiện trang đăng nhập.
-    """
-    if not _chatbot_enabled():
-        return _login_redirect(request, "sso_disabled")
-    state = secrets.token_urlsafe(24)
-    tx = jwt.encode(
-        {
-            "aud": TX_AUDIENCE,
-            "st": state,
-            "nx": _safe_next(next),
-            "src": CHATBOT_PROVIDER,
-            "exp": int(time.time()) + TX_TTL_SECONDS,
-        },
-        settings.secret_key,
-        algorithm="HS256",
-    )
-    params = {"state": state}
-    if prompt == "none":
-        params["prompt"] = "none"
-    resp = RedirectResponse(
-        f"{_chatbot_base()}{CHATBOT_RETURN_PATH}?{urlencode(params)}", status_code=302,
-    )
-    resp.set_cookie(
-        TX_COOKIE, tx, max_age=TX_TTL_SECONDS, httponly=True,
-        secure=_secure(request), samesite="lax", path=COOKIE_PATH,
-    )
-    return resp
-
-
-@router.get("/auth/sso/chatbot/callback")
-async def chatbot_callback(
-    request: Request,
-    ticket: Optional[str] = None,
-    error: Optional[str] = None,
-    db: AsyncSession = Depends(get_db),
-):
-    """Nhận vé chatbot: chữ ký HS256 bằng secret dùng chung, aud/iss, hạn 60s, state khớp cookie."""
-    if not _chatbot_enabled():
-        return _login_redirect(request, "sso_disabled")
-    tx = _read_tx(request)
-    nxt = tx.get("nx") if tx else None
-    if error:
-        logger.info(f"Chatbot SSO: chatbot returned error '{error[:60]}'")
-        if error == "login_required":
-            return _login_redirect(request, "sso_login_required", nxt)
-        if error == "invalid_request":
-            return _login_redirect(request, "sso_misconfigured", nxt)
-        return _login_redirect(request, "sso_denied", nxt)
-
-    if not tx or tx.get("src") != CHATBOT_PROVIDER or not ticket:
-        return _login_redirect(request, "sso_state")
-    try:
-        claims = jwt.decode(
-            ticket,
-            _chatbot_secret(),
-            algorithms=["HS256"],
-            audience=CHATBOT_TICKET_AUDIENCE,
-            issuer=CHATBOT_TICKET_ISSUER,
-            leeway=10,
-            options={"require": ["exp", "iat", "sub", "st"]},
-        )
-    except jwt.PyJWTError as e:
-        logger.info(f"Chatbot SSO: ticket rejected ({type(e).__name__})")
-        return _login_redirect(request, "sso_token", nxt)
-    if not secrets.compare_digest(str(claims["st"]), str(tx.get("st", ""))):
-        return _login_redirect(request, "sso_state")
-
-    # Older login tickets must not mint another unbound 24-hour wiki session.
-    from app.services.sso_session_service import session_binding
-    try:
-        parent = session_binding("chatbot", {"proof": claims.get("session_proof"), "sub": claims.get("sub"),
-                                             "exp": claims.get("session_expires_at")})["parent"]
-    except ValueError:
-        return _login_redirect(request, "sso_token", nxt)
-
-    chatbot_id = str(claims["sub"])
-    email = str(claims.get("email") or "").strip().lower()
-    chatbot_sub = f"{CHATBOT_SUB_PREFIX}{chatbot_id}"
-    sub = chatbot_sub
-    kc_sub = str(claims.get("kc_sub") or "").strip()
-    if kc_sub:
-        # Cán bộ đăng nhập chatbot qua Keycloak: định danh chung là id Keycloak (khớp đồng bộ đơn vị).
-        sub = kc_sub
-        legacy = (
-            await db.execute(select(Employee).where(Employee.external_id == chatbot_sub))
-        ).scalar_one_or_none()
-        if legacy is not None and (
-            await db.execute(select(Employee.id).where(Employee.external_id == kc_sub))
-        ).first() is None:
-            legacy.external_id = kc_sub
-            await db.flush()
-    elif email:
-        # Người đã liên kết Keycloak trước đó: giữ nguyên sub cũ, không coi là xung đột.
-        existing = (
-            await db.execute(select(Employee).where(func.lower(Employee.email) == email))
-        ).scalars().first()
-        if existing is not None and existing.external_id:
-            sub = existing.external_id
-    identity = {
-        "sub": sub,
-        "email": email,
-        # Chatbot là nguồn tài khoản: email của tài khoản chatbot đã được quản trị duyệt.
-        "email_verified": True,
-        "name": claims.get("name"),
-        "preferred_username": email or chatbot_id,
-    }
-    raw_groups = claims.get("groups")
-    groups = [str(g) for g in raw_groups if str(g).strip()] if isinstance(raw_groups, list) else []
-    # None = chatbot chưa đồng bộ cây đơn vị từ Keycloak → giữ cách gán cũ (chỉ thêm).
-    raw_units = claims.get("unit_ids")
-    unit_ids = [str(u) for u in raw_units if str(u).strip()] if isinstance(raw_units, list) else None
-
-    raw_roles = claims.get("roles")
-    roles = [str(r) for r in raw_roles] if isinstance(raw_roles, list) else None
-    result = await _provision(
-        db, identity, roles, groups,
-        is_admin=claims.get("role") == "admin", provider=CHATBOT_PROVIDER, unit_ids=unit_ids,
-    )
-    if isinstance(result, str):
-        await db.rollback()
-        return _login_redirect(request, result)
-    await db.commit()
-
-    resp = _session_redirect(request, result, nxt, auth_source="chatbot", parent=parent)
-    # Phiên này không gắn Keycloak: đăng xuất sẽ đi qua chatbot.
-    resp.delete_cookie(IDT_COOKIE, path=COOKIE_PATH)
     return resp
 
 
@@ -660,7 +492,7 @@ async def sso_login(request: Request, next: Optional[str] = None, prompt: Option
         "code_challenge_method": "S256",
     }
     if prompt == "none":
-        # Đăng nhập im lặng khi wiki nằm trong iframe của chatbot: Keycloak không hiện form.
+        # Đăng nhập im lặng: nhà cung cấp OIDC không hiện form nếu đã có phiên.
         params["prompt"] = "none"
     resp = RedirectResponse(f"{ep.authorization}?{urlencode(params)}", status_code=302)
     resp.set_cookie(
@@ -685,7 +517,7 @@ async def sso_callback(
     if error:
         logger.info(f"SSO: IdP returned error '{error[:60]}'")
         if error in ("login_required", "interaction_required", "consent_required"):
-            # Kết quả của prompt=none: chưa có phiên Keycloak, trang /login chuyển sang đăng nhập.
+            # Kết quả của prompt=none: chưa có phiên OIDC, trang /login chuyển sang đăng nhập.
             return _login_redirect(request, "sso_login_required", nxt)
         return _login_redirect(request, "sso_denied", nxt)
 
@@ -734,12 +566,9 @@ async def _verify_id_token(ep: _Endpoints, id_token: str, nonce: str) -> dict:
 
 @router.get("/auth/sso/logout")
 async def sso_logout(request: Request):
-    """Kết thúc phiên dùng chung (đăng xuất luôn khỏi chatbot), rồi quay về /login."""
+    """Kết thúc phiên đăng nhập Google, rồi quay về /login."""
     target = f"{_public_base(request)}/login?logged_out=1"
-    if _chatbot_enabled() and not request.cookies.get(IDT_COOKIE):
-        # Phiên đến từ chatbot: chatbot huỷ phiên của nó rồi đưa về /login?logged_out=1.
-        target = f"{_chatbot_base()}{CHATBOT_LOGOUT_PATH}"
-    elif _enabled():
+    if _enabled():
         try:
             ep = await _endpoints()
             if ep.end_session:

@@ -12,7 +12,6 @@ import { RolesPermissionsCard } from "@/components/settings/roles-permissions-ca
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/lib/auth";
-import { useIsEmbedded } from "@/lib/embed";
 import { cn } from "@/lib/utils";
 
 const TABS = ["config", "permissions"] as const;
@@ -119,7 +118,6 @@ function SettingsContent() {
   const { user, hasPermission, logout } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const embedded = useIsEmbedded();
   const initialTab = parseTab(searchParams.get("tab"));
   const [activeCategory, setActiveCategory] = useState<ConfigCategory>("all");
 
@@ -154,18 +152,16 @@ function SettingsContent() {
 
       {/* Keyed on the query value so a changed ?tab= re-initialises the tab state. */}
       <Tabs key={initialTab} defaultValue={initialTab} className="flex flex-col gap-6">
-        {!embedded && (
-          <TabsList variant="line" className="h-9">
-            <TabsTrigger value="config" className="gap-2">
-              <span className="material-symbols-outlined text-[18px]">tune</span>
-              Cấu hình AI &amp; Xử lý
-            </TabsTrigger>
-            <TabsTrigger value="permissions" className="gap-2">
-              <span className="material-symbols-outlined text-[18px]">admin_panel_settings</span>
-              Ma trận phân quyền cán bộ
-            </TabsTrigger>
-          </TabsList>
-        )}
+        <TabsList variant="line" className="h-9">
+          <TabsTrigger value="config" className="gap-2">
+            <span className="material-symbols-outlined text-[18px]">tune</span>
+            Cấu hình AI &amp; Xử lý
+          </TabsTrigger>
+          <TabsTrigger value="permissions" className="gap-2">
+            <span className="material-symbols-outlined text-[18px]">admin_panel_settings</span>
+            Ma trận phân quyền cán bộ
+          </TabsTrigger>
+        </TabsList>
 
         <TabsContent value="config" className="flex flex-col gap-8">
           {/* Executive Telemetry & Quick Navigation Ribbon */}

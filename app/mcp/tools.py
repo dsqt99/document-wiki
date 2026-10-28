@@ -227,7 +227,7 @@ def _md_cell(value) -> str:
 
 
 def forwarded_role(headers: Optional[Mapping[str, str]], trust: bool) -> str:
-    """Role forwarded by a trusted caller (chatbot); ignored unless ``trust`` is on."""
+    """Role forwarded by a trusted caller; ignored unless ``trust`` is on."""
     if not trust or not headers:
         return ""
     value = None

@@ -4,32 +4,27 @@ import { Suspense, useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api, apiUrl } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { isEmbedded, postToHost, useIsEmbedded } from "@/lib/embed";
-import { MAX_LOGIN_HOPS, clearLoginRound, readLoginRound, saveLoginRound } from "@/lib/login-round";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 type SsoConfig = {
   enabled: boolean;
-  chatbot_login?: boolean;
   provider_name?: string;
-  auto_redirect?: boolean;
   allow_password_login: boolean;
 };
 
 const ERROR_TEXT: Record<string, string> = {
-  sso_disabled: "Đăng nhập dùng chung chưa được cấu hình trên Kho tri thức.",
-  sso_misconfigured: "Cấu hình đăng nhập dùng chung giữa Trợ lý ảo AI và Kho tri thức chưa khớp, liên hệ quản trị.",
-  sso_unavailable: "Không kết nối được máy chủ đăng nhập tập trung (Keycloak).",
+  sso_disabled: "Đăng nhập Google chưa được cấu hình.",
+  sso_misconfigured: "Cấu hình đăng nhập Google chưa đúng, liên hệ quản trị.",
+  sso_unavailable: "Không kết nối được máy chủ đăng nhập Google.",
   sso_denied: "Đăng nhập đã bị hủy hoặc bị từ chối.",
-  sso_login_required: "Bạn chưa đăng nhập Trợ lý ảo AI.",
+  sso_login_required: "Vui lòng đăng nhập để tiếp tục.",
   sso_state: "Phiên đăng nhập đã hết hạn, vui lòng thử lại.",
   sso_token: "Không xác thực được tài khoản, vui lòng thử lại.",
-  sso_inactive: "Tài khoản đã bị khóa trên Kho tri thức, liên hệ quản trị.",
-  sso_email_conflict: "Email này đã gắn với một tài khoản SSO khác, liên hệ quản trị.",
-  sso_email_unverified:
-    "Email này đã có tài khoản Kho tri thức nhưng chưa được xác minh trên Keycloak, liên hệ quản trị.",
+  sso_inactive: "Tài khoản đã bị khóa, liên hệ quản trị.",
+  sso_email_conflict: "Email này đã gắn với một tài khoản khác, liên hệ quản trị.",
+  sso_email_unverified: "Email Google này chưa được xác minh, liên hệ quản trị.",
 };
 const GENERIC_ERROR = "Đăng nhập không thành công.";
 const errorText = (code: string) => ERROR_TEXT[code] ?? GENERIC_ERROR;
@@ -41,18 +36,9 @@ function sanitizeNext(raw: string | null): string {
   return raw;
 }
 
-function chatbotUrl(next: string, silent: boolean): string {
-  return apiUrl(`/api/auth/sso/chatbot/login?next=${encodeURIComponent(next)}${silent ? "&prompt=none" : ""}`);
+function googleUrl(next: string): string {
+  return apiUrl(`/api/auth/sso/login?next=${encodeURIComponent(next)}`);
 }
-
-function keycloakUrl(next: string, silent: boolean): string {
-  return apiUrl(`/api/auth/sso/login?next=${encodeURIComponent(next)}${silent ? "&prompt=none" : ""}`);
-}
-
-type ViewState =
-  | { kind: "redirecting" }
-  | { kind: "message"; tone: "error" | "info"; text: string }
-  | { kind: "form" };
 
 function Spinner({ text }: { text: string }) {
   return (
@@ -65,7 +51,7 @@ function Spinner({ text }: { text: string }) {
   );
 }
 
-function PasswordForm({ next }: { next: string }) {
+function LoginCard({ next, sso }: { next: string; sso: SsoConfig }) {
   const { login } = useAuth();
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -87,38 +73,58 @@ function PasswordForm({ next }: { next: string }) {
   };
 
   return (
-    <form onSubmit={submit} className="flex flex-col gap-4 rounded-xl border bg-card p-6">
-      <h1 className="text-sm font-medium">Tài khoản cục bộ (dự phòng)</h1>
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="login-email">Email</Label>
-        <Input
-          id="login-email"
-          type="email"
-          required
-          autoFocus
-          autoComplete="username"
-          className="bg-background"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
-      </div>
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="login-password">Mật khẩu</Label>
-        <Input
-          id="login-password"
-          type="password"
-          required
-          autoComplete="current-password"
-          className="bg-background"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
-      </div>
-      {error && <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
-      <Button type="submit" className="w-full" disabled={submitting}>
-        {submitting ? "Đang đăng nhập…" : "Đăng nhập"}
-      </Button>
-    </form>
+    <div className="flex flex-col gap-4 rounded-xl border bg-card p-6">
+      <h1 className="text-base font-semibold">Đăng nhập</h1>
+      {sso.allow_password_login && (
+        <form onSubmit={submit} className="flex flex-col gap-4">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="login-email">Email</Label>
+            <Input
+              id="login-email"
+              type="email"
+              required
+              autoFocus
+              autoComplete="username"
+              className="bg-background"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="login-password">Mật khẩu</Label>
+            <Input
+              id="login-password"
+              type="password"
+              required
+              autoComplete="current-password"
+              className="bg-background"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </div>
+          {error && <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
+          <Button type="submit" className="w-full" disabled={submitting}>
+            {submitting ? "Đang đăng nhập…" : "Đăng nhập"}
+          </Button>
+        </form>
+      )}
+      {sso.enabled && (
+        <>
+          {sso.allow_password_login && (
+            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+              <span className="h-px flex-1 bg-border" />
+              hoặc
+              <span className="h-px flex-1 bg-border" />
+            </div>
+          )}
+          <a href={googleUrl(next)} className="w-full">
+            <Button type="button" variant="outline" className="w-full">
+              {`Đăng nhập với ${sso.provider_name || "Google"}`}
+            </Button>
+          </a>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -126,93 +132,35 @@ function LoginOrchestrator() {
   const params = useSearchParams();
   const router = useRouter();
   const { user, loading, error: sessionError, refresh } = useAuth();
-  const embedded = useIsEmbedded();
-  const [view, setView] = useState<ViewState>({ kind: "redirecting" });
+  const [sso, setSso] = useState<SsoConfig | null>(null);
+  const [failed, setFailed] = useState(false);
   const leaving = useRef(false);
 
   const next = sanitizeNext(params.get("next"));
   const error = params.get("error");
   const loggedOut = params.has("logged_out");
-  const wantForm = params.has("form");
 
-  // Step A: already signed in.
+  // Already signed in: leave for the target page.
   useEffect(() => {
     if (loading || !user || leaving.current) return;
     leaving.current = true;
-    clearLoginRound();
     router.replace(next);
   }, [loading, user, next, router]);
 
-  // Step B: not signed in, decide where to go.
   useEffect(() => {
     if (loading || user) return;
     let cancelled = false;
-
-    const go = (url: string) => {
-      leaving.current = true;
-      window.location.replace(url);
-    };
-
     api<SsoConfig>("/api/auth/sso/config")
       .then((cfg) => {
-        if (cancelled) return;
-        const chatbot = cfg.chatbot_login === true;
-        const keycloak = !!cfg.enabled;
-        const allowPassword = !!cfg.allow_password_login;
-
-        if (isEmbedded()) {
-          // Interactive identity providers may refuse framing. Let the trusted
-          // host open top-level SSO instead of trapping the iframe in redirects.
-          postToHost({ type: "auth-required", path: next });
-          setView({ kind: "message", tone: "info", text: errorText("sso_login_required") });
-          return;
-        }
-
-        if (loggedOut) clearLoginRound();
-        const round = readLoginRound();
-
-        if ((!chatbot && !keycloak) || (wantForm && allowPassword)) {
-          setView(allowPassword ? { kind: "form" } : { kind: "message", tone: "error", text: errorText("sso_disabled") });
-          return;
-        }
-        if (loggedOut) {
-          setView({ kind: "message", tone: "info", text: "Bạn đã đăng xuất khỏi Kho tri thức." });
-          return;
-        }
-        if (error && (chatbot || error !== "sso_login_required")) {
-          setView({ kind: "message", tone: "error", text: errorText(error) });
-          return;
-        }
-        if (round.hops >= MAX_LOGIN_HOPS) {
-          setView({
-            kind: "message",
-            tone: "error",
-            text: "Không hoàn tất được đăng nhập dùng chung. Vui lòng thử lại.",
-          });
-          return;
-        }
-
-        saveLoginRound({ at: round.at, hops: round.hops + 1 });
-        if (chatbot) go(chatbotUrl(next, false));
-        else go(keycloakUrl(next, error !== "sso_login_required"));
+        if (!cancelled) setSso(cfg);
       })
       .catch(() => {
-        if (cancelled) return;
-        if (isEmbedded()) postToHost({ type: "auth-required", path: next });
-        setView({ kind: "message", tone: "error", text: "Không kết nối được máy chủ Kho tri thức." });
+        if (!cancelled) setFailed(true);
       });
-
     return () => {
       cancelled = true;
     };
-  }, [loading, user, next, error, loggedOut, wantForm]);
-
-  const retry = () => {
-    clearLoginRound();
-    // A full reload is intended: it starts a brand-new login round from a clean state.
-    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-    window.location.href = `/login?next=${encodeURIComponent(next)}`;
-  };
+  }, [loading, user]);
 
   let body;
   if (sessionError && !user) {
@@ -222,38 +170,29 @@ function LoginOrchestrator() {
         <Button onClick={() => void refresh()}>Thử lại</Button>
       </div>
     );
-  } else if (view.kind === "form") {
-    body = <PasswordForm next={next} />;
-  } else if (view.kind === "message") {
+  } else if (failed) {
     body = (
       <div className="flex flex-col gap-4 rounded-xl border bg-card p-6 text-center">
-        <p
-          className={
-            view.tone === "error"
-              ? "rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive"
-              : "text-sm text-foreground"
-          }
-        >
-          {view.text}
+        <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          Không kết nối được máy chủ Kho tri thức.
         </p>
-        {embedded ? (
-          <a
-            href={`/login?next=${encodeURIComponent(next)}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-sm font-medium text-primary underline"
-          >
-            Mở Kho tri thức trong tab mới để đăng nhập
-          </a>
-        ) : (
-          <Button className="w-full" onClick={retry}>
-            {loggedOut ? "Đăng nhập lại" : "Thử lại"}
-          </Button>
-        )}
+        <Button className="w-full" onClick={() => window.location.reload()}>
+          Thử lại
+        </Button>
       </div>
     );
+  } else if (loading || !sso) {
+    body = <Spinner text="Đang tải…" />;
   } else {
-    body = <Spinner text="Đang chuyển tới trang đăng nhập…" />;
+    body = (
+      <div className="flex flex-col gap-4">
+        {loggedOut && <p className="text-center text-sm text-muted-foreground">Bạn đã đăng xuất.</p>}
+        {error && (
+          <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{errorText(error)}</p>
+        )}
+        <LoginCard next={next} sso={sso} />
+      </div>
+    );
   }
 
   return (

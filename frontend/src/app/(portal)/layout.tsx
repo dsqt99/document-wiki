@@ -1,64 +1,21 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import { usePathname, useRouter } from "next/navigation";
-import { clearToken } from "@/lib/api";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
-import { currentPathForHost, postToHost, subscribeHostIdentity, useIsEmbedded } from "@/lib/embed";
 import { Sidebar } from "@/components/layout/sidebar";
-
-const IDENTITY_RESET_KEY = "dw-embed-identity-reset";
 
 export default function PortalLayout({ children }: { children: React.ReactNode }) {
   const { user, loading, error, refresh } = useAuth();
   const router = useRouter();
-  const pathname = usePathname();
-  const embedded = useIsEmbedded();
-  const announced = useRef(false);
 
   // Unauthenticated: send to /login, remembering where we were.
   useEffect(() => {
     if (loading || error || user) return;
     const here = window.location.pathname + window.location.search;
     const target = here === "/" || here === "" ? "/login" : `/login?next=${encodeURIComponent(here)}`;
-    if (embedded) router.replace(target);
-    else router.push(target);
-  }, [loading, error, user, embedded, router]);
-
-  // Embedded: drop a session left by whoever used this browser before the chatbot user
-  // now signed in, then sign in again through the chatbot. Once per expected user, no loops.
-  useEffect(() => {
-    if (!embedded || loading || !user) return;
-    return subscribeHostIdentity((email) => {
-      const expected = email.trim().toLowerCase();
-      if ((user.email ?? "").trim().toLowerCase() === expected) return;
-      try {
-        if (sessionStorage.getItem(IDENTITY_RESET_KEY) === expected) return;
-        sessionStorage.setItem(IDENTITY_RESET_KEY, expected);
-      } catch {
-        return;
-      }
-      clearToken();
-      try {
-        localStorage.removeItem("arkon_sso");
-      } catch {
-        /* storage unavailable */
-      }
-      window.location.replace(`/login?next=${encodeURIComponent(currentPathForHost())}`);
-    });
-  }, [embedded, loading, user]);
-
-  // Embedded: tell the host page we are ready, then report every navigation.
-  useEffect(() => {
-    if (!embedded || loading || !user) return;
-    const path = currentPathForHost();
-    if (!announced.current) {
-      announced.current = true;
-      postToHost({ type: "ready", path });
-    } else {
-      postToHost({ type: "navigate", path });
-    }
-  }, [embedded, loading, user, pathname]);
+    router.push(target);
+  }, [loading, error, user, router]);
 
   if (error && !user) {
     return (
@@ -83,14 +40,6 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
   }
 
   if (!user) return null;
-
-  if (embedded) {
-    return (
-      <main className="h-screen overflow-y-auto bg-background">
-        <div className="flex flex-col gap-5 p-4 md:p-5">{children}</div>
-      </main>
-    );
-  }
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">

@@ -19,7 +19,6 @@ import { WikiOriginBadge } from "@/components/wiki/wiki-origin-badge";
 import { WikiTypeBadge, wikiTypeGroupLabel } from "@/components/wiki/wiki-type-badge";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { useIsEmbedded } from "@/lib/embed";
 import { cn } from "@/lib/utils";
 import { sanitizeWikiLibraryReturnTo, wikiPageQuery } from "@/lib/wiki-navigation";
 import {
@@ -93,7 +92,6 @@ const escapeLinkText = (s: string) => s.replace(/[[\]]/g, (c) => `\\${c}`);
 export function WikiPageView({ slug, scopeType, scopeId, scopeSuffix, returnTo, navigate, goTo, autoEdit = false }: Props) {
   const libraryReturnTo = sanitizeWikiLibraryReturnTo(returnTo);
   const { user, hasPermission } = useAuth();
-  const embedded = useIsEmbedded();
   const { infoCollapsed, setInfoCollapsed } = useWikiStore();
 
   const parts = slug.split("/").filter(Boolean);
@@ -435,9 +433,7 @@ export function WikiPageView({ slug, scopeType, scopeId, scopeSuffix, returnTo, 
     navigate(nextSlug);
   };
 
-  const fill = embedded
-    ? "-m-4 md:-m-5"
-    : "-mx-6 -mt-4 -mb-6 md:-mx-8 md:-mb-8 lg:-mx-10 lg:-mb-10";
+  const fill = "-mx-6 -mt-4 -mb-6 md:-mx-8 md:-mb-8 lg:-mx-10 lg:-mb-10";
 
   const showRight = !!page && !editing && !sourceMode;
   const visibleRefs = showAllRefs ? refs : refs.slice(0, 2);

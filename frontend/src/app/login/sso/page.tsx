@@ -4,7 +4,6 @@ import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { setToken } from "@/lib/api";
 import { markSsoSession, useAuth } from "@/lib/auth";
-import { clearLoginRound } from "@/lib/login-round";
 
 /**
  * SSO landing page. The backend puts the local JWT in the URL fragment
@@ -33,7 +32,6 @@ export default function SsoCallbackPage() {
 
     setToken(token);
     markSsoSession();
-    clearLoginRound();
     void refresh().then(() => {
       router.replace(next.startsWith("/") && !next.startsWith("//") ? next : "/");
     });

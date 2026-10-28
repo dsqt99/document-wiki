@@ -25,7 +25,6 @@ from app.routers import (
     notes,
     notifications,
     oauth,
-    org_sync,
     prompts,
     rbac,
     skill_contributions,
@@ -235,7 +234,7 @@ for _module in (auth, sso, sources, notes, wiki_branches, wiki_drafts, legal_doc
     app.include_router(_module.router, prefix="/api")
 for _module in (admin_settings, admin_embeddings, admin_models, admin_rerank, admin_custom_models, admin_stats, admin_failures):
     app.include_router(_module.router, prefix="/api")
-for _module in (rbac, org_sync, knowledge_types, audit, skills, skill_contributions, prompts, notifications):
+for _module in (rbac, knowledge_types, audit, skills, skill_contributions, prompts, notifications):
     app.include_router(_module.router, prefix="/api")
 
 

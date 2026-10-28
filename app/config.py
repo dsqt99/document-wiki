@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     cors_origins: str = (
         "http://localhost:3000,http://localhost:3001,http://localhost:3119,http://localhost:3219,"
         "http://127.0.0.1:3000,http://127.0.0.1:3001,http://127.0.0.1:3119,http://127.0.0.1:3219,"
-        "https://chatbot.cahy.local,https://wiki.cahy.local"
+        "https://wiki.cahy.local"
     )
     portal_base_url: str = ""
 
@@ -59,7 +59,7 @@ class Settings(BaseSettings):
     sso_client_id: str = "cahy-wiki"
     sso_client_secret: str = ""
     sso_scopes: str = "openid email profile"
-    sso_provider_name: str = "Công an tỉnh (SSO)"
+    sso_provider_name: str = "Google"
     sso_auto_redirect: bool = False
     sso_allow_password_login: bool = True
     sso_admin_roles: str = "admin"
@@ -69,11 +69,8 @@ class Settings(BaseSettings):
     sso_sync_departments: bool = True
     sso_group_department_map: str = ""
     sso_trust_email: bool = False
-    chatbot_url: str = ""
-    # Backend verification URL; browser redirects continue using chatbot_url.
-    chatbot_internal_url: str = ""
-    chatbot_wiki_sso_secret: str = ""
-    sso_mcp_clients: str = "cahy-chatbot"
+    # OIDC client ids (azp) allowed to forward a user access token to MCP; empty = none.
+    sso_mcp_clients: str = ""
     mcp_trust_forwarded_identity: bool = False
 
     # Redis / worker
@@ -200,7 +197,6 @@ class Settings(BaseSettings):
             "http://127.0.0.1:3001",
             "http://127.0.0.1:3119",
             "http://127.0.0.1:3219",
-            "https://chatbot.cahy.local",
             "https://wiki.cahy.local",
         ]
         if not raw or raw == "*":

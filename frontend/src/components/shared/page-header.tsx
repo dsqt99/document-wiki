@@ -9,10 +9,7 @@ type PageHeaderProps = {
   actionClassName?: string;
 };
 
-/**
- * Page title block. The three data-slot attributes are a contract with the embed CSS
- * in globals.css, which hides the text part when the wiki runs inside the chatbot.
- */
+/** Page title block. */
 export function PageHeader({ title, description, action, actionClassName }: PageHeaderProps) {
   return (
     <div data-slot="page-header" className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">

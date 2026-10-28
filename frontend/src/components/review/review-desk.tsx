@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import type { DraftResponse } from "@/types/wiki";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { useIsEmbedded } from "@/lib/embed";
 import { cn } from "@/lib/utils";
 import { ReviewQueue } from "./review-queue";
 import { ReviewDraftView } from "./review-draft-view";
@@ -53,7 +52,6 @@ export function ReviewDesk() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user } = useAuth();
-  const embedded = useIsEmbedded();
 
   // ---- URL state ----
   const statusParam = searchParams.get("status");
@@ -353,7 +351,7 @@ export function ReviewDesk() {
     <div
       className={cn(
         "flex h-screen min-h-0 border-t",
-        embedded ? "-m-4 md:-m-5" : "-mx-6 -mt-4 -mb-6 md:-mx-8 md:-mb-8 lg:-mx-10 lg:-mb-10",
+        "-mx-6 -mt-4 -mb-6 md:-mx-8 md:-mb-8 lg:-mx-10 lg:-mb-10",
       )}
     >
       <ReviewQueue

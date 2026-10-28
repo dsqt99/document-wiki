@@ -11,7 +11,7 @@ from fastapi import HTTPException
 from app.config import settings
 
 SESSION_VERSION = 2
-_AUTH_SOURCES = {"local", "chatbot", "oidc"}
+_AUTH_SOURCES = {"local", "oidc"}
 
 
 def _deadline(value) -> int:
@@ -77,17 +77,6 @@ async def _json_response(response: httpx.Response) -> dict:
     return body
 
 
-async def _verify_chatbot(parent: dict) -> None:
-    base = (settings.chatbot_internal_url or settings.chatbot_url).strip().rstrip("/")
-    if not base:
-        raise _unavailable()
-    async with httpx.AsyncClient(timeout=5, follow_redirects=False) as client:
-        response = await client.post(f"{base}/api/v1/arkon/sso/session", json={"proof": parent["proof"]})
-    body = await _json_response(response)
-    if body.get("user_id") != parent["sub"] or body.get("expires_at") != parent["exp"]:
-        raise _invalid()
-
-
 async def _verify_oidc(parent: dict) -> None:
     from app.routers import sso
 
@@ -129,9 +118,6 @@ async def validate_session_claims(claims: dict) -> None:
     except (ValueError, TypeError, KeyError):
         raise _invalid() from None
     try:
-        if source == "chatbot":
-            await _verify_chatbot(binding["parent"])
-        else:
-            await _verify_oidc(binding["parent"])
+        await _verify_oidc(binding["parent"])
     except httpx.HTTPError:
         raise _unavailable() from None
