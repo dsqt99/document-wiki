@@ -213,6 +213,10 @@ _HEADING_MAX_CHARS = 120
 _PARAGRAPH_GAP_RATIO = 0.6
 
 
+def _word_count(text: Optional[str]) -> int:
+    return len(re.findall(r"\w+", text or ""))
+
+
 def _table_cell(value: Any) -> str:
     text = "" if value is None else str(value)
     text = " ".join(text.split())
@@ -276,17 +280,21 @@ def _heading_level(text: str, size: float, body_size: float) -> int:
 class _RichPage:
     """One page as an ordered list of text segments and Markdown tables."""
 
-    __slots__ = ("segments",)
+    __slots__ = ("segments", "last_rows")
 
     def __init__(self) -> None:
-        # ("lines", [(text, font_size, paragraph_break, bold)]) | ("table", markdown)
+        # ("lines", [(text, font_size, paragraph_break, bold)]) | ("table", rows)
+        # Tables stay as rows until render(): the next page may complete cells
+        # that a page break cut (see _fill_merged_cells).
         self.segments: List[Tuple[str, Any]] = []
+        # Rows of the page's last table, for a table continuing on the next page.
+        self.last_rows: Optional[List[List[Any]]] = None
 
     def render(self, body_size: float, enhance_headings: bool) -> str:
         blocks: List[str] = []
         for kind, payload in self.segments:
             if kind == "table":
-                blocks.append(payload)
+                blocks.append(table_rows_to_markdown(payload))
                 continue
             out: List[str] = []
             for text, size, para_break, bold in payload:
@@ -384,10 +392,78 @@ def _is_boxed_legal_prose(rows: List[List[Any]]) -> bool:
     )
 
 
-def _rich_page(pl_page: Any, sizes: Counter) -> _RichPage:
+def _is_white(color: Any) -> bool:
+    if color is None:
+        return False
+    parts = color if isinstance(color, (list, tuple)) else (color,)
+    try:
+        values = [float(x) for x in parts]
+    except (TypeError, ValueError):  # pattern colours
+        return False
+    if len(values) == 4:  # CMYK white
+        return all(v == 0 for v in values)
+    return bool(values) and all(v >= 0.99 for v in values)
+
+
+def _is_table_edge_source(obj: Dict[str, Any]) -> bool:
+    """Drop white, unstroked fills: OCR tools (ABBYY) paint them behind every text
+    line, and pdfplumber would read their outlines as phantom table grids."""
+    return not (
+        obj.get("object_type") == "rect"
+        and obj.get("fill")
+        and not obj.get("stroke")
+        and _is_white(obj.get("non_stroking_color"))
+    )
+
+
+def _fill_merged_cells(
+    table: Any, rows: List[List[Any]], carry: Optional[List[List[Any]]] = None
+) -> List[List[Any]]:
+    """Repeat a vertically merged (rowspan) cell's text on every row it spans, so
+    each Markdown row carries its own legal basis / agency instead of a blank.
+
+    ``carry`` holds the rows of the previous page's last table. When this table
+    opens with a continuation row (blank first cell), each cell cut by the page
+    break is joined back together, here and in the previous page's trailing
+    rows that repeated the cut text (updated in place).
+    """
+    grid = [row.cells for row in table.rows]
+    if len(grid) != len(rows):
+        return rows
+    out = [list(row) for row in rows]
+    last = carry[-1] if carry else None
+    if last and out and len(last) == len(out[0]) and not str(out[0][0] or "").strip():
+        merged = [
+            None if cur is None else " ".join(x for x in (str(prev or "").strip(), str(cur).strip()) if x)
+            for prev, cur in zip(last, out[0])
+        ]
+        for col, (old, new) in enumerate(zip(list(last), merged)):
+            if new is None or not str(old or "").strip():
+                continue
+            for prev_row in reversed(carry):
+                if prev_row[col] != old:
+                    break
+                prev_row[col] = new
+        out[0] = merged
+    for i in range(1, len(out)):
+        # Row top, not bottom: a row's bbox grows with its own tall merged cells.
+        row_top = float(table.rows[i].bbox[1])
+        for col, value in enumerate(out[i]):
+            if value is not None or col >= len(grid[i]) or grid[i][col] is not None:
+                continue
+            for k in range(i - 1, -1, -1):
+                cell = grid[k][col] if col < len(grid[k]) else None
+                if cell is not None:
+                    if float(cell[3]) > row_top + 1:
+                        out[i][col] = out[k][col]
+                    break
+    return out
+
+
+def _rich_page(pl_page: Any, sizes: Counter, carry: Optional[List[List[Any]]] = None) -> _RichPage:
     page = _RichPage()
     try:
-        tables = pl_page.find_tables()
+        tables = pl_page.filter(_is_table_edge_source).find_tables()
     except Exception as e:  # noqa: BLE001
         logger.debug(f"PDFParser: table detection failed on page {pl_page.page_number}: {e}")
         tables = []
@@ -401,12 +477,14 @@ def _rich_page(pl_page: Any, sizes: Counter) -> _RichPage:
                 # table around entire legal articles. Keep the native lines,
                 # including font/footnote geometry and legal heading semantics.
                 continue
+            rows = _fill_merged_cells(table, rows, carry if not rendered_tables else None)
             markdown = table_rows_to_markdown(rows)
         except Exception as e:  # noqa: BLE001
             logger.debug(f"PDFParser: table extract failed on page {pl_page.page_number}: {e}")
             markdown = ""
         if markdown:
-            rendered_tables.append((table.bbox, markdown))
+            rendered_tables.append((table.bbox, rows))
+            page.last_rows = rows
             rendered_cells.extend(cell for cell in table.cells if cell is not None)
 
     def outside_rendered_tables(obj: Dict[str, Any]) -> bool:
@@ -453,9 +531,15 @@ def extract_markdown_pages(
     sizes: Counter = Counter()
     rich_pages: List[_RichPage] = []
     with pdfplumber.open(io.BytesIO(file_data), pages=[i + 1 for i in page_indices]) as pdf:
-        for pl_page in pdf.pages:
+        for pos, pl_page in enumerate(pdf.pages):
+            # Carry a table row only across physically consecutive pages.
+            carry = (
+                rich_pages[-1].last_rows
+                if pos and rich_pages and page_indices[pos] == page_indices[pos - 1] + 1
+                else None
+            )
             try:
-                rich_pages.append(_rich_page(pl_page, sizes))
+                rich_pages.append(_rich_page(pl_page, sizes, carry))
             finally:
                 try:
                     pl_page.flush_cache()
@@ -641,7 +725,7 @@ class PDFParser(BaseParser):
                     )
 
             from app.ai import upstream
-            from app.services.ocr_service import OCR_UPSTREAM_KEY
+            from app.services.ocr_service import OCR_PROMPT_PLAIN, OCR_UPSTREAM_KEY
 
             sem = asyncio.Semaphore(5)
             progress_lock = asyncio.Lock()
@@ -651,25 +735,53 @@ class PDFParser(BaseParser):
             # ocr_model_prompt, else ocr_service resolves it ("OCR:" for kind="ocr").
             vision_prompt = ocr_prompt or self.DEFAULT_OCR_PROMPT
 
+            async def _ocr_call(idx: int, img: bytes, prompt: Optional[str]) -> Optional[str]:
+                try:
+                    return await ocr_service.ocr_image(
+                        img,
+                        mime_type="image/jpeg",
+                        prompt=prompt,
+                        base_url=ocr_base_url,
+                        api_key=ocr_api_key,
+                        model=ocr_model,
+                        db=db,
+                    )
+                except Exception as e:
+                    logger.warning(f"PDFParser: dedicated OCR failed on page {idx+1}: {e}")
+                    return None
+
+            async def _dedicated_ocr(idx: int, img_bytes: bytes) -> Tuple[Optional[str], bytes]:
+                """OCR one page; returns (text, image actually read).
+
+                A page that looks like a landscape scan lying sideways is also read rotated
+                both ways round, keeping the fuller text (the upright read stays a candidate
+                in case the layout guess is wrong). Output far shorter than the page's text lines (the markdown prompt
+                returns only the table of a prose + table page) is retried with the plain prompt.
+                """
+                lines, sideways = pdf_backend.text_layout(img_bytes)
+                images = (
+                    [img_bytes, pdf_backend.rotate_jpeg(img_bytes, 270), pdf_backend.rotate_jpeg(img_bytes, 90)]
+                    if sideways
+                    else [img_bytes]
+                )
+                best, best_img = None, img_bytes
+                for img in images:
+                    res = await _ocr_call(idx, img, ocr_model_prompt)
+                    if lines and _word_count(res) < 2 * lines and ocr_model_prompt != OCR_PROMPT_PLAIN:
+                        retry = await _ocr_call(idx, img, OCR_PROMPT_PLAIN)
+                        if _word_count(retry) > _word_count(res):
+                            logger.info(f"PDFParser: page {idx+1} OCR output too short, kept plain-prompt retry")
+                            res = retry
+                    if _word_count(res) > _word_count(best):
+                        best, best_img = res, img
+                return best, best_img
+
             async def _run_ocr_one(idx: int, img_bytes: bytes) -> None:
                 nonlocal completed
                 async with sem:
                     ocr_res = None
                     if is_ocr_ready:
-                        try:
-                            ocr_res = await ocr_service.ocr_image(
-                                img_bytes,
-                                mime_type="image/jpeg",
-                                prompt=ocr_model_prompt,
-                                base_url=ocr_base_url,
-                                api_key=ocr_api_key,
-                                model=ocr_model,
-                                db=db,
-                            )
-                        except Exception as e:
-                            logger.warning(
-                                f"PDFParser: dedicated OCR failed on page {idx+1}: {e}"
-                            )
+                        ocr_res, img_bytes = await _dedicated_ocr(idx, img_bytes)
 
                     # OCR + LLM: the Vision model proofreads the OCR draft
                     # against the page image (more accurate, ~2x slower).

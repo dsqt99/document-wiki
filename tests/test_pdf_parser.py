@@ -417,17 +417,17 @@ async def test_pdf_parser_scanned_pdf_goes_through_ocr():
     pdf_bytes = make_image_pdf(2)
     with patch("app.services.ocr_service.ocr_service.is_configured", return_value=True), \
          patch("app.services.ocr_service.ocr_service.ocr_image", new_callable=AsyncMock) as mock_ocr:
-        mock_ocr.side_effect = ["Van ban OCR trang mot", "Van ban OCR trang hai"]
+        mock_ocr.side_effect = ["Van ban OCR trang mot du dai", "Van ban OCR trang hai du dai"]
         pages = await PDFParser().parse(pdf_bytes, "scan.pdf")
 
     assert mock_ocr.await_count == 2
     for call in mock_ocr.await_args_list:
         assert call.args[0][:3] == JPEG_MAGIC
         assert call.kwargs["mime_type"] == "image/jpeg"
-        assert call.kwargs["prompt"] == PDFParser.DEFAULT_OCR_PROMPT
+        assert call.kwargs["prompt"] is None  # no ocr_model_prompt: ocr_service resolves it
     assert [p["page_number"] for p in pages] == [1, 2]
     assert [p["is_ocr"] for p in pages] == [True, True]
-    assert sorted(p["content"] for p in pages) == ["Van ban OCR trang hai", "Van ban OCR trang mot"]
+    assert sorted(p["content"] for p in pages) == ["Van ban OCR trang hai du dai", "Van ban OCR trang mot du dai"]
 
 
 @pytest.mark.asyncio
@@ -464,3 +464,113 @@ async def test_pdf_parser_vision_fallback_receives_jpeg_render():
     assert vision.analyze_image.await_args.kwargs["mime_type"] == "image/jpeg"
     assert pages[0]["is_ocr"] is True
     assert "mo hinh vision" in pages[0]["content"]
+
+
+def _fake_table(rows_cells):
+    from types import SimpleNamespace
+    rows = []
+    for cells in rows_cells:
+        real = [c for c in cells if c is not None]
+        rows.append(SimpleNamespace(cells=cells, bbox=(0, min(c[1] for c in real), 0, max(c[3] for c in real))))
+    return SimpleNamespace(rows=rows)
+
+
+def test_fill_merged_cells_repeats_rowspan_text():
+    from app.services.parsers.pdf_parser import _fill_merged_cells
+    # Column 1 spans rows 0-1; row 1 has a None cell there.
+    table = _fake_table([
+        [(0, 0, 10, 10), (10, 0, 20, 20)],
+        [(0, 10, 10, 20), None],
+    ])
+    assert _fill_merged_cells(table, [["a", "Agency"], ["b", None]]) == [["a", "Agency"], ["b", "Agency"]]
+
+
+def test_fill_merged_cells_joins_page_break_continuation():
+    from app.services.parsers.pdf_parser import _fill_merged_cells
+    table = _fake_table([[(0, 0, 10, 10), (10, 0, 20, 10)]])
+    carry = [["1", "Bộ Công"], ["2", "Bộ Công"]]
+    out = _fill_merged_cells(table, [["", "an"]], carry)
+    assert out == [["1 2", "Bộ Công an"]] or out[0][1] == "Bộ Công an"
+    assert carry == [["1", "Bộ Công an"], ["2", "Bộ Công an"]]
+
+
+def test_white_unstroked_fills_are_not_table_edges():
+    from app.services.parsers.pdf_parser import _is_table_edge_source
+    white = {"object_type": "rect", "fill": True, "stroke": False, "non_stroking_color": (1.0,)}
+    assert not _is_table_edge_source(white)
+    assert _is_table_edge_source({**white, "non_stroking_color": (0.0,)})
+    assert _is_table_edge_source({**white, "stroke": True})
+    assert _is_table_edge_source({"object_type": "char"})
+
+
+def _bars_image(n: int, vertical: bool = False):
+    """Fake scanned page: n thick text-line bars, optionally lying sideways."""
+    from PIL import Image, ImageDraw
+
+    im = Image.new("RGB", (600, 800), "white")
+    draw = ImageDraw.Draw(im)
+    for i in range(n):
+        y = 60 + i * 30
+        draw.rectangle([50, y, 550, y + 10], fill="black")
+    return im.rotate(90, expand=True) if vertical else im
+
+
+def _image_pdf(im) -> bytes:
+    import io
+
+    buf = io.BytesIO()
+    im.save(buf, "PDF", resolution=72.0)
+    return buf.getvalue()
+
+
+def _jpeg(im) -> bytes:
+    import io
+
+    buf = io.BytesIO()
+    im.save(buf, "JPEG")
+    return buf.getvalue()
+
+
+def test_text_layout_counts_lines_and_detects_sideways_page():
+    from app.services.parsers.pdf_backend import text_layout
+
+    assert text_layout(_jpeg(_bars_image(20))) == (20, False)
+    assert text_layout(_jpeg(_bars_image(20, vertical=True))) == (20, True)
+    assert text_layout(_jpeg(_bars_image(0))) == (0, False)
+
+
+@pytest.mark.asyncio
+async def test_short_markdown_ocr_output_is_retried_with_plain_prompt():
+    from app.services.ocr_service import OCR_PROMPT_MARKDOWN, OCR_PROMPT_PLAIN
+
+    full = " ".join(f"tu{i}" for i in range(80))
+
+    async def fake_ocr(img, **kw):
+        return full if kw["prompt"] == OCR_PROMPT_PLAIN else "| bang | chi | co |"
+
+    with patch("app.services.ocr_service.ocr_service.is_configured", return_value=True), \
+         patch("app.services.ocr_service.ocr_service.ocr_image", side_effect=fake_ocr) as mock_ocr:
+        pages = await PDFParser().parse(_image_pdf(_bars_image(20)), "scan.pdf", ocr_model_prompt=OCR_PROMPT_MARKDOWN)
+
+    assert [c.kwargs["prompt"] for c in mock_ocr.await_args_list] == [OCR_PROMPT_MARKDOWN, OCR_PROMPT_PLAIN]
+    assert pages[0]["content"] == full
+
+
+@pytest.mark.asyncio
+async def test_sideways_scan_is_ocred_both_ways_keeping_fuller_text():
+    import io
+    from PIL import Image
+
+    seen = []
+
+    async def fake_ocr(img, **kw):
+        w, h = Image.open(io.BytesIO(img)).size
+        seen.append((w, h))
+        return " ".join(["chu"] * (60 if len(seen) == 2 else 45))
+
+    with patch("app.services.ocr_service.ocr_service.is_configured", return_value=True), \
+         patch("app.services.ocr_service.ocr_service.ocr_image", side_effect=fake_ocr):
+        pages = await PDFParser().parse(_image_pdf(_bars_image(20, vertical=True)), "scan.pdf", ocr_model_prompt="OCR:")
+
+    assert [w > h for w, h in seen] == [True, False, False]  # as scanned, then both upright turns
+    assert pages[0]["content"].split() == ["chu"] * 60

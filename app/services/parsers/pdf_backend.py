@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import Iterator, List, Optional, Tuple
 
 import pypdfium2 as pdfium
+from PIL import Image
 from pypdfium2.raw import FPDF_PAGEOBJ_IMAGE
 
 # Tỷ lệ 2.0 tương đương 144 dpi: đủ nét cho OCR, dung lượng vừa phải.
@@ -111,6 +112,43 @@ def render_page_jpeg(
         return buf.getvalue()
     finally:
         bitmap.close()
+
+
+def _ink_bands(ink: Image.Image) -> int:
+    """Số dải hàng có mực (quá 2% bề rộng) ngăn cách bởi hàng trắng; kẻ bảng 1-2px không tính."""
+    width, data = ink.width, ink.tobytes()
+    bands, prev = 0, False
+    for y in range(ink.height):
+        on = data[y * width:(y + 1) * width].count(255) > 0.02 * width
+        bands += on and not prev
+        prev = on
+    return bands
+
+
+def text_layout(jpeg: bytes) -> Tuple[int, bool]:
+    """Ước lượng (số dòng chữ, trang xoay ngang) từ hồ sơ mực của ảnh trang.
+
+    Chữ ngang cho nhiều dải hàng xen hàng trắng nhưng gần như không có cột trắng;
+    trang scan khổ ngang đặt dọc thì ngược lại.
+    """
+    image = Image.open(io.BytesIO(jpeg)).convert("L")
+    image = image.resize((800, max(1, round(800 * image.height / image.width))))
+    ink = image.point(lambda p: 255 if p < 128 else 0)
+    box = ink.getbbox()
+    if not box:
+        return 0, False
+    ink = ink.crop(box)
+    rows, cols = _ink_bands(ink), _ink_bands(ink.transpose(Image.Transpose.TRANSPOSE))
+    # Vài dòng chữ ngắn cũng cho nhiều dải cột (khe giữa các chữ cái): chỉ tin khi mực trải cao trang.
+    sideways = cols > rows and cols >= 8 and ink.height >= 0.25 * image.height
+    return (cols if sideways else rows), sideways
+
+
+def rotate_jpeg(jpeg: bytes, degrees: int, quality: int = DEFAULT_JPEG_QUALITY) -> bytes:
+    """Xoay ảnh JPEG ngược chiều kim đồng hồ ``degrees`` độ."""
+    buf = io.BytesIO()
+    Image.open(io.BytesIO(jpeg)).rotate(degrees, expand=True).save(buf, format="JPEG", quality=quality)
+    return buf.getvalue()
 
 
 def render_document_page_jpeg(data: bytes, page_index: int, **kwargs) -> Tuple[bytes, int]:
