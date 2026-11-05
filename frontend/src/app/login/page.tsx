@@ -161,8 +161,15 @@ function LoginOrchestrator() {
         const allowPassword = !!cfg.allow_password_login;
 
         if (isEmbedded()) {
-          // Interactive identity providers may refuse framing. Let the trusted
-          // host open top-level SSO instead of trapping the iframe in redirects.
+          // The chatbot host already holds the session and allows framing, so try a
+          // silent hop once. Interactive identity providers may refuse framing: let the
+          // trusted host open top-level SSO instead of trapping the iframe in redirects.
+          const round = readLoginRound();
+          if (chatbot && !error && !loggedOut && !wantForm && round.hops < 1) {
+            saveLoginRound({ at: round.at, hops: round.hops + 1 });
+            go(chatbotUrl(next, true));
+            return;
+          }
           postToHost({ type: "auth-required", path: next });
           setView({ kind: "message", tone: "info", text: errorText("sso_login_required") });
           return;

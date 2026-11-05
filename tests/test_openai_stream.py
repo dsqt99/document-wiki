@@ -88,3 +88,18 @@ async def test_stream_off_uses_plain_completion(monkeypatch):
     comp = _Completions(response=resp)
     assert await _llm(comp).generate("hi") == "OK"
     assert "stream" not in comp.calls[0]
+
+
+@pytest.mark.asyncio
+async def test_generate_retries_without_thinking_when_reasoning_uses_whole_budget(monkeypatch):
+    monkeypatch.setattr(settings, "llm_stream", True)
+    comp = _Completions(chunks=[_chunk(finish="length")])
+    replies = iter([[_chunk(finish="length")], [_chunk('{"a": 1}'), _chunk(finish="stop")]])
+    comp.create = lambda **kw: (comp.calls.append(kw), _async(_Stream(next(replies))))[1]
+    assert await _llm(comp).generate("hi", temperature=0) == '{"a": 1}'
+    assert "extra_body" not in comp.calls[0]
+    assert comp.calls[1]["extra_body"] == {"chat_template_kwargs": {"enable_thinking": False}}
+
+
+async def _async(value):
+    return value

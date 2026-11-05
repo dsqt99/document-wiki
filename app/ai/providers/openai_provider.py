@@ -186,6 +186,10 @@ class OpenAILLM(_OpenAIClientMixin, LLMProvider):
         start = _now()
         try:
             text, _, finish_reason, usage = await self._complete(messages=messages, **params)
+            if finish_reason == "length" and not (text or "").strip():
+                # Reasoning spent the whole budget before any answer: answer once without it.
+                params["extra_body"] = {"chat_template_kwargs": {"enable_thinking": False}}
+                text, _, finish_reason, usage = await self._complete(messages=messages, **params)
             if finish_reason == "length":
                 raise LLMOutputTruncated("LLM output truncated at token limit; incomplete content rejected")
         except Exception as e:

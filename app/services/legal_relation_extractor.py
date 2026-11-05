@@ -78,8 +78,9 @@ def find_doc_numbers(text: str) -> list[str]:
 
 # Whole-document lifecycle: "... thay thế Quyết định số 3453/QĐ-BTC ...",
 # "bãi bỏ Thông tư số 12/2020/TT-BTC", "Quyết định số X ... hết hiệu lực".
-RE_DOC_REPLACE = re.compile(r"\bthay\s+thế\s+(?!(?:khoản|điểm|Điều)\b)", re.IGNORECASE)
-RE_DOC_REPEAL = re.compile(r"\bbãi\s+bỏ\s+(?!(?:khoản|điểm|Điều)\b)", re.IGNORECASE)
+# Passive "được/bị thay thế bởi X" names the replacing doc, not a target: skip it.
+RE_DOC_REPLACE = re.compile(r"(?<!được\s)(?<!bị\s)\bthay\s+thế\s+(?!(?:khoản|điểm|Điều|bởi)\b)", re.IGNORECASE)
+RE_DOC_REPEAL = re.compile(r"(?<!được\s)(?<!bị\s)\bbãi\s+bỏ\s+(?!(?:khoản|điểm|Điều|bởi)\b)", re.IGNORECASE)
 RE_DOC_EXPIRE = re.compile(r"\bhết\s+hiệu\s+lực\b", re.IGNORECASE)
 
 RE_LAW_NUMBER = re.compile(
@@ -259,8 +260,10 @@ class LegalRelationExtractor:
                 add(LegalRelationType.BAI_BO, docs[-1], at if at >= 0 else m.start(), m.end())
         return out
 
-    def extract_preamble_basis(self, preamble_text: str) -> List[ExtractedRelation]:
-        """Extract legal basis (Căn cứ) from preamble lines."""
+    def extract_preamble_basis(
+        self, preamble_text: str, default_doc_number: Optional[str] = None
+    ) -> List[ExtractedRelation]:
+        """Extract legal basis (Căn cứ) and header-level THAY_THE/BAI_BO from preamble lines."""
         relations: List[ExtractedRelation] = []
         if not preamble_text:
             return relations
@@ -268,6 +271,8 @@ class LegalRelationExtractor:
         for line in preamble_text.splitlines():
             line_s = line.strip()
             if not line_s.lower().startswith("căn cứ"):
+                # Some docs state "Thay thế ... số X" in the header, not in a final article.
+                relations.extend(self._extract_doc_lifecycle(line_s, default_doc_number))
                 continue
 
             law_numbers = RE_LAW_NUMBER.findall(line_s)

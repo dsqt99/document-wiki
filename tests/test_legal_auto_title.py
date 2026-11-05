@@ -127,3 +127,21 @@ Căn cứ Luật Tổ chức Chính phủ;
     meta = parse_legal_metadata(text, "amendment.pdf")
     assert meta["official_title"] == "Sửa đổi, bổ sung một số điều của Nghị định số 136/2020/NĐ-CP ngày 24 tháng 11 năm 2020 của Chính phủ"
     assert "Căn cứ" not in meta["official_title"]
+
+
+def test_so_ky_hieu_label_beats_replaced_doc_number():
+    text = (
+        "QUY TRÌNH GIẢ LẬP\nTên: Quy trình kiểm thử gửi báo cáo tuần\n"
+        "Số, ký hiệu: 02/2026/QT-KT\nNgày ban hành: 01/10/2026\n"
+        "Thay thế toàn bộ Quy trình số 01/2025/QT-KT.\n"
+    )
+    meta = parse_legal_metadata(text, "06_quy_trinh_hien_hanh.txt")
+    assert meta["doc_number"] == "02/2026/QT-KT"
+
+    from app.database.models import LegalRelationType
+    from app.services.legal_relation_extractor import LegalRelationExtractor
+
+    rels = LegalRelationExtractor().extract_from_text(text, meta["doc_number"])
+    assert any(
+        r.relation_type == LegalRelationType.THAY_THE and r.target_doc_number == "01/2025/QT-KT" for r in rels
+    )

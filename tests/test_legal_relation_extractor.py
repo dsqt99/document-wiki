@@ -116,3 +116,25 @@ def test_clause_repeal_is_not_doc_level():
     text = "Bãi bỏ khoản 2 Điều 10 của Nghị định số 136/2020/NĐ-CP."
     relations = LegalRelationExtractor().extract_from_text(text, default_doc_number="50/2024/NĐ-CP")
     assert not [r for r in relations if r.target_article_number is None and r.relation_type == LegalRelationType.BAI_BO]
+
+
+def test_preamble_header_replace_line_yields_thay_the():
+    preamble = (
+        "Số, ký hiệu: 02/2026/QT-KT\n"
+        "Thay thế toàn bộ Quy trình số 01/2025/QT-KT.\n"
+    )
+    relations = LegalRelationExtractor().extract_preamble_basis(preamble, default_doc_number="02/2026/QT-KT")
+    assert [(r.relation_type, r.target_doc_number) for r in relations] == [
+        (LegalRelationType.THAY_THE, "01/2025/QT-KT")
+    ]
+
+
+def test_passive_replaced_by_is_not_a_replace_target():
+    ex = LegalRelationExtractor()
+    for line in (
+        "Tình trạng: hết hiệu lực toàn bộ từ 01/10/2026, được thay thế bởi 02/2026/QT-KT.",
+        "Quyết định này bị bãi bỏ bởi Quyết định số 15/2026/QĐ-UBND.",
+    ):
+        assert ex.extract_preamble_basis(line, default_doc_number="01/2025/QT-KT") == []
+    rels = ex.extract_from_text("Quyết định này thay thế Quyết định số 10/2020/QĐ-UBND.", "12/2024/QĐ-UBND")
+    assert [(r.relation_type, r.target_doc_number) for r in rels] == [(LegalRelationType.THAY_THE, "10/2020/QĐ-UBND")]

@@ -144,8 +144,9 @@ def parse_legal_metadata(text: str, file_name: str = "") -> dict[str, Any]:
     # 1. Document Number from text if not yet found
     if not meta["doc_number"]:
         # Pattern A: Standard colon or space: Số: 136/2020/NĐ-CP, Luật số: 107/2025/QH15, Số: 02VBHN-VPQH
+        # "Số, ký hiệu:" must match here, else a later "thay thế ... số X" line wins.
         num_m = re.search(
-            r'(?:Số|Luật số|Nghị định số|Thông tư số|Quyết định số|văn bản hợp nhất số|hợp nhất số)\s*[:\s]\s*([0-9]+[A-Za-z0-9\/\-\_ĐđÀ-ỹ]+)',
+            r'(?:Số\s*,?\s*ký\s+hiệu|Số\s+hiệu|Ký\s+hiệu|Số|Luật số|Nghị định số|Thông tư số|Quyết định số|văn bản hợp nhất số|hợp nhất số)\s*[:\s]\s*([0-9]+[A-Za-z0-9\/\-\_ĐđÀ-ỹ]+)',
             clean_preamble,
             re.IGNORECASE,
         )
@@ -1139,7 +1140,7 @@ async def ingest_legal_graph(
 
     # Extract legal basis from preamble
     if preamble and first_unit:
-        basis_relations = extractor.extract_preamble_basis(preamble)
+        basis_relations = extractor.extract_preamble_basis(preamble, default_doc_number=doc_number)
         for rel in basis_relations:
             rel_model = LegalRelation(
                 id=uuid.uuid4(),
