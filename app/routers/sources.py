@@ -939,7 +939,8 @@ async def upload_source(
     security_label: Optional[str] = Form(None),
     review_before_processing: bool = Form(False),
     db: AsyncSession = Depends(get_db),
-    user: Employee = require_permission("doc:create"),
+    # Personal uploads are open to every reader; shared scopes still need doc:create (checked below).
+    user: Employee = require_permission("doc:read"),
 ):
     from app.services import upload_guard
     from app.services.kb_service import _guess_content_type
@@ -948,8 +949,12 @@ async def upload_source(
     title = _form_value(title)
     knowledge_type_id = _form_value(knowledge_type_id)
     department_ids = _form_value(department_ids)
-    manager_id = await _checked_managing_department(db, user, _form_value(managing_department_id), "create")
     scope_type = _form_value(scope_type)
+    if (scope_type or "global") != "personal" and not _is_admin(user) and not auth_service._permission_granted(
+        "doc:create", _self()._get_user_permissions(user)
+    ):
+        raise HTTPException(403, "Permission required: doc:create")
+    manager_id = await _checked_managing_department(db, user, _form_value(managing_department_id), "create")
     preserve_verbatim = bool(_form_value(preserve_verbatim))
     mode = _checked_mode(_form_value(processing_mode))
     # Deprecated review_before_processing is accepted for older clients; uploads continue automatically.
