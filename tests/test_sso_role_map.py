@@ -67,7 +67,7 @@ def test_admin_and_unknown_values_are_untouched():
     assert _sso(None, []) == ("viewer", "sso")
 
 
-# ── Bảng ánh xạ do Trợ lý ảo AI đẩy sang (org-sync) ──────────────────────────
+# ── Bảng ánh xạ do Trợ lý tham mưu đẩy sang (org-sync) ──────────────────────────
 import asyncio
 
 import pytest

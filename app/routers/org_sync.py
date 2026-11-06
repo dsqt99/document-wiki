@@ -1,5 +1,5 @@
 """
-Đồng bộ cây đơn vị từ Trợ lý ảo AI (nguồn gốc: nhóm Keycloak).
+Đồng bộ cây đơn vị từ Trợ lý tham mưu (nguồn gốc: nhóm Keycloak).
 
   POST /api/internal/org-sync — chatbot gửi toàn bộ cây đơn vị và thành viên nhóm,
                                 ký JWT HS256 bằng CHATBOT_WIKI_SSO_SECRET (hạn 60 giây,
@@ -97,7 +97,7 @@ class SyncAccount(BaseModel):
 class SyncPayload(BaseModel):
     units: list[SyncUnit] = Field(default_factory=list, max_length=20000)
     members: list[SyncMember] = Field(default_factory=list, max_length=200000)
-    # Mức tiếp cận của mọi cán bộ (nguồn gốc: Trợ lý ảo AI). None = không đụng tới mức hiện có.
+    # Mức tiếp cận của mọi cán bộ (nguồn gốc: Trợ lý tham mưu). None = không đụng tới mức hiện có.
     clearances: Optional[list[SyncClearance]] = Field(default=None, max_length=200000)
     # Vai trò Keycloak → global_role wiki (viewer/contributor/knowledge_manager). None = giữ bảng hiện có.
     role_map: Optional[dict[str, str]] = Field(default=None, max_length=1000)
@@ -155,7 +155,7 @@ def _unique_name(unit: SyncUnit, taken: set[str]) -> str:
 
 
 async def _apply_clearances(db: AsyncSession, clearances: list[SyncClearance]) -> int:
-    """Đặt Employee.clearance_level theo Trợ lý ảo AI; người không có trong danh sách về INTERNAL.
+    """Đặt Employee.clearance_level theo Trợ lý tham mưu; người không có trong danh sách về INTERNAL.
 
     Chỉ hạ/giữ mức cho tài khoản liên kết Keycloak; tài khoản không khớp thì không bao giờ được nâng.
     """
@@ -568,7 +568,7 @@ async def _skill_sync_items(skills) -> list[dict]:
 
 @router.post("/internal/skill-sync")
 async def skill_sync(request: Request, db: AsyncSession = Depends(get_db)):
-    """Danh sách kỹ năng phạm vi toàn hệ thống (kèm SKILL.md) để Trợ lý ảo AI nạp vào menu kỹ năng của chat.
+    """Danh sách kỹ năng phạm vi toàn hệ thống (kèm SKILL.md) để Trợ lý tham mưu nạp vào menu kỹ năng của chat.
 
     Ký như org-sync (audience riêng). Chỉ trả kỹ năng global đang hoạt động: kỹ năng phòng ban/cá nhân
     không đưa sang vì bên chatbot mọi người đều đọc được.

@@ -1,7 +1,7 @@
 """
 SSO router — wiki không có trang đăng nhập riêng.
 
-Mặc định (CHATBOT_URL + CHATBOT_WIKI_SSO_SECRET): đăng nhập ở Trợ lý ảo AI.
+Mặc định (CHATBOT_URL + CHATBOT_WIKI_SSO_SECRET): đăng nhập ở Trợ lý tham mưu.
   GET /api/auth/sso/chatbot/login     — sang chatbot; chưa đăng nhập thì chatbot hiện trang
                                         đăng nhập của nó, xong chatbot cấp vé HS256 (60 giây)
   GET /api/auth/sso/chatbot/callback  — xác thực vé (secret, aud, state), cấp JWT cục bộ

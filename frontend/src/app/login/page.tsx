@@ -20,10 +20,10 @@ type SsoConfig = {
 
 const ERROR_TEXT: Record<string, string> = {
   sso_disabled: "Đăng nhập dùng chung chưa được cấu hình trên Kho tri thức.",
-  sso_misconfigured: "Cấu hình đăng nhập dùng chung giữa Trợ lý ảo AI và Kho tri thức chưa khớp, liên hệ quản trị.",
+  sso_misconfigured: "Cấu hình đăng nhập dùng chung giữa Trợ lý tham mưu và Kho tri thức chưa khớp, liên hệ quản trị.",
   sso_unavailable: "Không kết nối được máy chủ đăng nhập tập trung (Keycloak).",
   sso_denied: "Đăng nhập đã bị hủy hoặc bị từ chối.",
-  sso_login_required: "Bạn chưa đăng nhập Trợ lý ảo AI.",
+  sso_login_required: "Bạn chưa đăng nhập Trợ lý tham mưu.",
   sso_state: "Phiên đăng nhập đã hết hạn, vui lòng thử lại.",
   sso_token: "Không xác thực được tài khoản, vui lòng thử lại.",
   sso_inactive: "Tài khoản đã bị khóa trên Kho tri thức, liên hệ quản trị.",

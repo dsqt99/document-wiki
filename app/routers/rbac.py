@@ -25,7 +25,7 @@ from app.services.identity_directory import (
 
 router = APIRouter()
 
-MANAGED_DEPARTMENT_MSG = "Phòng ban đồng bộ từ Keycloak — sửa tại trang Quản trị của Trợ lý ảo AI"
+MANAGED_DEPARTMENT_MSG = "Phòng ban đồng bộ từ Keycloak — sửa tại trang Quản trị của Trợ lý tham mưu"
 SSO_SOURCE_ONLY_MSG = "Chỉ tài khoản đăng nhập qua Keycloak mới để Keycloak quản lý mức quyền"
 MIN_EMPLOYEE_PASSWORD = 8
 ACCOUNT_ROLES = ("admin", "employee")

@@ -5,7 +5,7 @@ Trang wiki không có nhãn riêng: nó kế thừa nhãn cao nhất trong các 
 (`wiki_pages.source_ids`), nên bị ẩn nếu bất kỳ nguồn nào vượt mức tiếp cận. Bộ lọc nằm trong
 chính câu truy vấn (SQL) chứ không lọc sau khi lấy kết quả.
 
-Thiếu hoặc sai giá trị thì coi là INTERNAL (mặc định của Trợ lý ảo AI).
+Thiếu hoặc sai giá trị thì coi là INTERNAL (mặc định của Trợ lý tham mưu).
 """
 
 from typing import Optional

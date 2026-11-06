@@ -9,7 +9,7 @@ from app.database.models import AppConfig, Department, Employee, EmployeeDepartm
 from app.services import permissions
 
 CONFIG_KEY = 'portal_identity_directory'
-MANAGED_MESSAGE = 'Tài khoản, đơn vị và quyền dùng chung; quản lý tại Cán bộ & đơn vị của Trợ lý ảo AI.'
+MANAGED_MESSAGE = 'Tài khoản, đơn vị và quyền dùng chung; quản lý tại Cán bộ & đơn vị của Trợ lý tham mưu.'
 
 
 async def load_directory(db):

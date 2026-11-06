@@ -117,7 +117,7 @@ export default function EmployeesPage() {
         }
       : {
           title: "Quản lý Phân quyền & Vai trò",
-          description: "Vai trò và quyền dùng chung với Trợ lý ảo AI.",
+          description: "Vai trò và quyền dùng chung với Trợ lý tham mưu.",
           action: undefined,
         };
 
@@ -154,7 +154,7 @@ export default function EmployeesPage() {
       </div>
 
       {loadError && <p role="alert" className="mb-4 rounded-xl border border-destructive/30 p-3 text-sm text-destructive">{loadError}</p>}
-      {managed && <p className="mb-4 text-sm text-muted-foreground">Thêm, sửa cán bộ và phân quyền tại mục Cán bộ &amp; đơn vị của Trợ lý ảo AI.</p>}
+      {managed && <p className="mb-4 text-sm text-muted-foreground">Thêm, sửa cán bộ và phân quyền tại mục Cán bộ &amp; đơn vị của Trợ lý tham mưu.</p>}
       {tab === "employees" ? (
         <EmployeeTable
           managed={managed}

@@ -7,7 +7,7 @@ Nguồn của mức (employees.global_role_source) quyết định ai quản lý
 - `manual`: chỉ dành cho tài khoản cục bộ ở bản Wiki độc lập. Tài khoản đã liên kết luôn nhận lại
   mức quyền từ nguồn chung, gồm cả thu hồi quyền từng được cấp tay.
 
-Bảng ánh xạ do Trợ lý ảo AI đẩy sang qua /internal/org-sync (vai trò tạo trên cổng quản trị) và lưu ở
+Bảng ánh xạ do Trợ lý tham mưu đẩy sang qua /internal/org-sync (vai trò tạo trên cổng quản trị) và lưu ở
 app_config; chưa từng nhận thì dùng SSO_ROLE_GLOBAL_MAP trong .env.
 """
 
@@ -111,7 +111,7 @@ def sync_employee_roles(
 
 
 async def load_role_map(db: AsyncSession) -> dict[str, str]:
-    """Bảng ánh xạ đang hiệu lực: bản Trợ lý ảo AI đã đẩy sang, không có thì lấy từ .env."""
+    """Bảng ánh xạ đang hiệu lực: bản Trợ lý tham mưu đã đẩy sang, không có thì lấy từ .env."""
     from app.config import settings
     from app.database.models import AppConfig
 
