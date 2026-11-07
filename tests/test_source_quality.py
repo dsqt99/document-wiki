@@ -57,8 +57,16 @@ def test_unknown_counters_never_mean_complete():
     record_quality(src, "wiki", {"status": "complete", "expected": None, "published": 1, "failed": None})
     assert public_source_quality(src)["wiki"]["status"] == "unknown"
     record_quality(src, "extraction", {"status": "complete", "total_pages": 1,
-                                      "text_pages": 1, "empty_pages": 0, "ocr_pages": None})
+                                      "text_pages": 1, "empty_pages": None, "ocr_pages": 0})
     assert public_source_quality(src)["extraction"]["status"] == "unknown"
+
+
+def test_docx_without_ocr_counter_is_still_complete():
+    from app.services.source_quality import record_quality, public_source_quality
+    src = source()
+    record_quality(src, "extraction", {"status": "complete", "total_pages": 1,
+                                      "text_pages": 1, "empty_pages": 0, "ocr_pages": None})
+    assert public_source_quality(src)["extraction"]["status"] == "complete"
 
 
 def test_measured_index_failure_remains_visible_before_branch_finalization():

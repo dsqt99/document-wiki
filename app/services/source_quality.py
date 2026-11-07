@@ -105,7 +105,8 @@ def public_source_quality(source) -> dict:
             elif state in ("unknown", "processing") and live not in (None, "ready", "pending"):
                 state = live
         if state == "complete":
-            required = list(counters.values())
+            # ocr_pages is informational: DOCX/text never OCR, so None must not hide measured coverage.
+            required = [v for k, v in counters.items() if k != "ocr_pages"]
             if any(v is None for v in required):
                 state = "unknown"
             elif section == "source_index" and counters["indexed"] != counters["expected"]:
