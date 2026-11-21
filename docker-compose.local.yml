@@ -1,0 +1,13 @@
+# Chỉ dùng khi chạy local: minio/minio không còn công khai trên Docker Hub, máy dev không có
+# gói cài ngoại tuyến. Thay bằng bản build Chainguard (không có curl, mặc định nonroot).
+# Chạy: docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+# Prod vẫn dùng docker-compose.prod.yml với ảnh minio từ gói cài / registry nội bộ.
+services:
+  minio:
+    image: cgr.dev/chainguard/minio@sha256:96b6cf3e14084d3427ec46de10c2873af61b945ad9272eec266cfc8df551cba5
+    user: "0"
+    healthcheck:
+      test: ["CMD", "minio", "--version"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
