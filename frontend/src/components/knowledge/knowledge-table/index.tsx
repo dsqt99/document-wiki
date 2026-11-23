@@ -165,6 +165,26 @@ export function KnowledgeTable({
     setSearchText(query.search);
   }
 
+  const [pageInput, setPageInput] = useState(String(query.page));
+  const [syncedPage, setSyncedPage] = useState(query.page);
+  if (syncedPage !== query.page) {
+    setSyncedPage(query.page);
+    setPageInput(String(query.page));
+  }
+
+  const commitPageInput = () => {
+    const parsed = Number.parseInt(pageInput, 10);
+    if (!Number.isFinite(parsed) || parsed < 1) {
+      setPageInput(String(query.page));
+      return;
+    }
+    const clamped = Math.min(Math.max(1, parsed), Math.max(1, totalPages));
+    setPageInput(String(clamped));
+    if (clamped !== query.page) {
+      onQueryChange({ page: clamped });
+    }
+  };
+
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -762,8 +782,26 @@ export function KnowledgeTable({
               >
                 <Icon name="chevron_left" size={18} />
               </Button>
-              <span className="tabular-nums">
-                Trang {query.page} / {totalPages}
+              <span className="inline-flex items-center gap-1.5 tabular-nums">
+                <span>Trang</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  aria-label="Số trang hiện tại"
+                  value={pageInput}
+                  onChange={(e) => setPageInput(e.target.value.replace(/[^0-9]/g, ""))}
+                  onBlur={commitPageInput}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.currentTarget.blur();
+                    } else if (e.key === "Escape") {
+                      setPageInput(String(query.page));
+                      e.currentTarget.blur();
+                    }
+                  }}
+                  className="h-7 w-11 rounded-md border border-border bg-background px-1.5 text-center text-xs tabular-nums outline-none focus:ring-2 focus:ring-primary/30"
+                />
+                <span>/ {totalPages}</span>
               </span>
               <Button
                 variant="outline"

@@ -539,7 +539,16 @@ async def list_sources(
     if status:
         wanted = [s.strip() for s in status.split(",") if s.strip()]
         if wanted:
-            filters.append(Source.status.in_(wanted))
+            if "error" in wanted:
+                filters.append(
+                    or_(
+                        Source.status.in_(wanted),
+                        Source.chunk_status == "error",
+                        Source.wiki_status == "error",
+                    )
+                )
+            else:
+                filters.append(Source.status.in_(wanted))
     if search:
         pattern = f"%{search}%"
         filters.append(or_(Source.title.ilike(pattern), Source.file_name.ilike(pattern)))
