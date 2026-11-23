@@ -201,10 +201,13 @@ class GoogleVision(_GoogleClientMixin, VisionProvider):
         text_prompt = prompt or DEFAULT_VISION_PROMPT
         start = _now()
         try:
+            cfg_kwargs = {"max_output_tokens": max_tokens}
+            if hasattr(types, "ThinkingConfig"):
+                cfg_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
             resp = await self.client.aio.models.generate_content(
                 model=self.config.model_id,
                 contents=[types.Part.from_bytes(data=image_data, mime_type=mime_type), text_prompt],
-                config=types.GenerateContentConfig(max_output_tokens=max_tokens),
+                config=types.GenerateContentConfig(**cfg_kwargs),
             )
             text = getattr(resp, "text", None) or ""
             tracing.record_generation(

@@ -208,6 +208,8 @@ class OpenAILLM(_OpenAIClientMixin, LLMProvider):
         if system:
             msgs.insert(0, {"role": "system", "content": system})
         params = self._params(max_tokens, temperature)
+        if self._is_reasoning_or_gpt5():
+            params["reasoning_effort"] = "none"
         upstream.ensure_available(self.config.model_id)
         start = _now()
         try:
@@ -279,6 +281,7 @@ class OpenAIVision(_OpenAIClientMixin, VisionProvider):
         }]
         params: dict = {"model": self.config.model_id}
         if _is_reasoning(self.config.model_id):
+            params["reasoning_effort"] = "none"
             if max_tokens:
                 params["max_completion_tokens"] = max_tokens
         else:

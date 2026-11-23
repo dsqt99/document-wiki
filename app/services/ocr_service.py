@@ -332,9 +332,9 @@ class OCRService:
         target_model = model or settings.ocr_model
         data_url = f"data:{mime_type};base64,{b64_image}"
 
-        response = client.chat.completions.create(
-            model=target_model,
-            messages=[
+        req_kwargs: dict = {
+            "model": target_model,
+            "messages": [
                 {
                     "role": "user",
                     # Image first: OCR models read the task prompt after the page.
@@ -347,9 +347,13 @@ class OCRService:
                     ],
                 }
             ],
-            temperature=0,
-            stream=False,
-        )
+            "stream": False,
+        }
+        if str(target_model or "").strip().lower().startswith(("gpt-5", "gpt-6", "o1", "o3", "o4")):
+            req_kwargs["reasoning_effort"] = "none"
+        else:
+            req_kwargs["temperature"] = 0
+        response = client.chat.completions.create(**req_kwargs)
 
         choice = response.choices[0] if response.choices else None
         text = (choice.message.content or "").strip() if choice else ""
